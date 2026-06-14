@@ -19,7 +19,7 @@ export async function GET(request: Request) {
     if (!mode) return NextResponse.json({ error: "Mode not found" }, { status: 404, headers: NO_STORE });
     return NextResponse.json(mode, { headers: NO_STORE });
   }
-  const gameId = searchParams.get("gameId");
+  const gameId = searchParams.get("gameId") ?? searchParams.get("game_id");
   const store = getStore();
   const modes = await store.gameModes(gameId || undefined);
   return NextResponse.json(modes, { headers: NO_STORE });

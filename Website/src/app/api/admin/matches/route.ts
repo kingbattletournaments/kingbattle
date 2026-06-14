@@ -1,5 +1,6 @@
 import { NextResponse } from "next/server";
 import { getStore } from "@/lib/store";
+import { getProductionStoreError } from "@/lib/store-config";
 import { getAdminSession } from "@/lib/admin-auth";
 
 export async function GET(request: Request) {
@@ -19,6 +20,10 @@ export async function GET(request: Request) {
 }
 
 export async function POST(request: Request) {
+  const storeError = getProductionStoreError();
+  if (storeError) {
+    return NextResponse.json({ error: storeError }, { status: 503 });
+  }
   const admin = await getAdminSession();
   if (!admin) return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
   const store = getStore();

@@ -5,6 +5,14 @@ import { getAppUserId } from "@/lib/app-auth";
 const MAX_DEPOSIT = 1_000_000;
 const ZAP_CREATE_URL = "https://pay.zapupi.com/api/create-order";
 
+/** ZapUPI requires alphanumeric order IDs (no hyphens), typically max 50 chars. */
+function generateZapOrderId(userId: string): string {
+  const safeUser = userId.replace(/[^a-zA-Z0-9]/g, "").slice(0, 8) || "user";
+  const ts = Date.now().toString();
+  const rand = Math.floor(1000 + Math.random() * 9000).toString();
+  return `KB${safeUser}${ts}${rand}`.slice(0, 50);
+}
+
 // Default urls used by Android client to intercept transaction status
 const SUCCESS_URL = "https://zapupi.com/payment?s=s";
 const FAILED_URL = "https://zapupi.com/payment?s=f";
@@ -31,7 +39,7 @@ export async function POST(request: Request) {
     if (!user) return NextResponse.json({ error: "User not found" }, { status: 404 });
     if (user.isBlocked) return NextResponse.json({ error: "Account is blocked" }, { status: 403 });
 
-    const orderId = `DEP-${userId.substring(0, 5)}-${Date.now()}-${Math.floor(1000 + Math.random() * 9000)}`;
+    const orderId = generateZapOrderId(userId);
 
     const zapKey = process.env.ZAPUPI_KEY || "test";
     const webhookUrl = process.env.ZAPUPI_WEBHOOK_URL || "";

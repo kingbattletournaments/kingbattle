@@ -266,6 +266,7 @@ fun HomeScreen(
     val bannersState = homeViewModel.banners.collectAsState()
     val modesState = homeViewModel.modes.collectAsState()
     val isLoadingState = homeViewModel.isLoading.collectAsState()
+    val isOfflineState = homeViewModel.isOffline.collectAsState()
     val errorState = homeViewModel.errorMessage.collectAsState()
     val supportUrlState = homeViewModel.supportUrl.collectAsState()
 
@@ -311,6 +312,7 @@ fun HomeScreen(
                             banners = bannersState.value,
                             modes = modesState.value,
                             isLoading = isLoadingState.value,
+                            isOffline = isOfflineState.value,
                             errorMessage = errorState.value,
                             onModeClick = { modeId -> onNavigateToMatches(modeId, 1) },
                             onNavigateToMatches = onNavigateToMatches,
@@ -354,6 +356,7 @@ fun PlayTabContent(
     banners: List<com.kingbattle.domain.model.AppBanner>,
     modes: List<GameMode>,
     isLoading: Boolean,
+    isOffline: Boolean,
     errorMessage: String?,
     onModeClick: (String) -> Unit,
     onNavigateToMatches: (String, Int) -> Unit,
@@ -382,7 +385,10 @@ fun PlayTabContent(
             verticalArrangement = Arrangement.spacedBy(16.dp)
         ) {
             // Banner Carousel Section
-            BannerSection()
+            BannerSection(
+                banners = banners.filter { it.displayPlayCarousel },
+                isOffline = isOffline
+            )
 
             // My Matches Section
             MyMatchesSection(onNavigateToMatches = onNavigateToMatches)
@@ -581,11 +587,42 @@ fun AnnouncementSection(text: String) {
 // ==================== BANNER SECTION ====================
 @OptIn(ExperimentalFoundationApi::class)
 @Composable
-fun BannerSection() {
-    val localBanners = listOf(
-        com.kingbattle.R.drawable.banner_image,
-        com.kingbattle.R.drawable.refer_banner
-    )
+fun BannerSection(
+    banners: List<com.kingbattle.domain.model.AppBanner> = emptyList(),
+    isOffline: Boolean = false
+) {
+    val context = LocalContext.current
+    val carouselBanners = banners.filter { it.imageUrl.isNotBlank() }
+
+    if (isOffline) {
+        Card(
+            modifier = Modifier
+                .fillMaxWidth()
+                .aspectRatio(16f / 9f),
+            shape = RoundedCornerShape(12.dp),
+            colors = CardDefaults.cardColors(containerColor = ThemeCardBg),
+            border = BorderStroke(1.dp, ThemeBorderColor)
+        ) {
+            Box(
+                modifier = Modifier.fillMaxSize(),
+                contentAlignment = Alignment.Center
+            ) {
+                Text(
+                    text = "Offline — connect to the internet to load banners and tournaments.",
+                    color = TextMuted,
+                    fontSize = 14.sp,
+                    textAlign = TextAlign.Center,
+                    modifier = Modifier.padding(24.dp)
+                )
+            }
+        }
+        return
+    }
+
+    if (carouselBanners.isEmpty()) {
+        return
+    }
+
     Card(
         modifier = Modifier
             .fillMaxWidth()
@@ -596,13 +633,15 @@ fun BannerSection() {
         border = BorderStroke(1.dp, ThemeBorderColor)
     ) {
         Box(modifier = Modifier.fillMaxSize()) {
-            val pagerState = rememberPagerState(pageCount = { localBanners.size })
-            
+            val pagerState = rememberPagerState(pageCount = { carouselBanners.size })
+
             LaunchedEffect(Unit) {
                 while (true) {
                     kotlinx.coroutines.delay(5000)
-                    val nextPage = (pagerState.currentPage + 1) % localBanners.size
-                    pagerState.animateScrollToPage(nextPage)
+                    if (carouselBanners.size > 1) {
+                        val nextPage = (pagerState.currentPage + 1) % carouselBanners.size
+                        pagerState.animateScrollToPage(nextPage)
+                    }
                 }
             }
 
@@ -610,15 +649,34 @@ fun BannerSection() {
                 state = pagerState,
                 modifier = Modifier.fillMaxSize()
             ) { page ->
-                Image(
-                    painter = androidx.compose.ui.res.painterResource(id = localBanners[page]),
-                    contentDescription = "App Home Banner",
-                    modifier = Modifier.fillMaxSize(),
-                    contentScale = ContentScale.Crop
-                )
+                val banner = carouselBanners[page]
+                Card(
+                    modifier = Modifier
+                        .fillMaxSize()
+                        .clickable {
+                            val url = banner.linkUrl
+                            if (url.isNotBlank()) {
+                                try {
+                                    val intent = Intent(Intent.ACTION_VIEW, Uri.parse(url))
+                                    context.startActivity(intent)
+                                } catch (e: Exception) {
+                                    Toast.makeText(context, "Could not open link", Toast.LENGTH_SHORT).show()
+                                }
+                            }
+                        },
+                    shape = RoundedCornerShape(12.dp),
+                    colors = CardDefaults.cardColors(containerColor = ThemeCardBg)
+                ) {
+                    AsyncImage(
+                        url = banner.imageUrl,
+                        contentDescription = "App Home Banner",
+                        modifier = Modifier.fillMaxSize(),
+                        contentScale = ContentScale.Crop
+                    )
+                }
             }
 
-            if (localBanners.size > 1) {
+            if (carouselBanners.size > 1) {
                 Row(
                     modifier = Modifier
                         .align(Alignment.BottomCenter)
@@ -626,7 +684,7 @@ fun BannerSection() {
                     horizontalArrangement = Arrangement.spacedBy(6.dp),
                     verticalAlignment = Alignment.CenterVertically
                 ) {
-                    repeat(localBanners.size) { index ->
+                    repeat(carouselBanners.size) { index ->
                         val isSelected = pagerState.currentPage == index
                         Box(
                             modifier = Modifier

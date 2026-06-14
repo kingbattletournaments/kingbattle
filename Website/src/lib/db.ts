@@ -535,7 +535,10 @@ export const db = {
       .insert({ user_id: userId, amount, utr, status: "pending" })
       .select()
       .single();
-    if (error) return null;
+    if (error) {
+      console.error("addDepositRequest failed:", error.message);
+      return null;
+    }
     return toDepositRequest(data);
   },
 
@@ -779,7 +782,10 @@ export const db = {
     const supabase = getSupabase();
     if (!supabase) return null;
     const { data, error } = await supabase.from("games").insert({ name, image_url: imageUrl }).select("id, name, image_url").single();
-    if (error || !data) return null;
+    if (error || !data) {
+      console.error("addGame failed:", error?.message ?? "no data returned");
+      return null;
+    }
     return { id: data.id, name: data.name, imageUrl: data.image_url ?? null };
   },
 
@@ -802,7 +808,10 @@ export const db = {
     const supabase = getSupabase();
     if (!supabase) return null;
     const { data, error } = await supabase.from("game_modes").insert({ game_id: gameId, name, image_url: imageUrl }).select("id, game_id, name, image_url").single();
-    if (error || !data) return null;
+    if (error || !data) {
+      console.error("addGameMode failed:", error?.message ?? "no data returned");
+      return null;
+    }
     return { id: data.id, gameId: data.game_id, name: data.name, imageUrl: data.image_url ?? null };
   },
 
@@ -875,7 +884,10 @@ export const db = {
       })
       .select()
       .single();
-    if (error || !data) return null;
+    if (error || !data) {
+      console.error("addMatch failed:", error?.message ?? "no data returned");
+      return null;
+    }
     return toMatch(data);
   },
 

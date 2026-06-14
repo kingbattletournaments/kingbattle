@@ -78,7 +78,12 @@ export async function getAppUserId(): Promise<string | null> {
     }
   }
 
-  // Fallback for local testing / development if no authentication is present
+  // No authenticated session — do not impersonate users in production
+  if (process.env.NODE_ENV === "production") {
+    return null;
+  }
+
+  // Development-only fallback for local testing without signing in
   try {
     const store = getStore();
     const allUsers = await store.users();

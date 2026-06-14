@@ -1,5 +1,6 @@
 import { NextResponse } from "next/server";
 import { getStore } from "@/lib/store";
+import { isUsingSupabase } from "@/lib/store-config";
 import { cookies } from "next/headers";
 
 const SESSION_COOKIE = "admin_session";
@@ -24,5 +25,6 @@ export async function GET() {
       gamesAccessType: admin.gamesAccessType,
       allowedGameIds: admin.allowedGameIds,
     },
+    databaseConfigured: isUsingSupabase(),
   });
 }
