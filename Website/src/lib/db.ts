@@ -71,6 +71,7 @@ export type DbMatch = {
   matchType: string;
   prizePool: { coinsPerKill: number; totalPrizePool?: number; rankRewards: { fromRank: number; toRank: number; coins: number }[] };
   map: string;
+  image?: string | null;
   participantCount?: number;
 };
 
@@ -90,6 +91,7 @@ function toMatch(row: {
   total_prize_pool?: number;
   rank_rewards?: unknown;
   map?: string | null;
+  image?: string | null;
 }): DbMatch {
   const rewards = Array.isArray(row.rank_rewards)
     ? (row.rank_rewards as { fromRank?: number; toRank?: number; coins?: number }[])
@@ -114,6 +116,7 @@ function toMatch(row: {
       rankRewards: rewards,
     },
     map: row.map ?? "BERMUDA",
+    image: row.image ?? null,
   };
 }
 
@@ -845,7 +848,8 @@ export const db = {
     scheduledAt: string,
     matchType: string,
     prizePool: { coinsPerKill: number; totalPrizePool?: number; rankRewards: { fromRank: number; toRank: number; coins: number }[] },
-    map?: string
+    map?: string,
+    image?: string | null
   ): Promise<DbMatch | null> {
     const supabase = getSupabase();
     if (!supabase) return null;
@@ -862,6 +866,7 @@ export const db = {
         total_prize_pool: prizePool?.totalPrizePool ?? 0,
         rank_rewards: prizePool?.rankRewards ?? [],
         map: map || "BERMUDA",
+        image: image || null,
       })
       .select()
       .single();

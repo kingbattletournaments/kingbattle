@@ -25,7 +25,7 @@ export async function POST(request: Request) {
   if (!(await store.canAccessGames(admin.id))) {
     return NextResponse.json({ error: "No games access" }, { status: 403 });
   }
-  const { gameModeId, title, entryFee, maxParticipants, scheduledAt, matchType, prizePool } =
+  const { gameModeId, title, entryFee, maxParticipants, scheduledAt, matchType, prizePool, image } =
     await request.json();
   if (!gameModeId || !title || entryFee == null) {
     return NextResponse.json(
@@ -62,7 +62,9 @@ export async function POST(request: Request) {
     Number(maxParticipants) || 16,
     scheduledAt || new Date().toISOString(),
     validMatchType,
-    validPrizePool
+    validPrizePool,
+    "BERMUDA",
+    image
   );
   if (!match) return NextResponse.json({ error: "Failed to create match" }, { status: 500 });
   return NextResponse.json(match);

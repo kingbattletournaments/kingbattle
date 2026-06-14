@@ -943,10 +943,23 @@ function MatchesSection({
     { fromRank: 2, toRank: 2, coins: 0 },
     { fromRank: 3, toRank: 3, coins: 0 },
   ]);
+  const [imageFile, setImageFile] = useState<File | null>(null);
+  const [imagePreview, setImagePreview] = useState<string | null>(null);
   const [submitting, setSubmitting] = useState(false);
   const [selectedMatchId, setSelectedMatchId] = useState<string | null>(null);
   const [matchTab, setMatchTab] = useState<"upcoming" | "ongoing" | "finished">("upcoming");
   const [expandedMatchId, setExpandedMatchId] = useState<string | null>(null);
+
+  const handleImageChange = (file: File) => {
+    setImageFile(file);
+    setImagePreview(URL.createObjectURL(file));
+  };
+
+  const handleImageClear = () => {
+    setImageFile(null);
+    if (imagePreview) URL.revokeObjectURL(imagePreview);
+    setImagePreview(null);
+  };
 
   const mode = modes.find((m) => m.id === modeId);
   const gameName = mode ? games.find((g) => g.id === mode.gameId)?.name ?? "?" : "?";
@@ -976,6 +989,10 @@ function MatchesSection({
     e.preventDefault();
     setSubmitting(true);
     try {
+      let imageUrl: string | null = null;
+      if (imageFile) {
+        imageUrl = await uploadImage(imageFile);
+      }
       const res = await fetch("/api/admin/matches", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
@@ -986,6 +1003,7 @@ function MatchesSection({
           maxParticipants: Number(maxParticipants) || 16,
           scheduledAt: scheduledAt || new Date().toISOString(),
           matchType,
+          image: imageUrl,
           prizePool: {
             coinsPerKill: Number(coinsPerKill) || 0,
             totalPrizePool: totalPrizePool ? Number(totalPrizePool) : 0,
@@ -1017,6 +1035,7 @@ function MatchesSection({
         { fromRank: 2, toRank: 2, coins: 0 },
         { fromRank: 3, toRank: 3, coins: 0 },
       ]);
+      handleImageClear();
       setSelectedMatchId(data?.id ?? null);
       setMatchTab("upcoming");
       setView("list");
@@ -1288,6 +1307,12 @@ function MatchesSection({
                   className="admin-input w-full rounded-xl px-4 py-3 text-white outline-none"
                 />
               </div>
+              <ImageUpload
+                file={imageFile}
+                previewUrl={imagePreview}
+                onChange={handleImageChange}
+                onClear={handleImageClear}
+              />
               <div className="rounded-xl border border-slate-700/80 bg-slate-800/10 p-5">
                 <h3 className="mb-3 text-sm font-semibold text-slate-300">Prize Pool</h3>
                 <div className="mb-4 grid gap-4 sm:grid-cols-2">
@@ -3646,18 +3671,13 @@ function BannersSection() {
 
   const handleAddBanner = async (e: React.FormEvent) => {
     e.preventDefault();
+    if (!imageFile) {
+      alert("Please upload a banner image");
+      return;
+    }
     setSubmitting(true);
     try {
-      let finalImageUrl = imageUrl.trim();
-      if (imageFile) {
-        finalImageUrl = await uploadImage(imageFile);
-      }
-      
-      if (!finalImageUrl) {
-        alert("Please provide an image URL or upload an image");
-        setSubmitting(false);
-        return;
-      }
+      const finalImageUrl = await uploadImage(imageFile);
       if (!linkUrl.trim()) {
         alert("Please provide a destination link URL");
         setSubmitting(false);
@@ -3706,7 +3726,7 @@ function BannersSection() {
       }
 
       if (!finalImageUrl) {
-        alert("Please provide an image URL or upload an image");
+        alert("Please upload a banner image");
         setSubmitting(false);
         return;
       }
@@ -3876,30 +3896,17 @@ function BannersSection() {
             <h3 className="mb-1 text-lg font-bold text-white">Add New Banner</h3>
             <p className="mb-6 text-sm text-slate-400">Configure promotional or navigation banner details.</p>
             <form onSubmit={handleAddBanner} className="space-y-4">
-              <div className="grid gap-4 sm:grid-cols-2">
-                <div>
-                  <label className="mb-2 block text-sm font-medium text-slate-300">Banner Image URL</label>
-                  <input
-                    type="text"
-                    value={imageUrl}
-                    onChange={(e) => setImageUrl(e.target.value)}
-                    placeholder="Paste Image URL"
-                    className="admin-input w-full rounded-xl px-4 py-3 text-white outline-none"
-                  />
-                  <span className="mt-1 block text-xs text-slate-500">Or use the uploader below</span>
-                </div>
-                <div>
-                  <label className="mb-2 block text-sm font-medium text-slate-300">Destination Link URL</label>
-                  <input
-                    type="text"
-                    value={linkUrl}
-                    onChange={(e) => setLinkUrl(e.target.value)}
-                    placeholder="e.g. https://youtube.com/..."
-                    required
-                    className="admin-input w-full rounded-xl px-4 py-3 text-white outline-none"
-                  />
-                  <span className="mt-1 block text-xs text-slate-500">URL to open when clicked</span>
-                </div>
+              <div>
+                <label className="mb-2 block text-sm font-medium text-slate-300">Destination Link URL</label>
+                <input
+                  type="text"
+                  value={linkUrl}
+                  onChange={(e) => setLinkUrl(e.target.value)}
+                  placeholder="e.g. https://youtube.com/..."
+                  required
+                  className="admin-input w-full rounded-xl px-4 py-3 text-white outline-none"
+                />
+                <span className="mt-1 block text-xs text-slate-500">URL to open when clicked</span>
               </div>
 
               <div className="grid gap-4 sm:grid-cols-2">
@@ -3977,18 +3984,6 @@ function BannersSection() {
             <p className="mb-6 text-sm text-slate-400">Update promotional banner details.</p>
             <form onSubmit={handleSaveEdit} className="space-y-4">
               <div>
-                <label className="mb-2 block text-sm font-medium text-slate-300">Banner Image URL</label>
-                <input
-                  type="text"
-                  value={editImageUrl}
-                  onChange={(e) => setEditImageUrl(e.target.value)}
-                  placeholder="Paste Image URL"
-                  className="admin-input w-full rounded-xl px-4 py-3 text-white outline-none"
-                />
-                <span className="mt-1 block text-xs text-slate-500">Or upload a new image below</span>
-              </div>
-
-              <div>
                 <label className="mb-2 block text-sm font-medium text-slate-300">Destination Link URL</label>
                 <input
                   type="text"
@@ -4010,6 +4005,7 @@ function BannersSection() {
                 onClear={() => {
                   setEditImageFile(null);
                   setEditPreviewUrl(null);
+                  setEditImageUrl("");
                 }}
               />
 
@@ -4065,6 +4061,8 @@ function ReferralsSection() {
   const [enabled, setEnabled] = useState(false);
   const [rewardCoins, setRewardCoins] = useState(0);
   const [bannerUrl, setBannerUrl] = useState("");
+  const [imageFile, setImageFile] = useState<File | null>(null);
+  const [previewUrl, setPreviewUrl] = useState<string | null>(null);
   const [savingSettings, setSavingSettings] = useState(false);
   const [loading, setLoading] = useState(true);
   const [referrals, setReferrals] = useState<any[]>([]);
@@ -4081,6 +4079,7 @@ function ReferralsSection() {
         setEnabled(data.enabled);
         setRewardCoins(data.rewardCoins);
         setBannerUrl(data.bannerUrl || "");
+        setPreviewUrl(data.bannerUrl || null);
       }
       if (referralsRes.ok) {
         setReferrals(await referralsRes.json());
@@ -4100,12 +4099,19 @@ function ReferralsSection() {
     e.preventDefault();
     setSavingSettings(true);
     try {
+      let finalBannerUrl = bannerUrl;
+      if (imageFile) {
+        finalBannerUrl = await uploadImage(imageFile);
+      }
       const res = await fetch("/api/admin/referral-settings", {
         method: "PATCH",
         headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ enabled, rewardCoins, bannerUrl }),
+        body: JSON.stringify({ enabled, rewardCoins, bannerUrl: finalBannerUrl }),
       });
       if (!res.ok) throw new Error(await res.text());
+      setBannerUrl(finalBannerUrl);
+      setPreviewUrl(finalBannerUrl || null);
+      setImageFile(null);
       alert("Referral settings updated successfully!");
     } catch (err: any) {
       alert("Failed to update settings: " + err.message);
@@ -4152,16 +4158,19 @@ function ReferralsSection() {
               placeholder="10"
             />
           </div>
-          <div>
-            <label className="mb-2 block text-sm font-medium text-slate-300">Referral Banner Image URL (Optional)</label>
-            <input
-              type="text"
-              value={bannerUrl}
-              onChange={(e) => setBannerUrl(e.target.value)}
-              className="admin-input w-full rounded-xl px-4 py-3 text-white outline-none"
-              placeholder="https://example.com/banner.png"
-            />
-          </div>
+          <ImageUpload
+            file={imageFile}
+            previewUrl={previewUrl}
+            onChange={(file) => {
+              setImageFile(file);
+              setPreviewUrl(URL.createObjectURL(file));
+            }}
+            onClear={() => {
+              setImageFile(null);
+              setPreviewUrl(null);
+              setBannerUrl("");
+            }}
+          />
           <button
             type="submit"
             disabled={savingSettings}

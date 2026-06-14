@@ -20,7 +20,7 @@ class HomeViewModel @Inject constructor(
     private val _modes = MutableStateFlow<List<GameMode>>(emptyList())
     val modes: StateFlow<List<GameMode>> = _modes.asStateFlow()
 
-    private val _announcementText = MutableStateFlow("🔥 Welcome to King Battle! Join daily Free Fire tournaments and win real coins! Fast withdrawals guaranteed! 🔥")
+    private val _announcementText = MutableStateFlow("")
     val announcementText: StateFlow<String> = _announcementText.asStateFlow()
 
     private val _banners = MutableStateFlow<List<com.kingbattle.domain.model.AppBanner>>(emptyList())

@@ -36,8 +36,9 @@ export function getStore() {
         scheduledAt: string,
         matchType: string,
         prizePool: { coinsPerKill: number; totalPrizePool?: number; rankRewards: { fromRank: number; toRank: number; coins: number }[] },
-        map?: string
-      ) => db.addMatch(gameModeId, title, entryFee, maxParticipants, scheduledAt, matchType, prizePool, map),
+        map?: string,
+        image?: string | null
+      ) => db.addMatch(gameModeId, title, entryFee, maxParticipants, scheduledAt, matchType, prizePool, map, image),
       getMatch: (id: string) => db.getMatch(id),
       joinMatch: (
         matchId: string,
@@ -129,8 +130,9 @@ export function getStore() {
       scheduledAt: string,
       matchType: string,
       prizePool: { coinsPerKill: number; totalPrizePool?: number; rankRewards: { fromRank: number; toRank: number; coins: number }[] },
-      map?: string
-    ) => Promise.resolve(adminStore.addMatch(gameModeId, title, entryFee, maxParticipants, scheduledAt, matchType as "solo" | "duo" | "squad", prizePool, map)),
+      map?: string,
+      image?: string | null
+    ) => Promise.resolve(adminStore.addMatch(gameModeId, title, entryFee, maxParticipants, scheduledAt, matchType as "solo" | "duo" | "squad", prizePool, map, image)),
     getMatch: (id: string) => Promise.resolve(adminStore.getMatch(id)).then((m) => (m ? { ...m, participants: adminStore.getParticipantsForMatch(id) } : null)),
     joinMatch: (
       matchId: string,

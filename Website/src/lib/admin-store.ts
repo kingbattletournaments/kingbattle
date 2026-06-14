@@ -182,9 +182,7 @@ function nextBannerId() {
   return `banner-${v}`;
 }
 
-const games: Game[] = globalForAdmin.adminStoreGames ?? (globalForAdmin.adminStoreGames = [
-  { id: "default-game-free-fire", name: "Free Fire", imageUrl: null }
-]);
+const games: Game[] = globalForAdmin.adminStoreGames ?? (globalForAdmin.adminStoreGames = []);
 const gameModes: GameMode[] = globalForAdmin.adminStoreGameModes ?? (globalForAdmin.adminStoreGameModes = []);
 const matches: Match[] = globalForAdmin.adminStoreMatches ?? (globalForAdmin.adminStoreMatches = []);
 const matchParticipantOrder: Record<string, string[]> = globalForAdmin.adminStoreMatchParticipantOrder ?? (globalForAdmin.adminStoreMatchParticipantOrder = {});
@@ -235,7 +233,7 @@ function nextWrId() {
 
 let depositQrUrl: string | null = null;
 let customerSupportUrl: string | null = globalForAdmin.customerSupportUrl ?? null;
-let announcementText: string | null = globalForAdmin.announcementText ?? "WITHDRAWAL COMPLETE IN 12 HOURS";
+let announcementText: string | null = globalForAdmin.announcementText ?? null;
 let bannerImageUrl: string | null = globalForAdmin.bannerImageUrl ?? "";
 
 const initialAdminPermissions: AdminPermission[] = [
@@ -259,7 +257,8 @@ let withdrawalChargePercent = globalForAdmin.withdrawalChargePercent ?? 0;
 let signupBonus = globalForAdmin.signupBonus ?? 0;
 
 // Seeding function to populate rich mockup data for testing the Admin panel
-function seedMockData() {
+function seedMockData() {}
+function seedMockDataDisabled() {
   if (appBanners.length === 0) {
     appBanners.push(
       {
@@ -651,7 +650,8 @@ export const adminStore = {
     scheduledAt: string,
     matchType: MatchType = "solo",
     prizePool: PrizePool = defaultPrizePool,
-    map: string = "BERMUDA"
+    map: string = "BERMUDA",
+    image?: string | null
   ) => {
     const id = `match${matchIdCounter++}`;
     globalForAdmin.matchIdCounter = matchIdCounter;
@@ -671,7 +671,7 @@ export const adminStore = {
       matchType,
       prizePool,
       map,
-      image: randomPoster,
+      image: image || randomPoster,
     });
     return matches[matches.length - 1];
   },

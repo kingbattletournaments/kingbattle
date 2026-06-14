@@ -109,7 +109,6 @@ fun SignInScreen(
     val errorMessage = viewModel.errorMessage.collectAsState()
 
     val context = LocalContext.current
-    var showMockSignInSheet by remember { mutableStateOf(false) }
 
     // Google Sign-In setup
     val gso = remember {
@@ -139,8 +138,7 @@ fun SignInScreen(
             }
         } catch (e: Exception) {
             e.printStackTrace()
-            // If API keys or SHA-1 signatures are not configured, fallback to offline mock account selector dialog
-            showMockSignInSheet = true
+            Toast.makeText(context, "Google Sign-In error: ${e.localizedMessage}", Toast.LENGTH_LONG).show()
         }
     }
 
@@ -283,7 +281,7 @@ fun SignInScreen(
                             googleSignInLauncher.launch(signInIntent)
                         } catch (e: Exception) {
                             e.printStackTrace()
-                            showMockSignInSheet = true
+                            Toast.makeText(context, "Google Sign-In launcher error: ${e.localizedMessage}", Toast.LENGTH_LONG).show()
                         }
                     },
                 shape = RoundedCornerShape(8.dp),
@@ -329,93 +327,4 @@ fun SignInScreen(
         }
     }
 
-    // Mock Google account dialog
-    if (showMockSignInSheet) {
-        AlertDialog(
-            onDismissRequest = { showMockSignInSheet = false },
-            title = {
-                Text(
-                    text = "Continue with Google",
-                    color = TextWhite,
-                    fontSize = 18.sp,
-                    fontWeight = FontWeight.Bold
-                )
-            },
-            text = {
-                Column(
-                    verticalArrangement = Arrangement.spacedBy(12.dp),
-                    modifier = Modifier.fillMaxWidth()
-                ) {
-                    Text(
-                        text = "Choose an account to continue to King Battle:",
-                        color = TextMuted,
-                        fontSize = 13.sp,
-                        modifier = Modifier.padding(bottom = 4.dp)
-                    )
-
-                    val mockAccounts = listOf(
-                        Pair("test.user@gmail.com", "Test User"),
-                        Pair("shrikanth.ff@gmail.com", "shrikanth"),
-                        Pair("veduboss.play@gmail.com", "veduboss"),
-                        Pair("anubhav.gamer@gmail.com", "ANUBHAV")
-                    )
-
-                    mockAccounts.forEach { (email, name) ->
-                        Card(
-                            modifier = Modifier
-                                .fillMaxWidth()
-                                .clickable {
-                                    showMockSignInSheet = false
-                                    // Generate mock ID token payload with user details
-                                    val mockPayloadJson = """{"sub":"mock-${email.substringBefore("@")}","email":"$email","name":"$name","picture":"https://lh3.googleusercontent.com/a/default-user"}"""
-                                    val base64Payload = android.util.Base64.encodeToString(mockPayloadJson.toByteArray(Charsets.UTF_8), android.util.Base64.NO_WRAP or android.util.Base64.URL_SAFE)
-                                    val mockIdToken = "header.$base64Payload.signature"
-
-                                    viewModel.signInWithGoogle(mockIdToken, onSuccess = onSignInSuccess, onError = { err ->
-                                        Toast.makeText(context, err, Toast.LENGTH_LONG).show()
-                                    })
-                                },
-                            colors = CardDefaults.cardColors(containerColor = ThemeCardBg),
-                            border = BorderStroke(1.dp, ThemeBorderColor),
-                            shape = RoundedCornerShape(8.dp)
-                        ) {
-                            Row(
-                                modifier = Modifier
-                                    .fillMaxWidth()
-                                    .padding(12.dp),
-                                verticalAlignment = Alignment.CenterVertically
-                            ) {
-                                Box(
-                                    modifier = Modifier
-                                        .size(36.dp)
-                                        .background(Color.White.copy(alpha = 0.1f), RoundedCornerShape(50))
-                                        .padding(8.dp),
-                                    contentAlignment = Alignment.Center
-                                ) {
-                                    Text(
-                                        text = name.first().uppercase(),
-                                        color = AccentOrange,
-                                        fontSize = 16.sp,
-                                        fontWeight = FontWeight.Bold
-                                    )
-                                }
-                                Spacer(modifier = Modifier.width(12.dp))
-                                Column {
-                                    Text(text = name, color = TextWhite, fontSize = 14.sp, fontWeight = FontWeight.Bold)
-                                    Text(text = email, color = TextMuted, fontSize = 11.sp)
-                                }
-                            }
-                        }
-                    }
-                }
-            },
-            confirmButton = {},
-            dismissButton = {
-                TextButton(onClick = { showMockSignInSheet = false }) {
-                    Text("Cancel", color = TextMuted)
-                }
-            },
-            containerColor = ThemeCardBg
-        )
-    }
 }
