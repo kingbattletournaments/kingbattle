@@ -249,9 +249,9 @@ fun WalletScreen(
 
         // Withdraw Coins Dialog
         if (showWithdrawCoinsDialog) {
-            val currentCoins = userState.value?.coins ?: 0
+            val withdrawableCoins = userState.value?.won_coins ?: 0
             WithdrawCoinsDialog(
-                userCoins = currentCoins,
+                userCoins = withdrawableCoins,
                 chargePercent = withdrawalChargeState.value,
                 onDismiss = { showWithdrawCoinsDialog = false },
                 onSubmit = { amount, upiId ->
@@ -813,7 +813,7 @@ fun WithdrawCoinsDialog(
                             modifier = Modifier.fillMaxWidth(),
                             horizontalArrangement = Arrangement.SpaceBetween
                         ) {
-                            Text("Your Balance:", color = TextMuted, fontSize = 12.sp)
+                            Text("Withdrawable Balance:", color = TextMuted, fontSize = 12.sp)
                             Text("$userCoins coins", color = Color.White, fontSize = 12.sp, fontWeight = FontWeight.Bold)
                         }
                         Row(

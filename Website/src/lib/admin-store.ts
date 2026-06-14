@@ -48,6 +48,7 @@ export type User = {
   email: string;
   displayName: string;
   coins: number;
+  wonCoins: number;
   isBlocked?: boolean;
   lifetimeEarnedPoints?: number;
   matchesPlayed?: number;
@@ -296,54 +297,62 @@ function seedMockData() {
   if (users.length === 0) {
     const user1PasswordHash = bcrypt.hashSync("password123", 10);
     const user1: User & { passwordHash?: string } = {
-      id: "10001",
+      id: "amit",
       email: "amit@example.com",
       displayName: "Amit Sharma",
       coins: 150,
+      wonCoins: 50,
       isBlocked: false,
       passwordHash: user1PasswordHash,
       lifetimeEarnedPoints: 50,
       matchesPlayed: 5,
       totalKills: 12,
+      username: "amit",
       avatarUrl: "https://lh3.googleusercontent.com/a/ACg8ocL_3a8h8k3",
       createdAt: new Date(Date.now() - 5 * 24 * 60 * 60 * 1000).toISOString(),
     };
     const user2: User & { passwordHash?: string } = {
-      id: "10002",
+      id: "rahul",
       email: "rahul@example.com",
       displayName: "Rahul Verma",
       coins: 25,
+      wonCoins: 0,
       isBlocked: true,
       passwordHash: user1PasswordHash,
       lifetimeEarnedPoints: 10,
       matchesPlayed: 2,
       totalKills: 3,
+      username: "rahul",
       avatarUrl: "https://lh3.googleusercontent.com/a/ACg8ocL_2d9i9x4",
       createdAt: new Date(Date.now() - 4 * 24 * 60 * 60 * 1000).toISOString(),
     };
     const user3: User & { passwordHash?: string } = {
-      id: "10003",
+      id: "sunita",
       email: "sunita@example.com",
       displayName: "Sunita Patel",
       coins: 500,
+      wonCoins: 100,
       isBlocked: false,
       passwordHash: user1PasswordHash,
       lifetimeEarnedPoints: 200,
       matchesPlayed: 15,
       totalKills: 45,
+      username: "sunita",
       avatarUrl: "https://lh3.googleusercontent.com/a/ACg8ocL_8s2k1w2",
       createdAt: new Date(Date.now() - 10 * 24 * 60 * 60 * 1000).toISOString(),
     };
     const user4: User & { passwordHash?: string } = {
-      id: "10004",
+      id: "vikram",
       email: "vikram@example.com",
       displayName: "Vikram Singh",
       coins: 0,
+      wonCoins: 0,
       isBlocked: false,
       passwordHash: user1PasswordHash,
       lifetimeEarnedPoints: 0,
       matchesPlayed: 0,
       totalKills: 0,
+      username: "vikram",
       avatarUrl: "https://lh3.googleusercontent.com/a/ACg8ocL_7a3b4c5",
       createdAt: new Date(Date.now() - 1 * 24 * 60 * 60 * 1000).toISOString(),
     };
@@ -352,7 +361,7 @@ function seedMockData() {
     coinTransactions.push(
       {
         id: "tx-1",
-        userId: "10001",
+        userId: "amit",
         amount: 100,
         type: "deposit",
         referenceId: "UTR1234567890",
@@ -361,7 +370,7 @@ function seedMockData() {
       },
       {
         id: "tx-2",
-        userId: "10003",
+        userId: "sunita",
         amount: 500,
         type: "deposit",
         referenceId: "UTR9998887776",
@@ -370,7 +379,7 @@ function seedMockData() {
       },
       {
         id: "tx-3",
-        userId: "10001",
+        userId: "amit",
         amount: -50,
         type: "withdraw",
         referenceId: "amit@upi",
@@ -482,21 +491,21 @@ function seedMockData() {
       {
         id: "mp-1",
         matchId: "match-101",
-        userId: "10001",
+        userId: "amit",
         teamMembers: [{ inGameName: "AmitFF", inGameUid: "987654321", kills: 0 }],
         joinedAt: new Date(Date.now() - 1 * 60 * 60 * 1000).toISOString(),
       },
       {
         id: "mp-2",
         matchId: "match-101",
-        userId: "10003",
+        userId: "sunita",
         teamMembers: [{ inGameName: "SunitaGamer", inGameUid: "123456789", kills: 0 }],
         joinedAt: new Date(Date.now() - 30 * 60 * 1000).toISOString(),
       },
       {
         id: "mp-3",
         matchId: "match-102",
-        userId: "10001",
+        userId: "amit",
         teamMembers: [{ inGameName: "AmitFF", inGameUid: "987654321", kills: 2 }],
         joinedAt: new Date(Date.now() - 45 * 60 * 1000).toISOString(),
         rank: 12,
@@ -504,7 +513,7 @@ function seedMockData() {
       {
         id: "mp-4",
         matchId: "match-102",
-        userId: "10003",
+        userId: "sunita",
         teamMembers: [{ inGameName: "SunitaGamer", inGameUid: "123456789", kills: 5 }],
         joinedAt: new Date(Date.now() - 40 * 60 * 1000).toISOString(),
       }
@@ -515,7 +524,7 @@ function seedMockData() {
     depositRequests.push(
       {
         id: "dr-1001",
-        userId: "10001",
+        userId: "amit",
         amount: 100,
         utr: "UTR1234567890",
         status: "accepted",
@@ -523,7 +532,7 @@ function seedMockData() {
       },
       {
         id: "dr-1002",
-        userId: "10003",
+        userId: "sunita",
         amount: 500,
         utr: "UTR9998887776",
         status: "accepted",
@@ -531,7 +540,7 @@ function seedMockData() {
       },
       {
         id: "dr-1003",
-        userId: "10004",
+        userId: "vikram",
         amount: 50,
         utr: "UTR0000000000",
         status: "rejected",
@@ -539,7 +548,7 @@ function seedMockData() {
       },
       {
         id: "dr-1004",
-        userId: "10001",
+        userId: "amit",
         amount: 75,
         utr: "UTR2223334445",
         status: "pending",
@@ -552,7 +561,7 @@ function seedMockData() {
     withdrawalRequests.push(
       {
         id: "wr-1001",
-        userId: "10001",
+        userId: "amit",
         amount: 50,
         upiId: "amit@upi",
         status: "accepted",
@@ -561,7 +570,7 @@ function seedMockData() {
       },
       {
         id: "wr-1002",
-        userId: "10003",
+        userId: "sunita",
         amount: 200,
         upiId: "sunita@upi",
         status: "pending",
@@ -722,7 +731,7 @@ export const adminStore = {
       if (coins > 0) {
         const u = users.find((x) => x.id === p.userId);
         if (u) {
-          u.coins += coins;
+          u.wonCoins += coins;
           u.lifetimeEarnedPoints = (u.lifetimeEarnedPoints ?? 0) + coins;
           coinTransactions.push({
             id: nextTxId(),
@@ -789,7 +798,7 @@ export const adminStore = {
       }
     }
 
-    const id = generateUniqueUserId();
+    const id = finalUsername;
     const bonus = signupBonus;
     const passwordHash = bcrypt.hashSync(password, 10);
     const user: User & { passwordHash?: string } = {
@@ -797,6 +806,7 @@ export const adminStore = {
       email,
       displayName,
       coins: bonus,
+      wonCoins: 0,
       isBlocked: false,
       passwordHash,
       lifetimeEarnedPoints: 0,
@@ -951,8 +961,8 @@ export const adminStore = {
   },
   addWithdrawalRequest: (userId: string, amount: number, upiId: string) => {
     const u = users.find((x) => x.id === userId);
-    if (!u || u.coins < amount) return null;
-    u.coins -= amount;
+    if (!u || u.wonCoins < amount) return null;
+    u.wonCoins -= amount;
     const id = nextWrId();
     const req: WithdrawalRequest = {
       id,
@@ -994,7 +1004,7 @@ export const adminStore = {
     req.status = "rejected";
     req.rejectNote = note;
     const u = users.find((x) => x.id === req.userId);
-    if (u) u.coins += req.amount;
+    if (u) u.wonCoins += req.amount;
     coinTransactions.push({
       id: nextTxId(),
       userId: req.userId,
@@ -1096,7 +1106,8 @@ export const adminStore = {
     const u = users.find((x) => x.id === appUserId);
     if (!u) return { error: "User not found" };
     if (u.isBlocked) return { error: "Account is blocked" };
-    if (u.coins < m.entryFee) return { error: "Insufficient coins" };
+    const totalBalance = u.coins + u.wonCoins;
+    if (totalBalance < m.entryFee) return { error: "Insufficient coins" };
     const existing = matchParticipants.find((p) => p.matchId === matchId && p.userId === appUserId);
     if (existing) return { error: "Already registered" };
     const participants = matchParticipants.filter((p) => p.matchId === matchId);
@@ -1112,7 +1123,16 @@ export const adminStore = {
       joinedAt: new Date().toISOString(),
     });
     if (m.entryFee > 0) {
-      u.coins -= m.entryFee;
+      let deductCoins = 0;
+      let deductWonCoins = 0;
+      if (u.coins >= m.entryFee) {
+        deductCoins = m.entryFee;
+      } else {
+        deductCoins = u.coins;
+        deductWonCoins = m.entryFee - deductCoins;
+      }
+      u.coins -= deductCoins;
+      u.wonCoins -= deductWonCoins;
       coinTransactions.push({
         id: nextTxId(),
         userId: appUserId,

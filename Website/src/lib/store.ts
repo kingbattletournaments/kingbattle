@@ -160,7 +160,7 @@ export function getStore() {
     addUser: (email: string, displayName: string, password: string, username?: string, referredBy?: string) => Promise.resolve(adminStore.addUser(email, displayName, password, username, referredBy)),
     signInUser: (email: string, password: string) => Promise.resolve(adminStore.signInUser(email, password)),
     syncGoogleUser: (id: string, email: string, displayName: string, avatarUrl: string) => {
-      const existing = adminStore.users().find((u) => u.id === id);
+      const existing = adminStore.users().find((u) => u.email?.toLowerCase() === email.toLowerCase());
       if (existing) {
         existing.displayName = displayName;
         existing.avatarUrl = avatarUrl;
@@ -175,7 +175,6 @@ export function getStore() {
       }
       return Promise.resolve(adminStore.addUser(email, displayName, "google-auth-no-password", username)).then((u) => {
         if (u) {
-          u.id = id;
           u.avatarUrl = avatarUrl;
         }
         return u;

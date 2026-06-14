@@ -33,6 +33,8 @@ data class User(
     @SerializedName("in_game_uid", alternate = ["inGameUid"])
     val in_game_uid: String? = null,
     val coins: Int,
+    @SerializedName("wonCoins", alternate = ["won_coins"])
+    val won_coins: Int = 0,
     @SerializedName("lifetime_earned_points", alternate = ["lifetimeEarnedPoints"])
     val lifetime_earned_points: Int = 0,
     @SerializedName("matches_played", alternate = ["matchesPlayed"])

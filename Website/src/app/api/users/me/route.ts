@@ -15,6 +15,8 @@ export async function GET() {
     email: user.email,
     displayName: user.displayName,
     coins: user.coins,
+    wonCoins: user.wonCoins ?? 0,
+    won_coins: user.wonCoins ?? 0,
     isBlocked: user.isBlocked,
     lifetimeEarnedPoints: user.lifetimeEarnedPoints ?? 0,
     matchesPlayed: user.matchesPlayed ?? 0,

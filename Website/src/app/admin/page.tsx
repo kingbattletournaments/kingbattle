@@ -4,7 +4,7 @@ import { useState, useEffect, useRef, useCallback } from "react";
 import { useRouter } from "next/navigation";
 import { LoadingSpinner } from "@/components/ui";
 
-type Tab = "dashboard" | "modes" | "moneyorders" | "withdrawals" | "admins" | "notifications" | "appsettings" | "banners" | "referrals";
+type Tab = "dashboard" | "modes" | "moneyorders" | "withdrawals" | "admins" | "notifications" | "appsettings" | "banners" | "referrals" | "users";
 type Game = { id: string; name: string; imageUrl: string | null };
 type GameMode = { id: string; gameId: string; name: string; imageUrl: string | null };
 type MatchType = "solo" | "duo" | "squad";
@@ -24,7 +24,7 @@ type Match = {
   scheduledAt?: string;
   maxParticipants?: number;
 };
-type User = { id: string; email: string; displayName: string; coins: number; isBlocked?: boolean };
+type User = { id: string; email: string; displayName: string; coins: number; wonCoins?: number; isBlocked?: boolean; username?: string };
 
 type AdminSession = {
   id: string;
@@ -69,6 +69,7 @@ export default function AdminPage() {
       visibleTabs.push({ id: "admins", label: "Admin", icon: "👥" });
     }
     if (session.isMasterAdmin || session.usersAccess) {
+      visibleTabs.push({ id: "users", label: "Users", icon: "👤" });
       visibleTabs.push({ id: "notifications", label: "Push Notifications", icon: "📢" });
     }
     if (session.isMasterAdmin) {
@@ -99,6 +100,7 @@ export default function AdminPage() {
     }
     if (session.isMasterAdmin || session.usersAccess) {
       validTabs.push("notifications");
+      validTabs.push("users");
     }
     setTab((prev) => (validTabs.length > 0 && !validTabs.includes(prev) ? "dashboard" : prev));
   }, [session]);
@@ -328,6 +330,14 @@ export default function AdminPage() {
 
               {tab === "referrals" && (
                 <ReferralsSection />
+              )}
+
+              {tab === "users" && (session?.isMasterAdmin || session?.usersAccess) && (
+                <UsersSection
+                  users={users}
+                  canAddCoins={!!session?.coinsAccess}
+                  onSuccess={() => { fetchData(false); showMsg("ok", "Users list updated"); }}
+                />
               )}
             </>
           )}
@@ -2061,365 +2071,124 @@ function UsersSection({
 }) {
   const [selectedUser, setSelectedUser] = useState<User | null>(null);
   const [usersTab, setUsersTab] = useState<"all" | "blocked">("all");
-  const [signupBonus, setSignupBonus] = useState(0);
-  const [signupBonusInput, setSignupBonusInput] = useState("");
-  const [savingBonus, setSavingBonus] = useState(false);
-  const [supportUrl, setSupportUrl] = useState("");
-  const [supportUrlInput, setSupportUrlInput] = useState("");
-  const [savingSupport, setSavingSupport] = useState(false);
-  
-  const [announcementText, setAnnouncementText] = useState("");
-  const [announcementInput, setAnnouncementInput] = useState("");
-  const [savingAnnouncement, setSavingAnnouncement] = useState(false);
+  const [searchQuery, setSearchQuery] = useState("");
 
-  const [bannerImageUrl, setBannerImageUrl] = useState("");
-  const [bannerInput, setBannerInput] = useState("");
-  const [savingBanner, setSavingBanner] = useState(false);
-  const [uploadingBanner, setUploadingBanner] = useState(false);
-
-  const filteredUsers = usersTab === "blocked" ? users.filter((u) => u.isBlocked) : users;
-
-  const fetchAnnouncement = useCallback(async () => {
-    try {
-      const res = await fetch("/api/admin/announcement");
-      if (res.ok) {
-        const { announcementText: text } = await res.json();
-        setAnnouncementText(text || "");
-        setAnnouncementInput(text || "");
-      }
-    } catch {}
-  }, []);
-
-  const fetchBannerImageUrl = useCallback(async () => {
-    try {
-      const res = await fetch("/api/admin/banner");
-      if (res.ok) {
-        const { bannerImageUrl: url } = await res.json();
-        setBannerImageUrl(url || "");
-        setBannerInput(url || "");
-      }
-    } catch {}
-  }, []);
-
-  const fetchSignupBonus = useCallback(async () => {
-    try {
-      const res = await fetch("/api/admin/signup-bonus");
-      if (res.ok) {
-        const { signupBonus: bonus } = await res.json();
-        setSignupBonus(bonus);
-        setSignupBonusInput(String(bonus));
-      }
-    } catch {
-      setSignupBonusInput("0");
-    }
-  }, []);
-
-  const fetchSupportUrl = useCallback(async () => {
-    try {
-      const res = await fetch("/api/admin/customer-support");
-      if (res.ok) {
-        const { url } = await res.json();
-        setSupportUrl(url || "");
-        setSupportUrlInput(url || "");
-      }
-    } catch {
-      setSupportUrlInput("");
-    }
-  }, []);
-
-  useEffect(() => {
-    fetchSignupBonus();
-  }, [fetchSignupBonus]);
-
-  useEffect(() => {
-    fetchSupportUrl();
-  }, [fetchSupportUrl]);
-
-  useEffect(() => {
-    fetchAnnouncement();
-  }, [fetchAnnouncement]);
-
-  useEffect(() => {
-    fetchBannerImageUrl();
-  }, [fetchBannerImageUrl]);
-
-  const handleSaveAnnouncement = async () => {
-    const text = announcementInput.trim();
-    setSavingAnnouncement(true);
-    try {
-      const res = await fetch("/api/admin/announcement", {
-        method: "PATCH",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ announcementText: text }),
-      });
-      if (!res.ok) throw new Error(await res.text());
-      const { announcementText: saved } = await res.json();
-      setAnnouncementText(saved || "");
-      setAnnouncementInput(saved || "");
-      onSuccess();
-    } catch (err) {
-      alert(err instanceof Error ? err.message : "Failed to save");
-    } finally {
-      setSavingAnnouncement(false);
-    }
-  };
-
-  const handleSaveBanner = async () => {
-    const url = bannerInput.trim();
-    setSavingBanner(true);
-    try {
-      const res = await fetch("/api/admin/banner", {
-        method: "PATCH",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ bannerImageUrl: url }),
-      });
-      if (!res.ok) throw new Error(await res.text());
-      const { bannerImageUrl: saved } = await res.json();
-      setBannerImageUrl(saved || "");
-      setBannerInput(saved || "");
-      onSuccess();
-    } catch (err) {
-      alert(err instanceof Error ? err.message : "Failed to save");
-    } finally {
-      setSavingBanner(false);
-    }
-  };
-
-  const handleBannerUpload = async (e: React.ChangeEvent<HTMLInputElement>) => {
-    const file = e.target.files?.[0];
-    if (!file) return;
-    setUploadingBanner(true);
-    try {
-      const url = await uploadImage(file);
-      setBannerInput(url);
-    } catch (err) {
-      alert(err instanceof Error ? err.message : "Upload failed");
-    } finally {
-      setUploadingBanner(false);
-    }
-  };
-
-  const handleSaveSignupBonus = async () => {
-    const num = Number(signupBonusInput);
-    if (isNaN(num) || num < 0) {
-      alert("Enter a valid amount (0 or greater)");
-      return;
-    }
-    setSavingBonus(true);
-    try {
-      const res = await fetch("/api/admin/signup-bonus", {
-        method: "PATCH",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ signupBonus: num }),
-      });
-      if (!res.ok) throw new Error(await res.text());
-      const { signupBonus: bonus } = await res.json();
-      setSignupBonus(bonus);
-      setSignupBonusInput(String(bonus));
-      onSuccess();
-    } catch (err) {
-      alert(err instanceof Error ? err.message : "Failed to save");
-    } finally {
-      setSavingBonus(false);
-    }
-  };
-
-  const handleSaveSupportUrl = async () => {
-    const trimmed = supportUrlInput.trim();
-    setSavingSupport(true);
-    try {
-      const res = await fetch("/api/admin/customer-support", {
-        method: "PATCH",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ url: trimmed || null }),
-      });
-      if (!res.ok) throw new Error(await res.text());
-      const { url } = await res.json();
-      setSupportUrl(url || "");
-      setSupportUrlInput(url || "");
-      onSuccess();
-    } catch (err) {
-      alert(err instanceof Error ? err.message : "Failed to save");
-    } finally {
-      setSavingSupport(false);
-    }
-  };
+  const searchTrimmed = searchQuery.trim().toLowerCase();
+  const filteredUsers = users
+    .filter((u) => (usersTab === "blocked" ? u.isBlocked : true))
+    .filter((u) => {
+      if (!searchTrimmed) return true;
+      const username = (u.username || u.id).toLowerCase();
+      const displayName = u.displayName.toLowerCase();
+      return username.includes(searchTrimmed) || displayName.includes(searchTrimmed);
+    });
 
   return (
     <div className="space-y-6">
-      <section className="admin-card rounded-2xl p-6 sm:p-8">
-        <h3 className="mb-2 text-sm font-medium text-slate-300">Customer Support Button</h3>
-        <p className="mb-4 text-xs text-slate-400">
-          The &quot;Support&quot; button in the user app header will link here. Use WhatsApp (e.g. https://wa.me/919876543210), Telegram (e.g. https://t.me/yourusername), or any URL. Leave empty to hide the button.
+      <div>
+        <h1 className="text-2xl font-bold text-white mb-1">Users List</h1>
+        <p className="text-slate-400 text-sm">
+          View registered users, normal balances, win balances, block/unblock, and add coins.
         </p>
-        <div className="flex flex-col gap-3 sm:flex-row sm:items-center sm:gap-4">
-          <input
-            type="url"
-            value={supportUrlInput}
-            onChange={(e) => setSupportUrlInput(e.target.value)}
-            placeholder="https://wa.me/919876543210 or https://t.me/username"
-            className="admin-input min-w-0 flex-1 rounded-lg px-3 py-2 text-sm text-white placeholder-slate-500"
-          />
-          <button
-            type="button"
-            onClick={handleSaveSupportUrl}
-            disabled={savingSupport}
-            className="rounded-lg bg-green-600 px-4 py-2 text-sm font-medium text-white hover:bg-green-500 disabled:opacity-50"
-          >
-            {savingSupport ? "Saving..." : "Save"}
-          </button>
-        </div>
-      </section>
-      <section className="admin-card rounded-2xl p-6 sm:p-8">
-        <h3 className="mb-2 text-sm font-medium text-slate-300">Signup Bonus</h3>
-        <p className="mb-4 text-xs text-slate-400">
-          New accounts registered after saving will receive this many coins with note &quot;Signup bonus&quot;.
-        </p>
-        <div className="flex flex-col gap-3 sm:flex-row sm:items-center sm:gap-4">
-          <div className="flex items-center gap-2">
-            <input
-              type="number"
-              min="0"
-              value={signupBonusInput}
-              onChange={(e) => setSignupBonusInput(e.target.value)}
-              placeholder="0"
-              className="admin-input w-24 rounded-lg px-3 py-2 text-sm text-white"
-            />
-            <span className="text-sm text-slate-400">coins</span>
-          </div>
-          <button
-            type="button"
-            onClick={handleSaveSignupBonus}
-            disabled={savingBonus}
-            className="rounded-lg bg-green-600 px-4 py-2 text-sm font-medium text-white hover:bg-green-500 disabled:opacity-50"
-          >
-            {savingBonus ? "Saving..." : "Save"}
-          </button>
-        </div>
-      </section>
-      <section className="admin-card rounded-2xl p-6 sm:p-8">
-        <h3 className="mb-2 text-sm font-medium text-slate-300">Announcement Bar Text</h3>
-        <p className="mb-4 text-xs text-slate-400">
-          Set the text for the marquee announcement bar at the top of the user app.
-        </p>
-        <div className="flex flex-col gap-3 sm:flex-row sm:items-center sm:gap-4">
-          <input
-            type="text"
-            value={announcementInput}
-            onChange={(e) => setAnnouncementInput(e.target.value)}
-            placeholder="WITHDRAWAL COMPLETE IN 12 HOURS"
-            className="admin-input min-w-0 flex-1 rounded-lg px-3 py-2 text-sm text-white placeholder-slate-500"
-          />
-          <button
-            type="button"
-            onClick={handleSaveAnnouncement}
-            disabled={savingAnnouncement}
-            className="rounded-lg bg-green-600 px-4 py-2 text-sm font-medium text-white hover:bg-green-500 disabled:opacity-50"
-          >
-            {savingAnnouncement ? "Saving..." : "Save"}
-          </button>
-        </div>
-      </section>
-      <section className="admin-card rounded-2xl p-6 sm:p-8">
-        <h3 className="mb-2 text-sm font-medium text-slate-300">App Home Banner Image</h3>
-        <p className="mb-4 text-xs text-slate-400 font-medium">
-          Upload an image or paste a URL to show in the home screen banner.
-        </p>
-        <div className="space-y-4">
-          <div className="flex flex-col gap-3 sm:flex-row sm:items-center sm:gap-4">
-            <input
-              type="text"
-              value={bannerInput}
-              onChange={(e) => setBannerInput(e.target.value)}
-              placeholder="https://example.com/banner.png"
-              className="admin-input min-w-0 flex-1 rounded-lg px-3 py-2 text-sm text-white placeholder-slate-500"
-            />
-            <button
-              type="button"
-              onClick={handleSaveBanner}
-              disabled={savingBanner}
-              className="rounded-lg bg-green-600 px-4 py-2 text-sm font-medium text-white hover:bg-green-500 disabled:opacity-50"
-            >
-              {savingBanner ? "Saving..." : "Save"}
-            </button>
-          </div>
-          <div className="flex items-center gap-3">
-            <label className="cursor-pointer rounded-lg bg-slate-700/50 px-4 py-2 text-sm text-slate-300 hover:bg-slate-600/50">
-              {uploadingBanner ? "Uploading..." : "Upload Image"}
-              <input
-                type="file"
-                accept="image/*"
-                className="hidden"
-                disabled={uploadingBanner}
-                onChange={handleBannerUpload}
-              />
-            </label>
-            {bannerInput && (
-              <a href={bannerInput} target="_blank" rel="noreferrer" className="text-xs text-green-400 hover:underline">
-                Preview current image
-              </a>
-            )}
-          </div>
-        </div>
-      </section>
-    <section className="admin-card rounded-2xl p-6 sm:p-8">
-      <div className="mb-5 flex flex-wrap items-center justify-between gap-4">
-        <div>
-          <h2 className="text-base font-semibold text-white/90">Users</h2>
-          <p className="text-sm text-slate-400">
-            {usersTab === "all" ? users.length : filteredUsers.length} {usersTab === "blocked" ? "blocked" : ""} users
-          </p>
-        </div>
-        <div className="flex gap-2">
+      </div>
+
+      <div className="flex flex-col gap-4 sm:flex-row sm:items-center sm:justify-between">
+        <div className="flex bg-slate-800/60 p-1 rounded-xl border border-slate-700/50 w-fit">
           {(["all", "blocked"] as const).map((t) => (
             <button
               key={t}
               type="button"
               onClick={() => setUsersTab(t)}
-              className={`rounded-full px-4 py-2 text-sm font-medium ${
-                usersTab === t
-                  ? "bg-green-600/80 text-white"
-                  : "bg-slate-700/50 text-slate-400 hover:bg-slate-600/50"
+              className={`px-4 py-2 rounded-lg text-sm font-semibold transition ${
+                usersTab === t ? "bg-green-600 text-white" : "text-slate-400 hover:text-slate-200"
               }`}
             >
-              {t.charAt(0).toUpperCase() + t.slice(1)}
+              {t === "all" ? "All Users" : "Blocked Only"}
             </button>
           ))}
         </div>
+
+        <input
+          type="text"
+          placeholder="Search by username..."
+          value={searchQuery}
+          onChange={(e) => setSearchQuery(e.target.value)}
+          className="admin-input rounded-xl px-4 py-2.5 text-sm w-full sm:w-72 outline-none"
+        />
       </div>
-      <ul className="space-y-2">
-        {filteredUsers.map((u) => (
-          <li
-            key={u.id}
-            role="button"
-            tabIndex={0}
-            onClick={() => setSelectedUser(u)}
-            onKeyDown={(e) => e.key === "Enter" && setSelectedUser(u)}
-            className="admin-list-item flex cursor-pointer items-center justify-between rounded-xl px-4 py-3.5 transition hover:border-green-500/30"
-          >
-            <div className="min-w-0 flex-1">
-              <div className="font-medium text-white">{u.displayName}</div>
-              <div className="mt-0.5 truncate text-xs text-slate-500">{u.id}</div>
-            </div>
-            <span className="ml-3 shrink-0 rounded-lg bg-amber-500/20 px-3 py-1 font-medium text-amber-300">
-              {u.coins} coins
-            </span>
-          </li>
-        ))}
-      </ul>
+
+      <section className="admin-card rounded-2xl p-6 sm:p-8">
+        {filteredUsers.length === 0 ? (
+          <p className="py-12 text-center text-sm text-slate-400">No users found</p>
+        ) : (
+          <div className="overflow-x-auto">
+            <table className="w-full text-left border-collapse">
+              <thead>
+                <tr className="border-b border-slate-800 text-xs font-semibold uppercase tracking-wider text-slate-500">
+                  <th className="pb-3 pl-2">Display Name</th>
+                  <th className="pb-3">Username</th>
+                  <th className="pb-3 text-right">Normal Coins</th>
+                  <th className="pb-3 text-right">Win Coins</th>
+                  <th className="pb-3 text-right">Total Coins</th>
+                  <th className="pb-3 text-center">Status</th>
+                  <th className="pb-3 text-right pr-2">Action</th>
+                </tr>
+              </thead>
+              <tbody className="divide-y divide-slate-800/40 text-sm text-slate-300">
+                {filteredUsers.map((u) => {
+                  const winCoins = u.wonCoins ?? 0;
+                  const normalCoins = Math.max(0, u.coins - winCoins);
+                  return (
+                    <tr key={u.id} className="hover:bg-white/[0.01]">
+                      <td className="py-4 pl-2 font-semibold text-white">{u.displayName}</td>
+                      <td className="py-4 font-mono text-slate-400">{u.username || u.id}</td>
+                      <td className="py-4 text-right font-medium text-amber-300">💵 {normalCoins}</td>
+                      <td className="py-4 text-right font-medium text-emerald-400">💵 {winCoins}</td>
+                      <td className="py-4 text-right font-bold text-white">💵 {u.coins}</td>
+                      <td className="py-4 text-center">
+                        <span
+                          className={`inline-block px-2.5 py-1 text-xs font-semibold rounded-full ${
+                            u.isBlocked
+                              ? "bg-rose-500/20 text-rose-300 border border-rose-500/20"
+                              : "bg-emerald-500/20 text-emerald-300 border border-emerald-500/20"
+                          }`}
+                        >
+                          {u.isBlocked ? "Blocked" : "Active"}
+                        </span>
+                      </td>
+                      <td className="py-4 text-right pr-2">
+                        <button
+                          type="button"
+                          onClick={() => setSelectedUser(u)}
+                          className="bg-slate-800 hover:bg-slate-700 text-slate-300 rounded-lg px-3 py-1.5 text-xs font-medium transition"
+                        >
+                          View Profile
+                        </button>
+                      </td>
+                    </tr>
+                  );
+                })}
+              </tbody>
+            </table>
+          </div>
+        )}
+      </section>
+
       {selectedUser && (
         <UserProfileModal
           user={selectedUser}
           canAddCoins={canAddCoins}
           onClose={() => setSelectedUser(null)}
-          onUserUpdate={(u) => setSelectedUser(u)}
+          onUserUpdate={(updated) => {
+            onSuccess();
+            setSelectedUser(updated);
+          }}
           onDelete={() => {
             onSuccess();
             setSelectedUser(null);
           }}
         />
       )}
-    </section>
     </div>
   );
 }
@@ -2507,6 +2276,9 @@ function UserProfileModal({
     }
   };
 
+  const winCoins = user.wonCoins ?? 0;
+  const normalCoins = Math.max(0, user.coins - winCoins);
+
   return (
     <div className="fixed inset-0 top-16 z-50 flex items-center justify-center bg-black/70 p-4">
       <div
@@ -2526,30 +2298,40 @@ function UserProfileModal({
             </svg>
           </button>
         </div>
-        <dl className="space-y-4">
+        <dl className="space-y-4 text-slate-300">
           <div>
-            <dt className="text-xs font-medium uppercase tracking-wider text-slate-500">Display Name</dt>
-            <dd className="mt-1 font-medium text-white">{user.displayName}</dd>
+            <span className="text-xs font-medium uppercase tracking-wider text-slate-500">Display Name</span>
+            <p className="mt-1 font-medium text-white">{user.displayName}</p>
           </div>
           <div>
-            <dt className="text-xs font-medium uppercase tracking-wider text-slate-500">Email</dt>
-            <dd className="mt-1 text-slate-200">{user.email}</dd>
+            <span className="text-xs font-medium uppercase tracking-wider text-slate-500">Email</span>
+            <p className="mt-1 text-slate-200">{user.email}</p>
           </div>
           <div>
-            <dt className="text-xs font-medium uppercase tracking-wider text-slate-500">User ID</dt>
-            <dd className="mt-1 font-mono text-sm text-slate-400">{user.id}</dd>
+            <span className="text-xs font-medium uppercase tracking-wider text-slate-500">Username / ID</span>
+            <p className="mt-1 font-mono text-sm text-slate-400">{user.username || user.id}</p>
+          </div>
+          <div className="grid grid-cols-2 gap-4">
+            <div>
+              <span className="text-xs font-medium uppercase tracking-wider text-slate-500">Normal Coins</span>
+              <p className="mt-1 font-semibold text-amber-300">💵 {normalCoins}</p>
+            </div>
+            <div>
+              <span className="text-xs font-medium uppercase tracking-wider text-slate-500">Won Coins</span>
+              <p className="mt-1 font-semibold text-emerald-400">💵 {winCoins}</p>
+            </div>
           </div>
           <div>
-            <dt className="text-xs font-medium uppercase tracking-wider text-slate-500">Coins</dt>
-            <dd className="mt-1 font-medium text-amber-300">{user.coins}</dd>
+            <span className="text-xs font-medium uppercase tracking-wider text-slate-500">Total Coins</span>
+            <p className="mt-1 font-bold text-white text-lg">💵 {user.coins}</p>
           </div>
           <div>
-            <dt className="text-xs font-medium uppercase tracking-wider text-slate-500">Status</dt>
-            <dd className="mt-1">
-              <span className="rounded-lg px-2 py-0.5 text-xs font-medium text-slate-300">
+            <span className="text-xs font-medium uppercase tracking-wider text-slate-500">Status</span>
+            <div className="mt-1">
+              <span className={`inline-block px-2.5 py-0.5 text-xs font-medium rounded ${user.isBlocked ? "bg-rose-500/20 text-rose-300" : "bg-emerald-500/20 text-emerald-300"}`}>
                 {user.isBlocked ? "Blocked" : "Active"}
               </span>
-            </dd>
+            </div>
           </div>
         </dl>
         <div className="mt-8 space-y-4 border-t border-slate-700/50 pt-6">

@@ -82,6 +82,8 @@ export async function POST(request: Request) {
         email: syncedUser.email,
         display_name: syncedUser.displayName,
         coins: syncedUser.coins,
+        wonCoins: syncedUser.wonCoins ?? 0,
+        won_coins: syncedUser.wonCoins ?? 0,
         is_blocked: syncedUser.isBlocked ?? false,
         avatar_url: syncedUser.avatarUrl || null,
         created_at: syncedUser.createdAt || null,

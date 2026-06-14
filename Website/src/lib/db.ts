@@ -14,6 +14,7 @@ export type DbUser = {
   email: string;
   displayName: string;
   coins: number;
+  wonCoins: number;
   isBlocked?: boolean;
   lifetimeEarnedPoints?: number;
   matchesPlayed?: number;
@@ -116,24 +117,25 @@ function toMatch(row: {
 }
 
 function toUser(row: {
-  id: string;
+  username?: string;
   email: string;
   display_name: string;
   coins: number;
+  won_coins?: number;
   is_blocked?: boolean;
   lifetime_earned_points?: number;
   matches_played?: number;
   total_kills?: number;
   avatar_url?: string;
   created_at?: string;
-  username?: string;
   fcm_token?: string;
 }): DbUser {
   return {
-    id: row.id,
+    id: row.username ?? "",
     email: row.email,
     displayName: row.display_name,
-    coins: row.coins ?? 0,
+    coins: (row.coins ?? 0) + (row.won_coins ?? 0),
+    wonCoins: row.won_coins ?? 0,
     isBlocked: row.is_blocked ?? false,
     lifetimeEarnedPoints: row.lifetime_earned_points ?? 0,
     matchesPlayed: row.matches_played ?? 0,
@@ -257,7 +259,7 @@ export const db = {
     const supabase = getSupabase();
     if (!supabase) return null;
     if (!password || password.length < 6) return null;
-    const { data: existing } = await supabase.from("app_users").select("id").ilike("email", email).single();
+    const { data: existing } = await supabase.from("app_users").select("username").ilike("email", email).maybeSingle();
     if (existing) return null;
 
     const { data: bonusRow } = await supabase.from("app_settings").select("value").eq("key", "signup_bonus").single();
@@ -270,21 +272,13 @@ export const db = {
       finalUsername = base;
       let attempt = 1;
       while (true) {
-        const { data } = await supabase.from("app_users").select("id").eq("username", finalUsername).maybeSingle();
+        const { data } = await supabase.from("app_users").select("username").eq("username", finalUsername).maybeSingle();
         if (!data) break;
         finalUsername = `${base}${attempt++}`;
       }
     } else {
-      const { data } = await supabase.from("app_users").select("id").eq("username", finalUsername).maybeSingle();
+      const { data } = await supabase.from("app_users").select("username").eq("username", finalUsername).maybeSingle();
       if (data) return null; // Username already taken
-    }
-
-    let id: string;
-    const { data: idFromRpc } = await supabase.rpc("generate_app_user_id");
-    if (typeof idFromRpc === "string") {
-      id = idFromRpc;
-    } else {
-      id = String(Math.floor(10000 + Math.random() * 90000));
     }
 
     const passwordHash = await bcrypt.hash(password, 10);
@@ -292,10 +286,10 @@ export const db = {
     const { data: user, error } = await supabase
       .from("app_users")
       .insert({
-        id,
         email,
         display_name: displayName,
         coins: Math.max(0, bonus),
+        won_coins: 0,
         password_hash: passwordHash,
         lifetime_earned_points: 0,
         matches_played: 0,
@@ -308,7 +302,7 @@ export const db = {
 
     if (bonus > 0) {
       await supabase.from("app_coin_transactions").insert({
-        user_id: id,
+        user_id: finalUsername,
         amount: bonus,
         type: "signup_bonus",
         description: "Signup bonus",
@@ -319,22 +313,22 @@ export const db = {
     const { data: enabledRow } = await supabase.from("app_settings").select("value").eq("key", "referral_system_enabled").maybeSingle();
     const isReferralEnabled = enabledRow?.value === "true";
     if (isReferralEnabled && referredBy) {
-      const { data: referrer } = await supabase.from("app_users").select("id, coins").eq("username", referredBy.trim()).maybeSingle();
+      const { data: referrer } = await supabase.from("app_users").select("username, coins").eq("username", referredBy.trim()).maybeSingle();
       if (referrer) {
         const { data: rewardRow } = await supabase.from("app_settings").select("value").eq("key", "referral_reward_coins").maybeSingle();
         const rewardCoins = rewardRow?.value ? parseInt(rewardRow.value, 10) : 0;
 
         await supabase.from("app_referrals").insert({
-          referrer_id: referrer.id,
-          referred_id: id,
+          referrer_id: referrer.username,
+          referred_id: finalUsername,
           reward_coins: rewardCoins,
           reward_granted: true
         });
 
         if (rewardCoins > 0) {
-          await supabase.from("app_users").update({ coins: referrer.coins + rewardCoins }).eq("id", referrer.id);
+          await supabase.from("app_users").update({ coins: referrer.coins + rewardCoins }).eq("username", referrer.username);
           await supabase.from("app_coin_transactions").insert({
-            user_id: referrer.id,
+            user_id: referrer.username,
             amount: rewardCoins,
             type: "admin_add",
             description: `Referral reward for referring ${displayName}`,
@@ -350,12 +344,12 @@ export const db = {
     const supabase = getSupabase();
     if (!supabase) return null;
 
-    const { data: existing } = await supabase.from("app_users").select("*").eq("id", id).single();
+    const { data: existing } = await supabase.from("app_users").select("*").eq("email", email).maybeSingle();
     if (existing) {
       const { data: updated, error: updateError } = await supabase
         .from("app_users")
         .update({ display_name: displayName, avatar_url: avatarUrl })
-        .eq("id", id)
+        .eq("email", email)
         .select()
         .single();
       if (updateError) {
@@ -372,7 +366,7 @@ export const db = {
     let finalUsername = baseUsername;
     let attempt = 1;
     while (true) {
-      const { data } = await supabase.from("app_users").select("id").eq("username", finalUsername).maybeSingle();
+      const { data } = await supabase.from("app_users").select("username").eq("username", finalUsername).maybeSingle();
       if (!data) break;
       finalUsername = `${baseUsername}${attempt++}`;
     }
@@ -380,10 +374,10 @@ export const db = {
     const { data: user, error } = await supabase
       .from("app_users")
       .insert({
-        id,
         email,
         display_name: displayName,
         coins: Math.max(0, bonus),
+        won_coins: 0,
         avatar_url: avatarUrl,
         lifetime_earned_points: 0,
         matches_played: 0,
@@ -401,7 +395,7 @@ export const db = {
     if (bonus > 0) {
       try {
         await supabase.from("app_coin_transactions").insert({
-          user_id: id,
+          user_id: finalUsername,
           amount: bonus,
           type: "signup_bonus",
           description: "Signup bonus",
@@ -431,16 +425,16 @@ export const db = {
   async getUser(id: string): Promise<DbUser | null> {
     const supabase = getSupabase();
     if (!supabase) return null;
-    const { data } = await supabase.from("app_users").select("*").eq("id", id).single();
+    const { data } = await supabase.from("app_users").select("*").eq("username", id).maybeSingle();
     return data ? toUser(data) : null;
   },
 
   async addCoins(userId: string, amount: number, description?: string): Promise<DbUser | null> {
     const supabase = getSupabase();
     if (!supabase) return null;
-    const { data: user } = await supabase.from("app_users").select("*").eq("id", userId).single();
+    const { data: user } = await supabase.from("app_users").select("coins").eq("username", userId).single();
     if (!user) return null;
-    await supabase.from("app_users").update({ coins: user.coins + amount }).eq("id", userId);
+    await supabase.from("app_users").update({ coins: user.coins + amount }).eq("username", userId);
     await supabase.from("app_coin_transactions").insert({
       user_id: userId,
       amount,
@@ -453,12 +447,12 @@ export const db = {
   async addMatchWinnings(userId: string, amount: number, matchId: string): Promise<boolean> {
     const supabase = getSupabase();
     if (!supabase) return false;
-    const { data: user } = await supabase.from("app_users").select("*").eq("id", userId).single();
+    const { data: user } = await supabase.from("app_users").select("won_coins, lifetime_earned_points").eq("username", userId).single();
     if (!user) return false;
     await supabase.from("app_users").update({
-      coins: user.coins + amount,
+      won_coins: (user.won_coins ?? 0) + amount,
       lifetime_earned_points: (user.lifetime_earned_points ?? 0) + amount
-    }).eq("id", userId);
+    }).eq("username", userId);
     await supabase.from("app_coin_transactions").insert({
       user_id: userId,
       amount,
@@ -472,21 +466,21 @@ export const db = {
   async blockUser(userId: string): Promise<boolean> {
     const supabase = getSupabase();
     if (!supabase) return false;
-    const { error } = await supabase.from("app_users").update({ is_blocked: true }).eq("id", userId);
+    const { error } = await supabase.from("app_users").update({ is_blocked: true }).eq("username", userId);
     return !error;
   },
 
   async unblockUser(userId: string): Promise<boolean> {
     const supabase = getSupabase();
     if (!supabase) return false;
-    const { error } = await supabase.from("app_users").update({ is_blocked: false }).eq("id", userId);
+    const { error } = await supabase.from("app_users").update({ is_blocked: false }).eq("username", userId);
     return !error;
   },
 
   async deleteUser(userId: string): Promise<boolean> {
     const supabase = getSupabase();
     if (!supabase) return false;
-    const { error } = await supabase.from("app_users").delete().eq("id", userId);
+    const { error } = await supabase.from("app_users").delete().eq("username", userId);
     return !error;
   },
 
@@ -542,9 +536,9 @@ export const db = {
     const { data: req } = await supabase.from("app_deposit_requests").select("*").eq("id", id).eq("status", "pending").single();
     if (!req) return null;
     await supabase.from("app_deposit_requests").update({ status: "accepted" }).eq("id", id);
-    const { data: user } = await supabase.from("app_users").select("coins").eq("id", req.user_id).single();
+    const { data: user } = await supabase.from("app_users").select("coins").eq("username", req.user_id).single();
     if (user) {
-      await supabase.from("app_users").update({ coins: user.coins + req.amount }).eq("id", req.user_id);
+      await supabase.from("app_users").update({ coins: user.coins + req.amount }).eq("username", req.user_id);
       await supabase.from("app_coin_transactions").insert({
         user_id: req.user_id,
         amount: req.amount,
@@ -578,7 +572,7 @@ export const db = {
     const { data: req } = await supabase.from("app_deposit_requests").select("*").eq("id", id).eq("status", "pending").single();
     if (!req) return null;
     await supabase.from("app_deposit_requests").update({ status: "rejected" }).eq("id", id);
-    await supabase.from("app_users").update({ is_blocked: true }).eq("id", req.user_id);
+    await supabase.from("app_users").update({ is_blocked: true }).eq("username", req.user_id);
     await supabase.from("app_coin_transactions").insert({
       user_id: req.user_id,
       amount: req.amount,
@@ -632,17 +626,17 @@ export const db = {
   async addWithdrawalRequest(userId: string, amount: number, upiId: string): Promise<DbWithdrawalRequest | null> {
     const supabase = getSupabase();
     if (!supabase) return null;
-    const { data: user } = await supabase.from("app_users").select("coins").eq("id", userId).single();
-    if (!user || user.coins < amount) return null;
+    const { data: user } = await supabase.from("app_users").select("won_coins").eq("username", userId).single();
+    if (!user || (user.won_coins ?? 0) < amount) return null;
     const charge = await db.getWithdrawalCharge();
-    await supabase.from("app_users").update({ coins: user.coins - amount }).eq("id", userId);
+    await supabase.from("app_users").update({ won_coins: (user.won_coins ?? 0) - amount }).eq("username", userId);
     const { data, error } = await supabase
       .from("app_withdrawal_requests")
       .insert({ user_id: userId, amount, upi_id: upiId, status: "pending", charge_percent: charge })
       .select()
       .single();
     if (error) {
-      await supabase.from("app_users").update({ coins: user.coins }).eq("id", userId);
+      await supabase.from("app_users").update({ won_coins: user.won_coins ?? 0 }).eq("username", userId);
       return null;
     }
     return toWithdrawalRequest(data);
@@ -669,9 +663,9 @@ export const db = {
     if (!supabase) return null;
     const { data: req } = await supabase.from("app_withdrawal_requests").select("*").eq("id", id).eq("status", "pending").single();
     if (!req) return null;
-    const { data: user } = await supabase.from("app_users").select("coins").eq("id", req.user_id).single();
+    const { data: user } = await supabase.from("app_users").select("won_coins").eq("username", req.user_id).single();
     if (user) {
-      await supabase.from("app_users").update({ coins: user.coins + req.amount }).eq("id", req.user_id);
+      await supabase.from("app_users").update({ won_coins: (user.won_coins ?? 0) + req.amount }).eq("username", req.user_id);
     }
     await supabase.from("app_withdrawal_requests").update({ status: "rejected", reject_note: note }).eq("id", id);
     await supabase.from("app_coin_transactions").insert({
@@ -940,11 +934,12 @@ export const db = {
     if (!match) return { error: "Match not found" };
     if (match.status !== "upcoming") return { error: "Registration closed" };
     if (match.registration_locked) return { error: "Registration locked" };
-    const { data: user } = await supabase.from("app_users").select("coins, is_blocked").eq("id", appUserId).single();
+    const { data: user } = await supabase.from("app_users").select("coins, won_coins, is_blocked").eq("username", appUserId).single();
     if (!user) return { error: "User not found" };
     if (user.is_blocked) return { error: "Account is blocked" };
     const entryFee = match.entry_fee ?? 0;
-    if (user.coins < entryFee) return { error: "Insufficient coins" };
+    const totalBalance = (user.coins ?? 0) + (user.won_coins ?? 0);
+    if (totalBalance < entryFee) return { error: "Insufficient coins" };
     const { data: existing } = await supabase
       .from("app_match_participants")
       .select("id")
@@ -973,7 +968,18 @@ export const db = {
     });
     if (insertErr) return { error: insertErr.message };
     if (entryFee > 0) {
-      await supabase.from("app_users").update({ coins: user.coins - entryFee }).eq("id", appUserId);
+      let deductCoins = 0;
+      let deductWonCoins = 0;
+      if ((user.coins ?? 0) >= entryFee) {
+        deductCoins = entryFee;
+      } else {
+        deductCoins = user.coins ?? 0;
+        deductWonCoins = entryFee - deductCoins;
+      }
+      await supabase.from("app_users").update({
+        coins: (user.coins ?? 0) - deductCoins,
+        won_coins: (user.won_coins ?? 0) - deductWonCoins
+      }).eq("username", appUserId);
       await supabase.from("app_coin_transactions").insert({
         user_id: appUserId,
         amount: -entryFee,
@@ -1039,9 +1045,9 @@ export const db = {
       const { data: appRows } = await supabase.from("app_match_participants").select("app_user_id").eq("match_id", id);
       const appUserIds = Array.from(new Set((appRows ?? []).map((r: { app_user_id: string }) => r.app_user_id)));
       for (const appUserId of appUserIds) {
-        const { data: user } = await supabase.from("app_users").select("coins").eq("id", appUserId).single();
+        const { data: user } = await supabase.from("app_users").select("coins").eq("username", appUserId).single();
         if (!user || typeof user.coins !== "number") continue;
-        await supabase.from("app_users").update({ coins: user.coins + entryFee }).eq("id", appUserId);
+        await supabase.from("app_users").update({ coins: user.coins + entryFee }).eq("username", appUserId);
         await supabase.from("app_coin_transactions").insert({
           user_id: appUserId,
           amount: entryFee,
@@ -1158,12 +1164,12 @@ export const db = {
         const totalKills = (p.teamMembers ?? []).reduce((s, t) => s + (t.kills ?? 0), 0);
         const isAppUser = p.userId.length !== 36; // UUID is 36 chars
         if (isAppUser) {
-          const { data: userRow } = await supabase.from("app_users").select("matches_played, total_kills").eq("id", p.userId).single();
+          const { data: userRow } = await supabase.from("app_users").select("matches_played, total_kills").eq("username", p.userId).single();
           if (userRow) {
             await supabase.from("app_users").update({
               matches_played: (userRow.matches_played ?? 0) + 1,
               total_kills: (userRow.total_kills ?? 0) + totalKills
-            }).eq("id", p.userId);
+            }).eq("username", p.userId);
           }
         } else {
           const { data: userRow } = await supabase.from("users").select("matches_played, total_kills").eq("id", p.userId).single();
@@ -1425,10 +1431,10 @@ export const db = {
     
     const { data: users } = await supabase
       .from("app_users")
-      .select("id, display_name")
-      .in("id", userIds);
+      .select("username, display_name")
+      .in("username", userIds);
       
-    const userMap = new Map(users?.map(u => [u.id, u.display_name]) ?? []);
+    const userMap = new Map(users?.map(u => [u.username, u.display_name]) ?? []);
     
     return referrals.map((r: any) => ({
       id: r.id,
@@ -1448,7 +1454,7 @@ export const db = {
     const { error } = await supabase
       .from("app_users")
       .update({ fcm_token: token })
-      .eq("id", userId);
+      .eq("username", userId);
     return !error;
   }
 };

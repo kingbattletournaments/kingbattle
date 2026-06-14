@@ -23,6 +23,8 @@ export async function POST(request: Request) {
         email: user.email,
         display_name: user.displayName,
         coins: user.coins,
+        wonCoins: user.wonCoins ?? 0,
+        won_coins: user.wonCoins ?? 0,
         is_blocked: user.isBlocked ?? false,
         username: user.username,
       },
