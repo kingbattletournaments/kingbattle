@@ -2117,35 +2117,35 @@ function UsersSection({
         />
       </div>
 
-      <section className="admin-card rounded-2xl p-6 sm:p-8">
+      <section className="admin-card rounded-2xl py-6 px-0 sm:py-8">
         {filteredUsers.length === 0 ? (
           <p className="py-12 text-center text-sm text-slate-400">No users found</p>
         ) : (
-          <div className="overflow-x-auto">
-            <table className="w-full text-left border-collapse">
+          <div className="excel-table-container">
+            <table className="excel-table">
               <thead>
-                <tr className="border-b border-slate-800 text-xs font-semibold uppercase tracking-wider text-slate-500">
-                  <th className="pb-3 pl-2">Display Name</th>
-                  <th className="pb-3">Username</th>
-                  <th className="pb-3 text-right">Normal Coins</th>
-                  <th className="pb-3 text-right">Win Coins</th>
-                  <th className="pb-3 text-right">Total Coins</th>
-                  <th className="pb-3 text-center">Status</th>
-                  <th className="pb-3 text-right pr-2">Action</th>
+                <tr>
+                  <th className="text-left">Display Name</th>
+                  <th className="text-left">Username</th>
+                  <th className="text-right">Normal Coins</th>
+                  <th className="text-right">Win Coins</th>
+                  <th className="text-right">Total Coins</th>
+                  <th className="text-center">Status</th>
+                  <th className="text-right">Action</th>
                 </tr>
               </thead>
-              <tbody className="divide-y divide-slate-800/40 text-sm text-slate-300">
+              <tbody>
                 {filteredUsers.map((u) => {
                   const winCoins = u.wonCoins ?? 0;
                   const normalCoins = Math.max(0, u.coins - winCoins);
                   return (
-                    <tr key={u.id} className="hover:bg-white/[0.01]">
-                      <td className="py-4 pl-2 font-semibold text-white">{u.displayName}</td>
-                      <td className="py-4 font-mono text-slate-400">{u.username || u.id}</td>
-                      <td className="py-4 text-right font-medium text-amber-300">💵 {normalCoins}</td>
-                      <td className="py-4 text-right font-medium text-emerald-400">💵 {winCoins}</td>
-                      <td className="py-4 text-right font-bold text-white">💵 {u.coins}</td>
-                      <td className="py-4 text-center">
+                    <tr key={u.id}>
+                      <td className="font-semibold text-white">{u.displayName}</td>
+                      <td className="font-mono text-slate-400">{u.username || u.id}</td>
+                      <td className="text-right font-medium text-amber-300">💵 {normalCoins}</td>
+                      <td className="text-right font-medium text-emerald-400">💵 {winCoins}</td>
+                      <td className="text-right font-bold text-white">💵 {u.coins}</td>
+                      <td className="text-center">
                         <span
                           className={`inline-block px-2.5 py-1 text-xs font-semibold rounded-full ${
                             u.isBlocked
@@ -2156,13 +2156,13 @@ function UsersSection({
                           {u.isBlocked ? "Blocked" : "Active"}
                         </span>
                       </td>
-                      <td className="py-4 text-right pr-2">
+                      <td className="text-right">
                         <button
                           type="button"
                           onClick={() => setSelectedUser(u)}
-                          className="bg-slate-800 hover:bg-slate-700 text-slate-300 rounded-lg px-3 py-1.5 text-xs font-medium transition"
+                          className="bg-green-600 hover:bg-green-500 text-white rounded-lg px-3 py-1.5 text-xs font-medium transition"
                         >
-                          View Profile
+                          View Details
                         </button>
                       </td>
                     </tr>
@@ -2588,84 +2588,45 @@ function MoneyOrdersSection({
         />
       </div>
 
-      <div className="admin-card rounded-2xl p-6">
+      <div className="admin-card rounded-2xl py-6 px-0">
         {filtered.length === 0 ? (
           <p className="py-12 text-center text-sm text-slate-400">No successful money orders found</p>
         ) : (
-          <>
-            {/* Desktop Table View */}
-            <div className="hidden md:block overflow-x-auto">
-              <table className="w-full text-left border-collapse">
-                <thead>
-                  <tr className="border-b border-slate-800 text-xs font-semibold uppercase tracking-wider text-slate-500">
-                    <th className="pb-3 pl-2">User</th>
-                    <th className="pb-3">UTR Reference</th>
-                    <th className="pb-3 text-right">Amount Credited</th>
-                    <th className="pb-3 text-center">Status</th>
-                  </tr>
-                </thead>
-                <tbody className="divide-y divide-slate-800/40 text-sm">
-                  {filtered.map((d) => {
-                    const user = users.find((u) => u.id === d.userId);
-                    return (
-                      <tr key={d.id} className="hover:bg-white/[0.01]">
-                        <td className="py-4 pl-2">
-                          <p className="font-semibold text-white">{user?.displayName || "Unknown"}</p>
-                          <p className="text-xs text-slate-500 font-mono">{d.userId}</p>
-                        </td>
-                        <td className="py-4">
-                          <p className="font-mono font-medium text-slate-300">{d.utr}</p>
-                          <p className="text-xs text-slate-500">{new Date(d.createdAt).toLocaleString()}</p>
-                        </td>
-                        <td className="py-4 text-right font-bold text-amber-300">💵 {d.amount}</td>
-                        <td className="py-4 text-center">
-                          <span className="inline-block px-2.5 py-1 text-xs font-semibold rounded-full bg-emerald-500/20 text-emerald-300">
-                            succeeded
-                          </span>
-                        </td>
-                      </tr>
-                    );
-                  })}
-                </tbody>
-              </table>
-            </div>
-
-            {/* Mobile Card View */}
-            <div className="block md:hidden space-y-4">
-              {filtered.map((d) => {
-                const user = users.find((u) => u.id === d.userId);
-                return (
-                  <div key={d.id} className="admin-list-item rounded-xl p-4 space-y-3">
-                    <div className="flex items-start justify-between gap-2">
-                      <div>
-                        <p className="font-semibold text-white text-base">{user?.displayName || "Unknown"}</p>
+          <div className="excel-table-container">
+            <table className="excel-table">
+              <thead>
+                <tr>
+                  <th className="text-left">User</th>
+                  <th className="text-left">UTR Reference</th>
+                  <th className="text-right">Amount Credited</th>
+                  <th className="text-center">Status</th>
+                </tr>
+              </thead>
+              <tbody>
+                {filtered.map((d) => {
+                  const user = users.find((u) => u.id === d.userId);
+                  return (
+                    <tr key={d.id}>
+                      <td>
+                        <p className="font-semibold text-white">{user?.displayName || "Unknown"}</p>
                         <p className="text-xs text-slate-500 font-mono mt-0.5">{d.userId}</p>
-                      </div>
-                      <span className="inline-block px-2.5 py-1 text-xs font-semibold rounded-full shrink-0 bg-emerald-500/20 text-emerald-300">
-                        succeeded
-                      </span>
-                    </div>
-
-                    <div className="grid grid-cols-2 gap-2 text-xs py-2 border-t border-b border-slate-800/40">
-                      <div>
-                        <p className="text-slate-500 font-semibold uppercase tracking-wider text-[10px]">UTR Reference</p>
-                        <p className="font-mono font-medium text-slate-300 break-all mt-0.5">{d.utr}</p>
-                      </div>
-                      <div>
-                        <p className="text-slate-500 font-semibold uppercase tracking-wider text-[10px]">Requested On</p>
-                        <p className="font-medium text-slate-400 mt-0.5">{new Date(d.createdAt).toLocaleString()}</p>
-                      </div>
-                    </div>
-
-                    <div className="flex items-center justify-between text-sm pt-1">
-                      <span className="text-xs text-slate-500 font-medium">Coins Credited:</span>
-                      <span className="font-bold text-amber-300">💵 {d.amount}</span>
-                    </div>
-                  </div>
-                );
-              })}
-            </div>
-          </>
+                      </td>
+                      <td>
+                        <p className="font-mono font-medium text-slate-300">{d.utr}</p>
+                        <p className="text-xs text-slate-500 mt-0.5">{new Date(d.createdAt).toLocaleString()}</p>
+                      </td>
+                      <td className="text-right font-bold text-amber-300">💵 {d.amount}</td>
+                      <td className="text-center">
+                        <span className="inline-block px-2.5 py-1 text-xs font-semibold rounded-full bg-emerald-500/20 text-emerald-300">
+                          succeeded
+                        </span>
+                      </td>
+                    </tr>
+                  );
+                })}
+              </tbody>
+            </table>
+          </div>
         )}
       </div>
       <AddCoinsSection users={users} onSuccess={onSuccess} />
@@ -2834,165 +2795,84 @@ function WithdrawalsSection({
         />
       </div>
 
-      <div className="admin-card rounded-2xl p-6">
+      <div className="admin-card rounded-2xl py-6 px-0">
         {filtered.length === 0 ? (
           <p className="py-12 text-center text-sm text-slate-400">No withdrawal requests found</p>
         ) : (
-          <>
-            {/* Desktop Table View */}
-            <div className="hidden md:block overflow-x-auto">
-              <table className="w-full text-left border-collapse">
-                <thead>
-                  <tr className="border-b border-slate-800 text-xs font-semibold uppercase tracking-wider text-slate-500">
-                    <th className="pb-3 pl-2">User</th>
-                    <th className="pb-3">UPI ID</th>
-                    <th className="pb-3 text-right">Debit Coins</th>
-                    <th className="pb-3 text-right">Net Payout</th>
-                    <th className="pb-3 text-center">Status</th>
-                    <th className="pb-3 text-right pr-2">Actions</th>
-                  </tr>
-                </thead>
-                <tbody className="divide-y divide-slate-800/40 text-sm">
-                  {filtered.map((w) => {
-                    const user = users.find((u) => u.id === w.userId);
-                    const netPayout = Math.round(w.amount * (1 - (w.chargePercent ?? 0) / 100));
-                    return (
-                      <tr key={w.id} className="hover:bg-white/[0.01]">
-                        <td className="py-4 pl-2">
-                          <p className="font-semibold text-white">{user?.displayName || "Unknown"}</p>
-                          <p className="text-xs text-slate-500 font-mono">{w.userId}</p>
-                        </td>
-                        <td className="py-4">
-                          <p className="font-medium text-slate-300">{w.upiId}</p>
-                          <p className="text-xs text-slate-500">{new Date(w.createdAt).toLocaleString()}</p>
-                        </td>
-                        <td className="py-4 text-right font-semibold text-rose-400">- 💵 {w.amount}</td>
-                        <td className="py-4 text-right font-bold text-emerald-400">₹ {netPayout}</td>
-                        <td className="py-4 text-center">
-                          <span
-                            className={`inline-block px-2.5 py-1 text-xs font-semibold rounded-full ${
-                              w.status === "accepted"
-                                ? "bg-emerald-500/20 text-emerald-300"
-                                : w.status === "rejected"
-                                ? "bg-rose-500/20 text-rose-300"
-                                : "bg-amber-500/20 text-amber-300"
-                            }`}
-                          >
-                            {w.status}
-                          </span>
-                          {w.rejectNote && (
-                            <p className="text-xs text-rose-400 mt-1 max-w-[120px] mx-auto truncate" title={w.rejectNote}>
-                              Note: {w.rejectNote}
-                            </p>
-                          )}
-                        </td>
-                        <td className="py-4 text-right pr-2">
-                          {w.status === "pending" && (
-                            <div className="flex gap-2 justify-end">
-                              <button
-                                type="button"
-                                disabled={loading}
-                                onClick={() => handleWithdrawAccept(w.id)}
-                                className="bg-emerald-600 hover:bg-emerald-500 text-white rounded-lg px-2.5 py-1.5 text-xs font-medium transition"
-                              >
-                                Approve
-                              </button>
-                              <button
-                                type="button"
-                                disabled={loading}
-                                onClick={() => handleWithdrawReject(w.id)}
-                                className="bg-rose-600 hover:bg-rose-500 text-white rounded-lg px-2.5 py-1.5 text-xs font-medium transition"
-                              >
-                                Reject
-                              </button>
-                            </div>
-                          )}
-                        </td>
-                      </tr>
-                    );
-                  })}
-                </tbody>
-              </table>
-            </div>
-
-            {/* Mobile Card View */}
-            <div className="block md:hidden space-y-4">
-              {filtered.map((w) => {
-                const user = users.find((u) => u.id === w.userId);
-                const netPayout = Math.round(w.amount * (1 - (w.chargePercent ?? 0) / 100));
-                return (
-                  <div key={w.id} className="admin-list-item rounded-xl p-4 space-y-3">
-                    <div className="flex items-start justify-between gap-2">
-                      <div>
-                        <p className="font-semibold text-white text-base">{user?.displayName || "Unknown"}</p>
+          <div className="excel-table-container">
+            <table className="excel-table">
+              <thead>
+                <tr>
+                  <th className="text-left">User</th>
+                  <th className="text-left">UPI ID</th>
+                  <th className="text-right">Debit Coins</th>
+                  <th className="text-right">Net Payout</th>
+                  <th className="text-center">Status</th>
+                  <th className="text-right">Actions</th>
+                </tr>
+              </thead>
+              <tbody>
+                {filtered.map((w) => {
+                  const user = users.find((u) => u.id === w.userId);
+                  const netPayout = Math.round(w.amount * (1 - (w.chargePercent ?? 0) / 100));
+                  return (
+                    <tr key={w.id}>
+                      <td>
+                        <p className="font-semibold text-white">{user?.displayName || "Unknown"}</p>
                         <p className="text-xs text-slate-500 font-mono mt-0.5">{w.userId}</p>
-                      </div>
-                      <span
-                        className={`inline-block px-2.5 py-1 text-xs font-semibold rounded-full shrink-0 ${
-                          w.status === "accepted"
-                            ? "bg-emerald-500/20 text-emerald-300"
-                            : w.status === "rejected"
-                            ? "bg-rose-500/20 text-rose-300"
-                            : "bg-amber-500/20 text-amber-300"
-                        }`}
-                      >
-                        {w.status}
-                      </span>
-                    </div>
-
-                    <div className="grid grid-cols-2 gap-2 text-xs py-2 border-t border-b border-slate-800/40">
-                      <div>
-                        <p className="text-slate-500 font-semibold uppercase tracking-wider text-[10px]">UPI ID</p>
-                        <p className="font-medium text-slate-300 break-all mt-0.5">{w.upiId}</p>
-                      </div>
-                      <div>
-                        <p className="text-slate-500 font-semibold uppercase tracking-wider text-[10px]">Requested On</p>
-                        <p className="font-medium text-slate-400 mt-0.5">{new Date(w.createdAt).toLocaleString()}</p>
-                      </div>
-                    </div>
-
-                    <div className="flex items-center justify-between text-sm pt-1">
-                      <div>
-                        <span className="text-xs text-slate-500 font-medium">Debit Coins:</span>{" "}
-                        <span className="font-semibold text-rose-400">- 💵 {w.amount}</span>
-                      </div>
-                      <div>
-                        <span className="text-xs text-slate-500 font-medium">Net Payout:</span>{" "}
-                        <span className="font-bold text-emerald-400">₹ {netPayout}</span>
-                      </div>
-                    </div>
-
-                    {w.rejectNote && (
-                      <div className="bg-rose-500/5 border border-rose-500/10 rounded-lg p-2.5 text-xs text-rose-300 mt-1">
-                        <span className="font-semibold">Rejection Note:</span> {w.rejectNote}
-                      </div>
-                    )}
-
-                    {w.status === "pending" && (
-                      <div className="flex gap-2 pt-2 border-t border-slate-800/40">
-                        <button
-                          type="button"
-                          disabled={loading}
-                          onClick={() => handleWithdrawAccept(w.id)}
-                          className="flex-1 bg-emerald-600 hover:bg-emerald-500 text-white rounded-lg py-2.5 text-xs font-semibold transition text-center"
+                      </td>
+                      <td>
+                        <p className="font-medium text-slate-300">{w.upiId}</p>
+                        <p className="text-xs text-slate-500 mt-0.5">{new Date(w.createdAt).toLocaleString()}</p>
+                      </td>
+                      <td className="text-right font-semibold text-rose-400">- 💵 {w.amount}</td>
+                      <td className="text-right font-bold text-emerald-400">₹ {netPayout}</td>
+                      <td className="text-center">
+                        <span
+                          className={`inline-block px-2.5 py-1 text-xs font-semibold rounded-full ${
+                            w.status === "accepted"
+                              ? "bg-emerald-500/20 text-emerald-300"
+                              : w.status === "rejected"
+                              ? "bg-rose-500/20 text-rose-300"
+                              : "bg-amber-500/20 text-amber-300"
+                          }`}
                         >
-                          Approve
-                        </button>
-                        <button
-                          type="button"
-                          disabled={loading}
-                          onClick={() => handleWithdrawReject(w.id)}
-                          className="flex-1 bg-rose-600 hover:bg-rose-500 text-white rounded-lg py-2.5 text-xs font-semibold transition text-center"
-                        >
-                          Reject
-                        </button>
-                      </div>
-                    )}
-                  </div>
-                );
-              })}
-            </div>
-          </>
+                          {w.status}
+                        </span>
+                        {w.rejectNote && (
+                          <p className="text-xs text-rose-400 mt-1 max-w-[120px] mx-auto truncate" title={w.rejectNote}>
+                            Note: {w.rejectNote}
+                          </p>
+                        )}
+                      </td>
+                      <td className="text-right">
+                        {w.status === "pending" && (
+                          <div className="flex gap-2 justify-end">
+                            <button
+                              type="button"
+                              disabled={loading}
+                              onClick={() => handleWithdrawAccept(w.id)}
+                              className="bg-emerald-600 hover:bg-emerald-500 text-white rounded-lg px-2.5 py-1.5 text-xs font-medium transition"
+                            >
+                              Approve
+                            </button>
+                            <button
+                              type="button"
+                              disabled={loading}
+                              onClick={() => handleWithdrawReject(w.id)}
+                              className="bg-rose-600 hover:bg-rose-500 text-white rounded-lg px-2.5 py-1.5 text-xs font-medium transition"
+                            >
+                              Reject
+                            </button>
+                          </div>
+                        )}
+                      </td>
+                    </tr>
+                  );
+                })}
+              </tbody>
+            </table>
+          </div>
         )}
       </div>
     </div>
@@ -4110,32 +3990,34 @@ function ReferralsSection() {
         </form>
       </section>
 
-      <section className="admin-card rounded-2xl p-6 sm:p-8">
-        <h2 className="mb-1 text-base font-semibold text-white/90">Referrals History</h2>
-        <p className="mb-5 text-sm text-slate-400">{referrals.length} referral(s) recorded</p>
+      <section className="admin-card rounded-2xl py-6 px-0 sm:py-8">
+        <div className="px-6 sm:px-8">
+          <h2 className="mb-1 text-base font-semibold text-white/90">Referrals History</h2>
+          <p className="mb-5 text-sm text-slate-400">{referrals.length} referral(s) recorded</p>
+        </div>
         {referrals.length === 0 ? (
-          <div className="text-center py-10 text-slate-500 border border-slate-800/40 rounded-xl bg-slate-950/20">
+          <div className="mx-6 sm:mx-8 text-center py-10 text-slate-500 border border-slate-800/40 rounded-xl bg-slate-950/20">
             No referrals found
           </div>
         ) : (
-          <div className="overflow-x-auto">
-            <table className="w-full border-collapse text-left text-sm text-slate-300">
+          <div className="excel-table-container">
+            <table className="excel-table">
               <thead>
-                <tr className="border-b border-slate-800 font-medium text-slate-400">
-                  <th className="pb-3 pr-4">Referrer</th>
-                  <th className="pb-3 pr-4">Referred User</th>
-                  <th className="pb-3 pr-4">Coins Reward</th>
-                  <th className="pb-3 pr-4">Status</th>
-                  <th className="pb-3">Date</th>
+                <tr>
+                  <th className="text-left">Referrer</th>
+                  <th className="text-left">Referred User</th>
+                  <th className="text-right">Coins Reward</th>
+                  <th className="text-center">Status</th>
+                  <th className="text-left">Date</th>
                 </tr>
               </thead>
               <tbody>
                 {referrals.map((r) => (
-                  <tr key={r.id} className="border-b border-slate-800/50 hover:bg-slate-950/10">
-                    <td className="py-3 pr-4 font-medium text-white">{r.referrerName}</td>
-                    <td className="py-3 pr-4">{r.referredName}</td>
-                    <td className="py-3 pr-4 text-amber-300 font-bold">{r.rewardCoins} coins</td>
-                    <td className="py-3 pr-4">
+                  <tr key={r.id}>
+                    <td className="font-medium text-white">{r.referrerName}</td>
+                    <td>{r.referredName}</td>
+                    <td className="text-right text-amber-300 font-bold">{r.rewardCoins} coins</td>
+                    <td className="text-center">
                       {r.rewardGranted ? (
                         <span className="inline-block rounded bg-emerald-500/20 px-2 py-0.5 text-xs text-emerald-400 font-medium">
                           Granted
@@ -4146,7 +4028,7 @@ function ReferralsSection() {
                         </span>
                       )}
                     </td>
-                    <td className="py-3 text-slate-500">{new Date(r.createdAt).toLocaleString()}</td>
+                    <td className="text-slate-500">{new Date(r.createdAt).toLocaleString()}</td>
                   </tr>
                 ))}
               </tbody>

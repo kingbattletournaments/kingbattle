@@ -255,3 +255,55 @@
 .stat-icon {
   font-size: 1.4rem;
 }
+
+/* Excel Table styles */
+.excel-table-container {
+  width: 100%;
+  overflow-x: auto;
+  padding-left: 1.5rem;
+  padding-right: 1.5rem;
+  margin-left: 0;
+  margin-right: 0;
+  -webkit-overflow-scrolling: touch;
+}
+
+@media (max-width: 640px) {
+  .excel-table-container {
+    padding-left: 1rem;
+    padding-right: 1rem;
+  }
+}
+
+.excel-table {
+  width: 100%;
+  border-collapse: collapse;
+  border: 1px solid rgba(255, 255, 255, 0.08);
+  font-size: 0.875rem;
+}
+
+.excel-table th {
+  background: rgba(30, 41, 59, 0.6);
+  color: #94a3b8;
+  font-weight: 600;
+  font-size: 0.75rem;
+  text-transform: uppercase;
+  letter-spacing: 0.05em;
+  border: 1px solid rgba(255, 255, 255, 0.08);
+  padding: 0.75rem 1rem;
+  white-space: nowrap;
+}
+
+.excel-table td {
+  border: 1px solid rgba(255, 255, 255, 0.04);
+  padding: 0.85rem 1rem;
+  white-space: nowrap;
+  vertical-align: middle;
+}
+
+.excel-table tr {
+  transition: background-color 0.15s ease;
+}
+
+.excel-table tr:hover {
+  background-color: rgba(255, 255, 255, 0.02);
+}
