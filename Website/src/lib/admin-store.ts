@@ -257,7 +257,26 @@ let withdrawalChargePercent = globalForAdmin.withdrawalChargePercent ?? 0;
 let signupBonus = globalForAdmin.signupBonus ?? 0;
 
 // Seeding function to populate rich mockup data for testing the Admin panel
-function seedMockData() {}
+function seedMockData() {
+  if (users.length === 0) {
+    const testUserPasswordHash = bcrypt.hashSync("test123", 10);
+    const testUser: User & { passwordHash?: string } = {
+      id: "testuser",
+      email: "test@user.com",
+      displayName: "Test User",
+      coins: 100,
+      wonCoins: 0,
+      isBlocked: false,
+      passwordHash: testUserPasswordHash,
+      lifetimeEarnedPoints: 0,
+      matchesPlayed: 0,
+      totalKills: 0,
+      username: "testuser",
+      createdAt: new Date().toISOString(),
+    };
+    users.push(testUser);
+  }
+}
 function seedMockDataDisabled() {
   if (appBanners.length === 0) {
     appBanners.push(
@@ -863,7 +882,8 @@ export const adminStore = {
     return user;
   },
   signInUser: (email: string, password: string) => {
-    const u = users.find((x) => x.email?.toLowerCase() === email.toLowerCase());
+    const query = email.trim().toLowerCase();
+    const u = users.find((x) => x.email?.toLowerCase() === query || x.username?.toLowerCase() === query);
     if (!u || u.isBlocked) return null;
     const hash = (u as User & { passwordHash?: string }).passwordHash;
     if (!hash || !bcrypt.compareSync(password, hash)) return null;

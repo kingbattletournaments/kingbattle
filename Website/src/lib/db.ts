@@ -415,7 +415,12 @@ export const db = {
   async signInUser(email: string, password: string): Promise<DbUser | null> {
     const supabase = getSupabase();
     if (!supabase) return null;
-    const { data } = await supabase.from("app_users").select("*").ilike("email", email).single();
+    const query = email.trim();
+    const { data } = await supabase
+      .from("app_users")
+      .select("*")
+      .or(`email.ilike.${query},username.eq.${query}`)
+      .maybeSingle();
     if (!data) return null;
     const u = data as { password_hash?: string | null; is_blocked?: boolean };
     if (u.is_blocked) return null;

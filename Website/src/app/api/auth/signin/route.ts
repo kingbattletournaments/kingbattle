@@ -7,14 +7,14 @@ export async function POST(request: Request) {
     const body = await request.json();
     const { email, password } = body;
     if (!email || typeof email !== "string") {
-      return NextResponse.json({ error: "Email required" }, { status: 400 });
+      return NextResponse.json({ error: "Email or username required" }, { status: 400 });
     }
     if (!password || typeof password !== "string") {
       return NextResponse.json({ error: "Password required" }, { status: 400 });
     }
     const user = await getStore().signInUser(email.trim(), password);
     if (!user) {
-      return NextResponse.json({ error: "Invalid email or password" }, { status: 401 });
+      return NextResponse.json({ error: "Invalid credentials" }, { status: 401 });
     }
     const { name, value, options } = createAppSessionCookie(user.id);
     const res = NextResponse.json({

@@ -107,8 +107,15 @@ fun SignInScreen(
 
     val isLoading = viewModel.isLoading.collectAsState()
     val errorMessage = viewModel.errorMessage.collectAsState()
+    val isLoggedIn = viewModel.isLoggedIn.collectAsState()
 
     val context = LocalContext.current
+
+    LaunchedEffect(isLoggedIn.value) {
+        if (isLoggedIn.value) {
+            onSignInSuccess()
+        }
+    }
 
     // Google Sign-In setup
     val gso = remember {
@@ -176,12 +183,12 @@ fun SignInScreen(
             OutlinedTextField(
                 value = email,
                 onValueChange = { email = it },
-                label = { Text("Email Address") },
+                label = { Text("Username or Email") },
                 modifier = Modifier
                     .fillMaxWidth()
                     .padding(bottom = 16.dp),
                 singleLine = true,
-                keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.Email),
+                keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.Text),
                 colors = OutlinedTextFieldDefaults.colors(
                     focusedTextColor = TextWhite,
                     unfocusedTextColor = TextWhite,

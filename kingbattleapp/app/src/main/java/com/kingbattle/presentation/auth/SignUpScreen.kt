@@ -11,6 +11,8 @@ import androidx.compose.ui.text.input.KeyboardType
 import androidx.compose.ui.text.input.PasswordVisualTransformation
 import androidx.compose.ui.unit.dp
 import androidx.hilt.navigation.compose.hiltViewModel
+import android.widget.Toast
+import androidx.compose.ui.platform.LocalContext
 
 @Composable
 fun SignUpScreen(
@@ -24,8 +26,16 @@ fun SignUpScreen(
     var confirmPassword by remember { mutableStateOf("") }
     var referralCode by remember { mutableStateOf("") }
 
+    val context = LocalContext.current
     val isLoading = viewModel.isLoading.collectAsState()
     val errorMessage = viewModel.errorMessage.collectAsState()
+    val isLoggedIn = viewModel.isLoggedIn.collectAsState()
+
+    LaunchedEffect(isLoggedIn.value) {
+        if (isLoggedIn.value) {
+            onSignUpSuccess()
+        }
+    }
 
     Column(
         modifier = Modifier
@@ -105,12 +115,14 @@ fun SignUpScreen(
 
         Button(
             onClick = {
-                if (email.isNotEmpty() && password.isNotEmpty() && displayName.isNotEmpty()) {
+                if (email.trim().isNotEmpty() && password.isNotEmpty() && displayName.trim().isNotEmpty()) {
                     if (password == confirmPassword) {
-                        viewModel.signUp(email, password, displayName, referralCode.takeIf { it.isNotBlank() })
+                        viewModel.signUp(email.trim(), password, displayName.trim(), referralCode.trim().takeIf { it.isNotBlank() })
                     } else {
-                        // Show error
+                        Toast.makeText(context, "Passwords do not match", Toast.LENGTH_SHORT).show()
                     }
+                } else {
+                    Toast.makeText(context, "Fill in all fields", Toast.LENGTH_SHORT).show()
                 }
             },
             modifier = Modifier

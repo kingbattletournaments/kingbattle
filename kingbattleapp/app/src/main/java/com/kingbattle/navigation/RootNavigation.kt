@@ -49,9 +49,41 @@ fun RootNavigation() {
         composable(Screen.Welcome.route) {
             WelcomeScreen(
                 onNavigateToHome = {
-                    navController.navigate(Screen.Home.route) {
-                        popUpTo(Screen.Welcome.route) { inclusive = true }
+                    if (isLoggedIn.value) {
+                        navController.navigate(Screen.Home.route) {
+                            popUpTo(Screen.Welcome.route) { inclusive = true }
+                        }
+                    } else {
+                        navController.navigate(Screen.SignIn.route) {
+                            popUpTo(Screen.Welcome.route) { inclusive = true }
+                        }
                     }
+                }
+            )
+        }
+
+        composable(Screen.SignIn.route) {
+            SignInScreen(
+                onSignInSuccess = {
+                    navController.navigate(Screen.Home.route) {
+                        popUpTo(Screen.SignIn.route) { inclusive = true }
+                    }
+                },
+                onNavigateToSignUp = {
+                    navController.navigate(Screen.SignUp.route)
+                }
+            )
+        }
+
+        composable(Screen.SignUp.route) {
+            SignUpScreen(
+                onSignUpSuccess = {
+                    navController.navigate(Screen.Home.route) {
+                        popUpTo(Screen.SignUp.route) { inclusive = true }
+                    }
+                },
+                onNavigateBack = {
+                    navController.popBackStack()
                 }
             )
         }
@@ -60,7 +92,7 @@ fun RootNavigation() {
         composable(Screen.Home.route) {
             HomeScreen(
                 onLogout = {
-                    navController.navigate(Screen.Welcome.route) {
+                    navController.navigate(Screen.SignIn.route) {
                         popUpTo(Screen.Home.route) { inclusive = true }
                     }
                 },
