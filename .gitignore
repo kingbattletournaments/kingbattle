@@ -1,0 +1,43 @@
+# Next.js and Node.js
+**/node_modules/
+**/.next/
+**/out/
+**/build/
+**/dist/
+**/.env
+**/.env.local
+**/.env.development.local
+**/.env.test.local
+**/.env.production.local
+**/.env.share.local
+**/.env*.local
+
+# Android build and Gradle
+**/.gradle/
+**/build/
+**/captures/
+**/.externalNativeBuild/
+**/.cxx/
+**/local.properties
+**/.idea/workspace.xml
+**/.idea/tasks.xml
+**/.idea/gradle.xml
+**/.idea/assetWizardSettings.xml
+**/.idea/dictionaries
+**/.idea/libraries
+**/.idea/caches
+**/.idea/modules.xml
+**/.idea/kotlin.xml
+**/.idea/deploymentTargetSelector.xml
+**/.idea/deploymentTargetDropDown.xml
+**/.idea/navEditor.xml
+**/build.log
+**/.kotlin/
+**/.navigation/
+**/*.iml
+**/*.ipr
+**/*.iws
+
+# OS files
+.DS_Store
+Thumbs.db
