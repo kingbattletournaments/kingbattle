@@ -41,3 +41,7 @@
 # OS files
 .DS_Store
 Thumbs.db
+
+# Google Services config file (contains API keys)
+**/google-services.json
+
