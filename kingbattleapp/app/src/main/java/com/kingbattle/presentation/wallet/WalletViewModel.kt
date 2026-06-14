@@ -63,15 +63,10 @@ class WalletViewModel @Inject constructor(
                         val txRes = api.getUserTransactions(currentUser.id)
                         if (txRes.isSuccessful && txRes.body() != null) {
                             _transactions.value = txRes.body()!!
-                        } else {
-                            loadMockTransactions()
                         }
                     } catch (e: Exception) {
                         e.printStackTrace()
-                        loadMockTransactions()
                     }
-                } else {
-                    loadMockTransactions()
                 }
 
                 // 3. Fetch withdrawal charge
@@ -99,58 +94,9 @@ class WalletViewModel @Inject constructor(
             } catch (e: Exception) {
                 _errorMessage.value = "Failed to load wallet data: ${e.localizedMessage}"
                 e.printStackTrace()
-                loadMockTransactions()
             } finally {
                 _isLoading.value = false
             }
-        }
-    }
-
-    private fun loadMockTransactions() {
-        // Fallback mock history similar to what is structured in FULLSTACK-ESPORTS
-        if (_transactions.value.isEmpty()) {
-            _transactions.value = listOf(
-                Transaction(
-                    id = "tx-1",
-                    amount = -250,
-                    type = "withdraw",
-                    description = "Withdrawal via UPI",
-                    created_at = "2026-06-12T14:30:00Z",
-                    status = "successful"
-                ),
-                Transaction(
-                    id = "tx-2",
-                    amount = -100,
-                    type = "withdraw_failed",
-                    description = "Withdrawal Refunded",
-                    created_at = "2026-06-11T09:15:00Z",
-                    status = "refunded"
-                ),
-                Transaction(
-                    id = "tx-3",
-                    amount = 500,
-                    type = "deposit",
-                    description = "Deposit successful",
-                    created_at = "2026-06-10T18:22:00Z",
-                    status = "successful"
-                ),
-                Transaction(
-                    id = "tx-4",
-                    amount = -150,
-                    type = "withdraw",
-                    description = "Withdrawal via UPI",
-                    created_at = "2026-06-12T22:10:00Z",
-                    status = "pending"
-                ),
-                Transaction(
-                    id = "tx-5",
-                    amount = 50,
-                    type = "signup_bonus",
-                    description = "Signup bonus",
-                    created_at = "2026-06-09T10:00:00Z",
-                    status = "successful"
-                )
-            )
         }
     }
 

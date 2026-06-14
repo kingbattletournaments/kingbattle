@@ -58,7 +58,6 @@ class MatchesViewModel @Inject constructor(
                 if (modeId == "my_matches") {
                     _modeName.value = "MY MATCHES"
 
-                    val allModes = listOf("fake-solo", "fake-duo", "fake-squad")
                     val loadedMatches = mutableListOf<Match>()
 
                     // 1. Fetch modes first to get their actual IDs from server
@@ -72,24 +71,17 @@ class MatchesViewModel @Inject constructor(
                         e.printStackTrace()
                     }
 
-                    val modeIdsToQuery = if (serverModes.isNotEmpty()) {
-                        serverModes.map { it.id }
-                    } else {
-                        allModes
-                    }
-
-                    // 2. Fetch matches for each mode
-                    for (mId in modeIdsToQuery) {
-                        try {
-                            val res = api.getMatches(mId)
-                            if (res.isSuccessful && res.body() != null) {
-                                loadedMatches.addAll(res.body()!!)
-                            } else {
-                                loadedMatches.addAll(getMockMatches(mId))
+                    if (serverModes.isNotEmpty()) {
+                        // 2. Fetch matches for each mode
+                        for (mode in serverModes) {
+                            try {
+                                val res = api.getMatches(mode.id)
+                                if (res.isSuccessful && res.body() != null) {
+                                    loadedMatches.addAll(res.body()!!)
+                                }
+                            } catch (e: Exception) {
+                                e.printStackTrace()
                             }
-                        } catch (e: Exception) {
-                            e.printStackTrace()
-                            loadedMatches.addAll(getMockMatches(mId))
                         }
                     }
 
@@ -117,16 +109,7 @@ class MatchesViewModel @Inject constructor(
                         joinedMatchIds.contains(match.id)
                     }
 
-                    if (filtered.isEmpty()) {
-                        // Pre-populate with a couple of mock matches marked as joined for preview
-                        val defaultJoinedMockMatches = getMockMatches("fake-solo").take(1) + getMockMatches("fake-duo").take(1)
-                        for (m in defaultJoinedMockMatches) {
-                            tokenManager.saveJoinedMatch(m.id)
-                        }
-                        _matches.value = defaultJoinedMockMatches
-                    } else {
-                        _matches.value = filtered
-                    }
+                    _matches.value = filtered
 
                 } else {
                     // Dynamic modeName resolution
@@ -156,20 +139,19 @@ class MatchesViewModel @Inject constructor(
                     try {
                         val response = api.getMatches(modeId)
                         if (response.isSuccessful && response.body() != null) {
-                            val serverMatches = response.body()!!
-                            _matches.value = serverMatches + getMockMatches(modeId)
+                            _matches.value = response.body()!!
                         } else {
-                            _matches.value = getMockMatches(modeId)
+                            _matches.value = emptyList()
                         }
                     } catch (e: Exception) {
                         e.printStackTrace()
-                        _matches.value = getMockMatches(modeId)
+                        _matches.value = emptyList()
                     }
                 }
 
             } catch (e: Exception) {
                 _errorMessage.value = "Failed to load matches: ${e.localizedMessage}"
-                _matches.value = getMockMatches(modeId)
+                _matches.value = emptyList()
             } finally {
                 _isLoading.value = false
             }
@@ -200,177 +182,8 @@ class MatchesViewModel @Inject constructor(
                     onError(errorBody)
                 }
             } catch (e: Exception) {
-                if (matchId.contains("fake-") || matchId.contains("solo-") || matchId.contains("duo-") || matchId.contains("squad-")) {
-                    tokenManager.saveJoinedMatch(matchId)
-                    onSuccess()
-                } else {
-                    onError(e.localizedMessage ?: "Network error")
-                }
+                onError(e.localizedMessage ?: "Network error")
             }
         }
-    }
-
-    private fun getMockMatches(modeId: String): List<Match> {
-        val isSolo = modeId.contains("solo", ignoreCase = true)
-        val isDuo = modeId.contains("duo", ignoreCase = true)
-        val isSquad = modeId.contains("squad", ignoreCase = true) || (!isSolo && !isDuo)
-
-        val modeName = when {
-            isSolo -> "SOLO"
-            isDuo -> "DUO"
-            else -> "SQUAD"
-        }
-
-        val matchType = when {
-            isSolo -> "solo"
-            isDuo -> "duo"
-            else -> "squad"
-        }
-
-        val maxPlayers = when {
-            isSolo -> 100
-            isDuo -> 48
-            else -> 48
-        }
-
-        val posters = listOf("match_poster_1", "match_poster_2", "match_poster_3")
-
-        return listOf(
-            // 1. Ongoing Match
-            Match(
-                id = "${modeId}-ongoing-1",
-                game_mode_id = modeId,
-                title = "BR $modeName PER KILL MATCH - Match #997",
-                entry_fee = 13,
-                room_code = "ROOM123",
-                room_password = "PASS",
-                status = "ongoing",
-                registration_locked = true,
-                max_participants = maxPlayers,
-                starts_at = "12/06/2026 06:30 pm",
-                participant_count = maxPlayers - 10,
-                matchType = matchType,
-                prizePool = PrizePool(
-                    coins_per_kill = 10,
-                    total_prize_pool = 500,
-                    rank_rewards = listOf(
-                        RankReward(from_rank = 1, to_rank = 1, coins = 150),
-                        RankReward(from_rank = 2, to_rank = 2, coins = 100),
-                        RankReward(from_rank = 3, to_rank = 5, coins = 50)
-                    )
-                ),
-                version = "TPP",
-                map = "BERMUDA",
-                image = posters[Math.abs("${modeId}-ongoing-1".hashCode()) % posters.size]
-            ),
-            // 2. Upcoming Match 1
-            Match(
-                id = "${modeId}-upcoming-1",
-                game_mode_id = modeId,
-                title = "BR $modeName GRAND TOURNAMENT - Match #1021",
-                entry_fee = 25,
-                room_code = null,
-                room_password = null,
-                status = "upcoming",
-                registration_locked = false,
-                max_participants = maxPlayers,
-                starts_at = "13/06/2026 04:00 pm",
-                participant_count = 15,
-                matchType = matchType,
-                prizePool = PrizePool(
-                    coins_per_kill = 15,
-                    total_prize_pool = 1000,
-                    rank_rewards = listOf(
-                        RankReward(from_rank = 1, to_rank = 1, coins = 300),
-                        RankReward(from_rank = 2, to_rank = 2, coins = 200),
-                        RankReward(from_rank = 3, to_rank = 10, coins = 50)
-                    )
-                ),
-                version = "TPP",
-                map = "PURGATORY",
-                image = posters[Math.abs("${modeId}-upcoming-1".hashCode()) % posters.size]
-            ),
-            // 3. Upcoming Match 2
-            Match(
-                id = "${modeId}-upcoming-2",
-                game_mode_id = modeId,
-                title = "BR $modeName PER KILL MATCH - Match #1022",
-                entry_fee = 10,
-                room_code = null,
-                room_password = null,
-                status = "upcoming",
-                registration_locked = false,
-                max_participants = maxPlayers,
-                starts_at = "13/06/2026 08:30 pm",
-                participant_count = 31,
-                matchType = matchType,
-                prizePool = PrizePool(
-                    coins_per_kill = 8,
-                    total_prize_pool = 400,
-                    rank_rewards = listOf(
-                        RankReward(from_rank = 1, to_rank = 1, coins = 100),
-                        RankReward(from_rank = 2, to_rank = 2, coins = 60),
-                        RankReward(from_rank = 3, to_rank = 5, coins = 30)
-                    )
-                ),
-                version = "TPP",
-                map = "BERMUDA",
-                image = posters[Math.abs("${modeId}-upcoming-2".hashCode()) % posters.size]
-            ),
-            // 4. Completed Match 1 (Results)
-            Match(
-                id = "${modeId}-completed-1",
-                game_mode_id = modeId,
-                title = "BR $modeName SUNDAY CHAMPIONSHIP - Match #985",
-                entry_fee = 20,
-                room_code = "ROOM985",
-                room_password = "PASS",
-                status = "completed",
-                registration_locked = true,
-                max_participants = maxPlayers,
-                starts_at = "07/06/2026 02:00 pm",
-                participant_count = maxPlayers,
-                matchType = matchType,
-                prizePool = PrizePool(
-                    coins_per_kill = 12,
-                    total_prize_pool = 800,
-                    rank_rewards = listOf(
-                        RankReward(from_rank = 1, to_rank = 1, coins = 200),
-                        RankReward(from_rank = 2, to_rank = 2, coins = 120),
-                        RankReward(from_rank = 3, to_rank = 5, coins = 60)
-                    )
-                ),
-                version = "TPP",
-                map = "KALAHARI",
-                image = posters[Math.abs("${modeId}-completed-1".hashCode()) % posters.size]
-            ),
-            // 5. Completed Match 2 (Results)
-            Match(
-                id = "${modeId}-completed-2",
-                game_mode_id = modeId,
-                title = "BR $modeName PER KILL MATCH - Match #986",
-                entry_fee = 13,
-                room_code = "ROOM986",
-                room_password = "PASS",
-                status = "completed",
-                registration_locked = true,
-                max_participants = maxPlayers,
-                starts_at = "07/06/2026 07:00 pm",
-                participant_count = maxPlayers,
-                matchType = matchType,
-                prizePool = PrizePool(
-                    coins_per_kill = 10,
-                    total_prize_pool = 500,
-                    rank_rewards = listOf(
-                        RankReward(from_rank = 1, to_rank = 1, coins = 150),
-                        RankReward(from_rank = 2, to_rank = 2, coins = 100),
-                        RankReward(from_rank = 3, to_rank = 5, coins = 50)
-                    )
-                ),
-                version = "TPP",
-                map = "BERMUDA",
-                image = posters[Math.abs("${modeId}-completed-2".hashCode()) % posters.size]
-            )
-        )
     }
 }

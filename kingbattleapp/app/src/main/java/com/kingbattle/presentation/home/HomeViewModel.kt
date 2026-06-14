@@ -17,13 +17,7 @@ class HomeViewModel @Inject constructor(
     private val api: KingBattleApi
 ) : ViewModel() {
 
-    private val _modes = MutableStateFlow<List<GameMode>>(
-        listOf(
-            GameMode(id = "fake-solo", game_id = "default-game-free-fire", name = "SOLO", image_url = null),
-            GameMode(id = "fake-duo", game_id = "default-game-free-fire", name = "DUO", image_url = null),
-            GameMode(id = "fake-squad", game_id = "default-game-free-fire", name = "SQUAD", image_url = null)
-        )
-    )
+    private val _modes = MutableStateFlow<List<GameMode>>(emptyList())
     val modes: StateFlow<List<GameMode>> = _modes.asStateFlow()
 
     private val _announcementText = MutableStateFlow("🔥 Welcome to King Battle! Join daily Free Fire tournaments and win real coins! Fast withdrawals guaranteed! 🔥")
@@ -32,20 +26,7 @@ class HomeViewModel @Inject constructor(
     private val _banners = MutableStateFlow<List<com.kingbattle.domain.model.AppBanner>>(emptyList())
     val banners: StateFlow<List<com.kingbattle.domain.model.AppBanner>> = _banners.asStateFlow()
 
-    private val _leaderboard = MutableStateFlow<List<com.kingbattle.domain.model.LeaderboardUser>>(
-        listOf(
-            com.kingbattle.domain.model.LeaderboardUser(id = "1", displayName = "Eiden", coins = 2430),
-            com.kingbattle.domain.model.LeaderboardUser(id = "2", displayName = "Jackson", coins = 1847),
-            com.kingbattle.domain.model.LeaderboardUser(id = "3", displayName = "Emma Aria", coins = 1674),
-            com.kingbattle.domain.model.LeaderboardUser(id = "4", displayName = "Sebastian", coins = 1124),
-            com.kingbattle.domain.model.LeaderboardUser(id = "5", displayName = "Jason", coins = 875),
-            com.kingbattle.domain.model.LeaderboardUser(id = "6", displayName = "Natalie", coins = 774),
-            com.kingbattle.domain.model.LeaderboardUser(id = "7", displayName = "Serenity", coins = 723),
-            com.kingbattle.domain.model.LeaderboardUser(id = "8", displayName = "Hannah", coins = 559),
-            com.kingbattle.domain.model.LeaderboardUser(id = "9", displayName = "Tyler", coins = 450),
-            com.kingbattle.domain.model.LeaderboardUser(id = "10", displayName = "Sophia", coins = 380)
-        )
-    )
+    private val _leaderboard = MutableStateFlow<List<com.kingbattle.domain.model.LeaderboardUser>>(emptyList())
     val leaderboard: StateFlow<List<com.kingbattle.domain.model.LeaderboardUser>> = _leaderboard.asStateFlow()
 
     private val _user = MutableStateFlow<User?>(null)
