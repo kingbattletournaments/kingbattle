@@ -636,8 +636,13 @@ export const adminStore = {
     return m;
   },
 
-  matches: (modeId?: string) =>
-    modeId ? matches.filter((m) => m.gameModeId === modeId) : [...matches],
+  matches: (modeId?: string) => {
+    const list = modeId ? matches.filter((m) => m.gameModeId === modeId) : [...matches];
+    return list.map((m) => {
+      const count = matchParticipants.filter((mp) => mp.matchId === m.id).length;
+      return { ...m, participantCount: count };
+    });
+  },
   addMatch: (
     gameModeId: string,
     title: string,

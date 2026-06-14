@@ -23,6 +23,9 @@ type Match = {
   prizePool?: PrizePool;
   scheduledAt?: string;
   maxParticipants?: number;
+  image?: string | null;
+  participantCount?: number;
+  map?: string;
 };
 type User = { id: string; email: string; displayName: string; coins: number; wonCoins?: number; isBlocked?: boolean; username?: string };
 
@@ -690,6 +693,7 @@ function ModesSection({
   onSelectMode: (id: string) => void;
   onSuccess: () => void;
 }) {
+  const [view, setView] = useState<"list" | "create">("list");
   const [name, setName] = useState("");
   const [imageFile, setImageFile] = useState<File | null>(null);
   const [imagePreview, setImagePreview] = useState<string | null>(null);
@@ -724,6 +728,7 @@ function ModesSection({
       setName("");
       handleImageClear();
       onSuccess();
+      setView("list");
     } catch (err) {
       alert(err instanceof Error ? err.message : "Failed to create mode");
     } finally {
@@ -756,66 +761,129 @@ function ModesSection({
   };
 
   return (
-    <div className="space-y-8">
-      {onBack && (
-        <button
-          type="button"
-          onClick={onBack}
-          className="flex items-center gap-2 text-sm text-slate-400 transition hover:text-white"
-        >
-          ← Back to Games
-        </button>
-      )}
-      <section className="admin-card rounded-2xl p-6 sm:p-8">
-        <h2 className="mb-1 text-base font-semibold text-white/90">Modes for {gameName}</h2>
-        <p className="mb-6 text-sm text-slate-400">Create a new mode or click one to manage matches</p>
-        <form onSubmit={handleSubmit} className="mb-6 space-y-5">
-          <div>
-            <label className="mb-2 block text-sm font-medium text-slate-300">Mode Name</label>
-            <input
-              type="text"
-              value={name}
-              onChange={(e) => setName(e.target.value)}
-              required
-              className="admin-input w-full rounded-xl px-4 py-3 text-white outline-none"
-              placeholder="e.g. Ranked, Classic"
-            />
-          </div>
-          <ImageUpload
-            file={imageFile}
-            previewUrl={imagePreview}
-            onChange={handleImageChange}
-            onClear={handleImageClear}
-          />
-          <button
-            type="submit"
-            disabled={submitting}
-            className="admin-btn-primary rounded-xl px-6 py-3 font-medium text-white disabled:opacity-50"
-          >
-            {submitting ? "Creating..." : "Create Mode"}
-          </button>
-        </form>
-        <h3 className="mb-3 text-sm font-medium text-slate-300">Existing Modes</h3>
-        <ul className="space-y-2">
-          {modes.map((m) => (
-            <li
-              key={m.id}
-              role="button"
-              tabIndex={0}
-              onClick={() => onSelectMode(m.id)}
-              onKeyDown={(e) => e.key === "Enter" && onSelectMode(m.id)}
-              className="admin-list-item flex cursor-pointer items-center justify-between gap-2 rounded-xl px-4 py-3.5 transition hover:border-green-500/30"
+    <div className="space-y-6">
+      {view === "list" ? (
+        <>
+          <div className="flex flex-col gap-4 sm:flex-row sm:items-center sm:justify-between">
+            <div className="flex items-center gap-3">
+              {onBack && (
+                <button
+                  type="button"
+                  onClick={onBack}
+                  className="flex h-9 w-9 items-center justify-center rounded-xl bg-slate-800 border border-slate-700 text-slate-400 hover:text-white transition"
+                  title="Back to Games"
+                >
+                  ←
+                </button>
+              )}
+              <div>
+                <h1 className="text-2xl font-bold text-white mb-1">Modes for {gameName}</h1>
+                <p className="text-slate-400 text-sm">Select a game mode to view and manage matches.</p>
+              </div>
+            </div>
+            <button
+              type="button"
+              onClick={() => setView("create")}
+              className="admin-btn-primary rounded-xl px-5 py-2.5 text-sm font-semibold text-white shrink-0"
             >
-              <span className="font-medium text-slate-200">{m.name}</span>
-              <ItemMenu
-                currentName={m.name}
-                onDelete={() => handleDeleteMode(m.id)}
-                onRename={(newName) => handleRenameMode(m.id, newName)}
+              + Create Game Mode
+            </button>
+          </div>
+
+          <div className="admin-card rounded-2xl p-6 sm:p-8">
+            <h3 className="mb-4 text-base font-semibold text-white/90">Existing Modes</h3>
+            {modes.length === 0 ? (
+              <p className="py-8 text-center text-sm text-slate-400">No game modes configured yet</p>
+            ) : (
+              <ul className="grid grid-cols-1 md:grid-cols-2 gap-4">
+                {modes.map((m) => (
+                  <li
+                    key={m.id}
+                    role="button"
+                    tabIndex={0}
+                    onClick={() => onSelectMode(m.id)}
+                    onKeyDown={(e) => e.key === "Enter" && onSelectMode(m.id)}
+                    className="admin-list-item flex cursor-pointer items-center justify-between gap-3 rounded-xl p-4 transition hover:border-green-500/30"
+                  >
+                    <div className="flex items-center gap-3 min-w-0">
+                      {m.imageUrl ? (
+                        <img
+                          src={m.imageUrl}
+                          alt={m.name}
+                          className="w-12 h-12 object-cover rounded-lg border border-slate-800 shrink-0"
+                        />
+                      ) : (
+                        <div className="w-12 h-12 rounded-lg bg-slate-800 border border-slate-700/50 flex items-center justify-center text-slate-500 text-lg shrink-0">
+                          🎮
+                        </div>
+                      )}
+                      <span className="font-semibold text-slate-200 text-sm truncate">{m.name}</span>
+                    </div>
+                    <div onClick={(e) => e.stopPropagation()}>
+                      <ItemMenu
+                        currentName={m.name}
+                        onDelete={() => handleDeleteMode(m.id)}
+                        onRename={(newName) => handleRenameMode(m.id, newName)}
+                      />
+                    </div>
+                  </li>
+                ))}
+              </ul>
+            )}
+          </div>
+        </>
+      ) : (
+        <>
+          <button
+            type="button"
+            onClick={() => setView("list")}
+            className="flex items-center gap-2 text-sm text-slate-400 transition hover:text-white"
+          >
+            ← Back to Modes
+          </button>
+          
+          <section className="admin-card rounded-2xl p-6 sm:p-8 max-w-xl">
+            <h2 className="mb-1 text-lg font-bold text-white">Create Game Mode</h2>
+            <p className="mb-6 text-sm text-slate-400">Define a new game mode block under {gameName}.</p>
+            
+            <form onSubmit={handleSubmit} className="space-y-5">
+              <div>
+                <label className="mb-2 block text-sm font-medium text-slate-300">Mode Name</label>
+                <input
+                  type="text"
+                  value={name}
+                  onChange={(e) => setName(e.target.value)}
+                  required
+                  className="admin-input w-full rounded-xl px-4 py-3 text-white outline-none"
+                  placeholder="e.g. Ranked, Classic"
+                />
+              </div>
+              <ImageUpload
+                file={imageFile}
+                previewUrl={imagePreview}
+                onChange={handleImageChange}
+                onClear={handleImageClear}
               />
-            </li>
-          ))}
-        </ul>
-      </section>
+              <div className="flex gap-3 pt-2">
+                <button
+                  type="submit"
+                  disabled={submitting}
+                  className="admin-btn-primary rounded-xl px-6 py-3 font-medium text-white disabled:opacity-50"
+                >
+                  {submitting ? "Creating..." : "Create Mode"}
+                </button>
+                <button
+                  type="button"
+                  onClick={() => setView("list")}
+                  className="bg-slate-800 border border-slate-700 hover:bg-slate-700 text-white rounded-xl px-6 py-3 font-medium transition"
+                >
+                  Cancel
+                </button>
+              </div>
+            </form>
+          </section>
+        </>
+      )}
     </div>
   );
 }
@@ -862,6 +930,7 @@ function MatchesSection({
   onBack: () => void;
   onSuccess: (opts?: { silent?: boolean }) => void;
 }) {
+  const [view, setView] = useState<"list" | "create">("list");
   const [title, setTitle] = useState("");
   const [entryFee, setEntryFee] = useState("");
   const [maxParticipants, setMaxParticipants] = useState("16");
@@ -877,6 +946,7 @@ function MatchesSection({
   const [submitting, setSubmitting] = useState(false);
   const [selectedMatchId, setSelectedMatchId] = useState<string | null>(null);
   const [matchTab, setMatchTab] = useState<"upcoming" | "ongoing" | "finished">("upcoming");
+  const [expandedMatchId, setExpandedMatchId] = useState<string | null>(null);
 
   const mode = modes.find((m) => m.id === modeId);
   const gameName = mode ? games.find((g) => g.id === mode.gameId)?.name ?? "?" : "?";
@@ -886,6 +956,21 @@ function MatchesSection({
   const ongoing = matches.filter((m) => m.status === "ongoing");
   const finished = matches.filter((m) => m.status === "ended" || m.status === "completed" || m.status === "cancelled");
   const tabMatches = matchTab === "upcoming" ? upcoming : matchTab === "ongoing" ? ongoing : finished;
+
+  const getMatchBanner = (m: Match) => {
+    if (m.image) {
+      if (m.image.startsWith("http") || m.image.startsWith("/")) {
+        return m.image;
+      }
+      if (m.image.includes("poster_1") || m.image.includes("poster1")) return "/images/ff_image.jpg";
+      if (m.image.includes("poster_2") || m.image.includes("poster2")) return "/images/bgmi_image.jpg";
+      if (m.image.includes("poster_3") || m.image.includes("poster3")) return "/images/cod_image.jpg";
+    }
+    const t = m.title.toLowerCase();
+    if (t.includes("duo")) return "/images/bgmi_image.jpg";
+    if (t.includes("squad")) return "/images/cod_image.jpg";
+    return "/images/ff_image.jpg";
+  };
 
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
@@ -934,6 +1019,7 @@ function MatchesSection({
       ]);
       setSelectedMatchId(data?.id ?? null);
       setMatchTab("upcoming");
+      setView("list");
       onSuccess();
     } catch (err) {
       alert(err instanceof Error ? err.message : "Failed to create match");
@@ -943,284 +1029,415 @@ function MatchesSection({
   };
 
   return (
-    <div className="space-y-8">
-      <button
-        type="button"
-        onClick={onBack}
-        className="flex items-center gap-2 text-sm text-slate-400 transition hover:text-white"
-      >
-        ← Back to Modes
-      </button>
-      <section className="admin-card rounded-2xl p-6 sm:p-8">
-        <h2 className="mb-1 text-base font-semibold text-white/90">Matches for {gameName} → {modeName}</h2>
-        <p className="mb-6 text-sm text-slate-400">Create matches and manage ongoing/upcoming</p>
-        <form onSubmit={handleSubmit} className="mb-8 space-y-5">
-          <div>
-            <label className="mb-2 block text-sm font-medium text-slate-300">Title</label>
-            <input
-              type="text"
-              value={title}
-              onChange={(e) => setTitle(e.target.value)}
-              required
-              className="admin-input w-full rounded-xl px-4 py-3 text-white outline-none"
-              placeholder="e.g. Weekend Cup #1"
-            />
-          </div>
-          <div>
-            <label className="mb-2 block text-sm font-medium text-slate-300">Match Type</label>
-            <MatchTypeDropdown value={matchType} onChange={setMatchType} />
-          </div>
-          <div className="grid gap-5 sm:grid-cols-2">
-            <div>
-              <label className="mb-2 block text-sm font-medium text-slate-300">Entry Fee (coins)</label>
-              <input
-                type="number"
-                min="0"
-                value={entryFee}
-                onChange={(e) => setEntryFee(e.target.value)}
-                required
-                className="admin-input w-full rounded-xl px-4 py-3 text-white outline-none"
-                placeholder="50"
-              />
-            </div>
-            <div>
-              <label className="mb-2 block text-sm font-medium text-slate-300">Max Participants</label>
-              <input
-                type="number"
-                min="2"
-                value={maxParticipants}
-                onChange={(e) => setMaxParticipants(e.target.value)}
-                className="admin-input w-full rounded-xl px-4 py-3 text-white outline-none"
-              />
-            </div>
-          </div>
-          <div>
-            <label className="mb-2 block text-sm font-medium text-slate-300">Scheduled At (optional)</label>
-            <input
-              type="datetime-local"
-              value={scheduledAt}
-              onChange={(e) => setScheduledAt(e.target.value)}
-              className="admin-input w-full rounded-xl px-4 py-3 text-white outline-none"
-            />
-          </div>
-          <div className="rounded-xl border border-slate-600/50 bg-slate-800/30 p-5">
-            <h3 className="mb-3 text-sm font-medium text-slate-300">Prize Pool</h3>
-            <div className="mb-4 grid gap-4 sm:grid-cols-2">
+    <div className="space-y-6">
+      {view === "list" ? (
+        <>
+          <div className="flex flex-col gap-4 sm:flex-row sm:items-center sm:justify-between">
+            <div className="flex items-center gap-3">
+              <button
+                type="button"
+                onClick={onBack}
+                className="flex h-9 w-9 items-center justify-center rounded-xl bg-slate-800 border border-slate-700 text-slate-400 hover:text-white transition"
+                title="Back to Game Modes"
+              >
+                ←
+              </button>
               <div>
-                <label className="mb-1 block text-xs text-slate-400">Total prize pool (coins)</label>
+                <h1 className="text-2xl font-bold text-white mb-1">Matches for {modeName}</h1>
+                <p className="text-slate-400 text-sm">Review players registration, details and map parameters.</p>
+              </div>
+            </div>
+            {!selectedMatchId && (
+              <button
+                type="button"
+                onClick={() => setView("create")}
+                className="admin-btn-primary rounded-xl px-5 py-2.5 text-sm font-semibold text-white shrink-0"
+              >
+                + Create New Match
+              </button>
+            )}
+          </div>
+
+          <div className="admin-card rounded-2xl p-6 sm:p-8">
+            {selectedMatchId ? (
+              <MatchDetailView
+                matchId={selectedMatchId}
+                games={games}
+                modes={modes}
+                users={users}
+                onBack={() => setSelectedMatchId(null)}
+                onSuccess={onSuccess}
+              />
+            ) : (
+              <>
+                <div className="mb-6 grid w-full grid-cols-3 gap-2 sm:flex">
+                  {(["upcoming", "ongoing", "finished"] as const).map((t) => (
+                    <button
+                      key={t}
+                      type="button"
+                      onClick={() => { setMatchTab(t); setSelectedMatchId(null); }}
+                      className={`rounded-full px-3.5 py-2 text-xs font-semibold sm:px-5 sm:text-sm ${
+                        matchTab === t
+                          ? "bg-green-600 text-white"
+                          : "bg-slate-800/80 text-slate-400 hover:bg-slate-700 border border-slate-700/60"
+                      }`}
+                    >
+                      {t.charAt(0).toUpperCase() + t.slice(1)}
+                    </button>
+                  ))}
+                </div>
+
+                {tabMatches.length === 0 ? (
+                  <div className="rounded-xl border border-dashed border-slate-700 p-12 text-center text-slate-400 bg-slate-950/20">
+                    No {matchTab} matches recorded under this mode.
+                  </div>
+                ) : (
+                  <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-6">
+                    {tabMatches.map((m) => {
+                      const spotsTaken = m.participantCount ?? 0;
+                      const maxParticipants = m.maxParticipants ?? 100;
+                      const spotsLeft = Math.max(0, maxParticipants - spotsTaken);
+                      return (
+                        <div key={m.id} className="admin-card rounded-2xl overflow-hidden border border-slate-800 hover:border-green-500/30 transition flex flex-col">
+                          {/* 1. Banner image */}
+                          <div className="relative aspect-[16/9] w-full bg-slate-950 overflow-hidden">
+                            <img
+                              src={getMatchBanner(m)}
+                              alt="Match Banner"
+                              className="w-full h-full object-cover"
+                            />
+                          </div>
+
+                          {/* 2. Info Row */}
+                          <div className="flex items-center gap-3 p-4 border-b border-slate-800/60">
+                            <img
+                              src="/images/app-icon.png"
+                              alt="Logo"
+                              className="w-10 h-10 object-cover rounded-lg border border-slate-800 shrink-0"
+                            />
+                            <div className="min-w-0 flex-1">
+                              <h4 className="font-bold text-white text-sm truncate" title={m.title}>{m.title}</h4>
+                              <p className="text-xs text-slate-500 font-medium mt-0.5">
+                                Starts: {m.scheduledAt ? new Date(m.scheduledAt).toLocaleString() : "TBD"}
+                              </p>
+                            </div>
+                          </div>
+
+                          {/* 3. Stats Grid */}
+                          <div className="p-4 grid grid-cols-3 gap-y-4 gap-x-2 text-center border-b border-slate-800/60 bg-slate-900/10">
+                            {/* Prize Pool */}
+                            <div className="cursor-pointer select-none" onClick={() => setExpandedMatchId(expandedMatchId === m.id ? null : m.id)}>
+                              <p className="text-[10px] text-slate-500 font-bold uppercase tracking-wider">Prize Pool</p>
+                              <div className="flex items-center justify-center gap-1 mt-1">
+                                <span className="text-xs">💵</span>
+                                <span className="text-xs font-bold text-white">{m.prizePool?.totalPrizePool ?? 0}</span>
+                                <span className="text-[10px] text-slate-400">{expandedMatchId === m.id ? "▲" : "▼"}</span>
+                              </div>
+                            </div>
+
+                            {/* Per Kill */}
+                            <div>
+                              <p className="text-[10px] text-slate-500 font-bold uppercase tracking-wider">Per Kill</p>
+                              <div className="flex items-center justify-center gap-1 mt-1">
+                                <span className="text-xs">💵</span>
+                                <span className="text-xs font-bold text-white">{m.prizePool?.coinsPerKill ?? 0}</span>
+                              </div>
+                            </div>
+
+                            {/* Entry Fee */}
+                            <div>
+                              <p className="text-[10px] text-slate-500 font-bold uppercase tracking-wider">Entry Fee</p>
+                              <div className="flex items-center justify-center gap-1 mt-1">
+                                <span className="text-xs">💵</span>
+                                <span className="text-xs font-bold text-white">{m.entryFee}</span>
+                              </div>
+                            </div>
+
+                            {/* Type */}
+                            <div>
+                              <p className="text-[10px] text-slate-500 font-bold uppercase tracking-wider">Type</p>
+                              <p className="text-xs font-bold text-slate-300 mt-1 capitalize">{m.matchType ?? "Solo"}</p>
+                            </div>
+
+                            {/* Version */}
+                            <div>
+                              <p className="text-[10px] text-slate-500 font-bold uppercase tracking-wider">Version</p>
+                              <p className="text-xs font-bold text-slate-300 mt-1">TPP</p>
+                            </div>
+
+                            {/* Map */}
+                            <div>
+                              <p className="text-[10px] text-slate-500 font-bold uppercase tracking-wider">Map</p>
+                              <p className="text-xs font-bold text-slate-300 mt-1 uppercase truncate">{m.map ?? "BERMUDA"}</p>
+                            </div>
+                          </div>
+
+                          {/* Expandable rewards */}
+                          {expandedMatchId === m.id && (
+                            <div className="p-4 bg-slate-950/40 border-b border-slate-800/60 text-xs">
+                              <p className="font-bold text-slate-400 text-[10px] uppercase tracking-wider mb-2">Rank Rewards</p>
+                              {(!m.prizePool?.rankRewards || m.prizePool.rankRewards.length === 0) ? (
+                                <p className="text-slate-500 text-xs">All prizes distributed via per-kill earnings.</p>
+                              ) : (
+                                <div className="space-y-1 max-h-32 overflow-y-auto pr-1">
+                                  {m.prizePool.rankRewards.map((reward, ri) => (
+                                    <div key={ri} className="flex justify-between items-center text-slate-300 py-0.5 border-b border-slate-900/50 last:border-0">
+                                      <span>Rank {reward.fromRank === reward.toRank ? reward.fromRank : `${reward.fromRank} - ${reward.toRank}`}</span>
+                                      <span className="font-semibold text-white">💵 {reward.coins} coins</span>
+                                    </div>
+                                  ))}
+                                </div>
+                              )}
+                            </div>
+                          )}
+
+                          {/* 4. Progress and Button */}
+                          <div className="p-4 flex-1 flex flex-col justify-end space-y-3 bg-slate-900/5">
+                            {/* Progress */}
+                            <div>
+                              <div className="flex justify-between items-center text-xs text-slate-400 mb-1">
+                                <span>Joined: {spotsTaken} / {maxParticipants}</span>
+                                <span>{spotsLeft} spots left</span>
+                              </div>
+                              <div className="w-full h-1.5 bg-slate-800 rounded-full overflow-hidden">
+                                <div
+                                  className="h-full bg-green-500 transition-all"
+                                  style={{ width: `${Math.min(100, (spotsTaken / maxParticipants) * 100)}%` }}
+                                />
+                              </div>
+                            </div>
+
+                            {/* Button */}
+                            <button
+                              type="button"
+                              onClick={() => setSelectedMatchId(m.id)}
+                              className="w-full bg-green-600 hover:bg-green-500 text-white rounded-xl py-2.5 text-xs font-semibold transition"
+                            >
+                              Manage Match
+                            </button>
+                          </div>
+                        </div>
+                      );
+                    })}
+                  </div>
+                )}
+              </>
+            )}
+          </div>
+        </>
+      ) : (
+        <>
+          <button
+            type="button"
+            onClick={() => setView("list")}
+            className="flex items-center gap-2 text-sm text-slate-400 transition hover:text-white"
+          >
+            ← Back to Matches List
+          </button>
+
+          <section className="admin-card rounded-2xl p-6 sm:p-8 max-w-2xl">
+            <h2 className="mb-1 text-lg font-bold text-white">Create New Match</h2>
+            <p className="mb-6 text-sm text-slate-400">Setup matches and reward parameters under {modeName}.</p>
+
+            <form onSubmit={handleSubmit} className="space-y-5">
+              <div>
+                <label className="mb-2 block text-sm font-medium text-slate-300">Title</label>
                 <input
-                  type="number"
-                  min="0"
-                  value={totalPrizePool}
-                  onChange={(e) => setTotalPrizePool(e.target.value)}
-                  className="admin-input w-full rounded-lg px-4 py-2.5 text-sm text-white outline-none"
-                  placeholder="e.g. 500"
+                  type="text"
+                  value={title}
+                  onChange={(e) => setTitle(e.target.value)}
+                  required
+                  className="admin-input w-full rounded-xl px-4 py-3 text-white outline-none"
+                  placeholder="e.g. Weekend Cup #1"
                 />
               </div>
               <div>
-                <label className="mb-1 block text-xs text-slate-400">Coins per kill</label>
-                <input
-                  type="number"
-                  min="0"
-                  value={coinsPerKill}
-                  onChange={(e) => setCoinsPerKill(e.target.value)}
-                  className="admin-input w-full rounded-lg px-4 py-2.5 text-sm text-white outline-none"
-                  placeholder="5"
-                />
+                <label className="mb-2 block text-sm font-medium text-slate-300">Match Type</label>
+                <MatchTypeDropdown value={matchType} onChange={setMatchType} />
               </div>
-            </div>
-            <div className="space-y-3">
-              <label className="block text-xs text-slate-400">Rank rewards (coins per rank range)</label>
-              <p className="text-xs text-slate-500">
-                Ranks 1–3 are fixed; use + Add rank range for more (e.g. 4th–10th).
-              </p>
-              {([0, 1, 2] as const).map((slot) => (
-                <div key={slot} className="flex flex-wrap items-center gap-2">
-                  <span className="inline-flex w-16 shrink-0 items-center justify-center rounded-lg border border-slate-600/40 bg-slate-800/40 px-3 py-2 text-sm text-slate-300">
-                    {slot + 1}
-                  </span>
-                  <span className="text-slate-500">-</span>
-                  <span className="inline-flex w-16 shrink-0 items-center justify-center rounded-lg border border-slate-600/40 bg-slate-800/40 px-3 py-2 text-sm text-slate-300">
-                    {slot + 1}
-                  </span>
-                  <span className="text-slate-500">→</span>
+              <div className="grid gap-5 sm:grid-cols-2">
+                <div>
+                  <label className="mb-2 block text-sm font-medium text-slate-300">Entry Fee (coins)</label>
                   <input
                     type="number"
                     min="0"
-                    value={rankRewards[slot]?.coins ?? 0}
-                    onChange={(e) => {
-                      const coins = Number(e.target.value) || 0;
-                      setRankRewards((prev) => {
-                        const next = [...prev];
-                        while (next.length < 3) {
-                          next.push({ fromRank: next.length + 1, toRank: next.length + 1, coins: 0 });
-                        }
-                        next[slot] = { fromRank: slot + 1, toRank: slot + 1, coins };
-                        return next;
-                      });
-                    }}
-                    className="admin-input w-20 rounded-lg px-3 py-2 text-sm text-white outline-none"
-                    placeholder="coins"
+                    value={entryFee}
+                    onChange={(e) => setEntryFee(e.target.value)}
+                    required
+                    className="admin-input w-full rounded-xl px-4 py-3 text-white outline-none"
+                    placeholder="50"
                   />
-                  <span className="text-slate-400 text-sm">coins</span>
                 </div>
-              ))}
-              {rankRewards.slice(3).map((r, sliceIdx) => {
-                const i = sliceIdx + 3;
-                return (
-                  <div key={i} className="flex flex-wrap items-center gap-2">
-                    <input
-                      type="number"
-                      min="1"
-                      value={r.fromRank}
-                      onChange={(e) =>
-                        setRankRewards((prev) =>
-                          prev.map((x, j) => (j === i ? { ...x, fromRank: Number(e.target.value) || 1 } : x)),
-                        )
-                      }
-                      className="admin-input w-16 rounded-lg px-3 py-2 text-sm text-white outline-none"
-                    />
-                    <span className="text-slate-500">-</span>
-                    <input
-                      type="number"
-                      min="1"
-                      value={r.toRank}
-                      onChange={(e) =>
-                        setRankRewards((prev) =>
-                          prev.map((x, j) => (j === i ? { ...x, toRank: Number(e.target.value) || 1 } : x)),
-                        )
-                      }
-                      className="admin-input w-16 rounded-lg px-3 py-2 text-sm text-white outline-none"
-                    />
-                    <span className="text-slate-500">→</span>
+                <div>
+                  <label className="mb-2 block text-sm font-medium text-slate-300">Max Participants</label>
+                  <input
+                    type="number"
+                    min="2"
+                    value={maxParticipants}
+                    onChange={(e) => setMaxParticipants(e.target.value)}
+                    className="admin-input w-full rounded-xl px-4 py-3 text-white outline-none"
+                  />
+                </div>
+              </div>
+              <div>
+                <label className="mb-2 block text-sm font-medium text-slate-300">Scheduled At (optional)</label>
+                <input
+                  type="datetime-local"
+                  value={scheduledAt}
+                  onChange={(e) => setScheduledAt(e.target.value)}
+                  className="admin-input w-full rounded-xl px-4 py-3 text-white outline-none"
+                />
+              </div>
+              <div className="rounded-xl border border-slate-700/80 bg-slate-800/10 p-5">
+                <h3 className="mb-3 text-sm font-semibold text-slate-300">Prize Pool</h3>
+                <div className="mb-4 grid gap-4 sm:grid-cols-2">
+                  <div>
+                    <label className="mb-1 block text-xs text-slate-400">Total prize pool (coins)</label>
                     <input
                       type="number"
                       min="0"
-                      value={r.coins}
-                      onChange={(e) =>
-                        setRankRewards((prev) =>
-                          prev.map((x, j) => (j === i ? { ...x, coins: Number(e.target.value) || 0 } : x)),
-                        )
-                      }
-                      className="admin-input w-20 rounded-lg px-3 py-2 text-sm text-white outline-none"
-                      placeholder="coins"
+                      value={totalPrizePool}
+                      onChange={(e) => setTotalPrizePool(e.target.value)}
+                      className="admin-input w-full rounded-lg px-4 py-2.5 text-sm text-white outline-none"
+                      placeholder="e.g. 500"
                     />
-                    <span className="text-slate-400 text-sm">coins</span>
-                    <button
-                      type="button"
-                      onClick={() => setRankRewards((prev) => prev.filter((_, j) => j !== i))}
-                      className="rounded p-1.5 text-rose-400 hover:bg-rose-500/20"
-                      aria-label="Remove range"
-                    >
-                      <svg className="h-4 w-4" fill="none" viewBox="0 0 24 24" stroke="currentColor">
-                        <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M6 18L18 6M6 6l12 12" />
-                      </svg>
-                    </button>
                   </div>
-                );
-              })}
-              <button
-                type="button"
-                onClick={() =>
-                  setRankRewards((prev) => {
-                    const maxTo = prev.length > 0 ? Math.max(...prev.map((r) => r.toRank)) : 0;
-                    return [...prev, { fromRank: maxTo + 1, toRank: maxTo + 3, coins: 0 }];
-                  })
-                }
-                className="rounded-lg border border-dashed border-slate-500 px-3 py-2 text-sm text-slate-400 hover:border-green-500/50 hover:text-green-400"
-              >
-                + Add rank range
-              </button>
-            </div>
-          </div>
-          <button
-            type="submit"
-            disabled={submitting}
-            className="admin-btn-primary rounded-xl px-6 py-3 font-medium text-white disabled:opacity-50"
-          >
-            {submitting ? "Creating..." : "Create Match"}
-          </button>
-        </form>
-
-        <div className="mb-6 grid w-full grid-cols-3 gap-2 sm:flex">
-          {(["upcoming", "ongoing", "finished"] as const).map((t) => (
-            <button
-              key={t}
-              type="button"
-              onClick={() => { setMatchTab(t); setSelectedMatchId(null); }}
-              className={`rounded-full px-3 py-2 text-xs font-medium sm:px-4 sm:text-sm ${
-                matchTab === t
-                  ? "bg-green-600/80 text-white"
-                  : "bg-slate-700/50 text-slate-400 hover:bg-slate-600/50"
-              }`}
-            >
-              {t.charAt(0).toUpperCase() + t.slice(1)}
-            </button>
-          ))}
-        </div>
-
-        {selectedMatchId ? (
-          <MatchDetailView
-            matchId={selectedMatchId}
-            games={games}
-            modes={modes}
-            users={users}
-            onBack={() => setSelectedMatchId(null)}
-            onSuccess={onSuccess}
-          />
-        ) : (
-          <ul className="space-y-2">
-            {tabMatches.map((m) => (
-              <li
-                key={m.id}
-                role="button"
-                tabIndex={0}
-                onClick={() => setSelectedMatchId(m.id)}
-                onKeyDown={(e) => e.key === "Enter" && setSelectedMatchId(m.id)}
-                className="admin-list-item flex cursor-pointer flex-wrap items-center justify-between gap-2 rounded-xl px-4 py-3.5 transition hover:border-green-500/30"
-              >
-                <span className="text-slate-200">
-                  {m.title}
-                  <span className="ml-2 text-amber-400/90">→ {m.entryFee} coins</span>
-                  {m.matchType && (
-                    <span className="ml-2 rounded bg-slate-600/50 px-2 py-0.5 text-xs text-slate-400">
-                      {m.matchType}
-                    </span>
-                  )}
-                  {((m.prizePool?.totalPrizePool ?? 0) > 0 || (m.prizePool?.coinsPerKill ?? 0) > 0) && (
-                    <span className="ml-2 block text-xs">
-                      {(m.prizePool?.totalPrizePool ?? 0) > 0 && (
-                        <span className="text-emerald-400/90 block">{m.prizePool?.totalPrizePool} prizepool</span>
-                      )}
-                      {(m.prizePool?.coinsPerKill ?? 0) > 0 && (
-                        <span className="text-slate-400 block">{m.prizePool?.coinsPerKill} coins/kill</span>
-                      )}
-                    </span>
-                  )}
-                </span>
-                <span
-                  className={`rounded-lg px-4 py-1.5 text-xs font-medium ${
-                    m.status === "ongoing"
-                      ? "bg-emerald-500/20 text-emerald-300"
-                      : m.status === "cancelled"
-                        ? "bg-rose-500/20 text-rose-300"
-                        : m.status === "ended" || m.status === "completed"
-                          ? "bg-slate-600/30 text-slate-400"
-                          : "bg-amber-500/20 text-amber-300"
-                  }`}
+                  <div>
+                    <label className="mb-1 block text-xs text-slate-400">Coins per kill</label>
+                    <input
+                      type="number"
+                      min="0"
+                      value={coinsPerKill}
+                      onChange={(e) => setCoinsPerKill(e.target.value)}
+                      className="admin-input w-full rounded-lg px-4 py-2.5 text-sm text-white outline-none"
+                      placeholder="5"
+                    />
+                  </div>
+                </div>
+                <div className="space-y-3">
+                  <label className="block text-xs text-slate-400 font-semibold">Rank rewards (coins per rank range)</label>
+                  <p className="text-[11px] text-slate-500">
+                    Ranks 1–3 are fixed; use + Add rank range for more (e.g. 4th–10th).
+                  </p>
+                  {([0, 1, 2] as const).map((slot) => (
+                    <div key={slot} className="flex flex-wrap items-center gap-2">
+                      <span className="inline-flex w-16 shrink-0 items-center justify-center rounded-lg border border-slate-700 bg-slate-800/40 px-3 py-2 text-sm text-slate-300">
+                        {slot + 1}
+                      </span>
+                      <span className="text-slate-500">-</span>
+                      <span className="inline-flex w-16 shrink-0 items-center justify-center rounded-lg border border-slate-700 bg-slate-800/40 px-3 py-2 text-sm text-slate-300">
+                        {slot + 1}
+                      </span>
+                      <span className="text-slate-500">→</span>
+                      <input
+                        type="number"
+                        min="0"
+                        value={rankRewards[slot]?.coins ?? 0}
+                        onChange={(e) => {
+                          const coins = Number(e.target.value) || 0;
+                          setRankRewards((prev) => {
+                            const next = [...prev];
+                            while (next.length < 3) {
+                              next.push({ fromRank: next.length + 1, toRank: next.length + 1, coins: 0 });
+                            }
+                            next[slot] = { fromRank: slot + 1, toRank: slot + 1, coins };
+                            return next;
+                          });
+                        }}
+                        className="admin-input w-20 rounded-lg px-3 py-2 text-sm text-white outline-none"
+                        placeholder="coins"
+                      />
+                      <span className="text-slate-400 text-sm">coins</span>
+                    </div>
+                  ))}
+                  {rankRewards.slice(3).map((r, sliceIdx) => {
+                    const i = sliceIdx + 3;
+                    return (
+                      <div key={i} className="flex flex-wrap items-center gap-2">
+                        <input
+                          type="number"
+                          min="1"
+                          value={r.fromRank}
+                          onChange={(e) =>
+                            setRankRewards((prev) =>
+                              prev.map((x, j) => (j === i ? { ...x, fromRank: Number(e.target.value) || 1 } : x)),
+                            )
+                          }
+                          className="admin-input w-16 rounded-lg px-3 py-2 text-sm text-white outline-none"
+                        />
+                        <span className="text-slate-500">-</span>
+                        <input
+                          type="number"
+                          min="1"
+                          value={r.toRank}
+                          onChange={(e) =>
+                            setRankRewards((prev) =>
+                              prev.map((x, j) => (j === i ? { ...x, toRank: Number(e.target.value) || 1 } : x)),
+                            )
+                          }
+                          className="admin-input w-16 rounded-lg px-3 py-2 text-sm text-white outline-none"
+                        />
+                        <span className="text-slate-500">→</span>
+                        <input
+                          type="number"
+                          min="0"
+                          value={r.coins}
+                          onChange={(e) =>
+                            setRankRewards((prev) =>
+                              prev.map((x, j) => (j === i ? { ...x, coins: Number(e.target.value) || 0 } : x)),
+                            )
+                          }
+                          className="admin-input w-20 rounded-lg px-3 py-2 text-sm text-white outline-none"
+                          placeholder="coins"
+                        />
+                        <span className="text-slate-400 text-sm">coins</span>
+                        <button
+                          type="button"
+                          onClick={() => setRankRewards((prev) => prev.filter((_, j) => j !== i))}
+                          className="rounded p-1.5 text-rose-400 hover:bg-rose-500/20"
+                          aria-label="Remove range"
+                        >
+                          <svg className="h-4 w-4" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                            <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M6 18L18 6M6 6l12 12" />
+                          </svg>
+                        </button>
+                      </div>
+                    );
+                  })}
+                  <button
+                    type="button"
+                    onClick={() =>
+                      setRankRewards((prev) => {
+                        const maxTo = prev.length > 0 ? Math.max(...prev.map((r) => r.toRank)) : 0;
+                        return [...prev, { fromRank: maxTo + 1, toRank: maxTo + 3, coins: 0 }];
+                      })
+                    }
+                    className="rounded-lg border border-dashed border-slate-500 px-3 py-2 text-sm text-slate-400 hover:border-green-500/50 hover:text-green-400"
+                  >
+                    + Add rank range
+                  </button>
+                </div>
+              </div>
+              <div className="flex gap-3 pt-2">
+                <button
+                  type="submit"
+                  disabled={submitting}
+                  className="admin-btn-primary rounded-xl px-6 py-3 font-medium text-white disabled:opacity-50"
                 >
-                  {m.status}
-                </span>
-              </li>
-            ))}
-            {tabMatches.length === 0 && (
-              <li className="rounded-xl border border-slate-600/50 bg-slate-800/30 px-4 py-8 text-center text-slate-400">
-                No {matchTab} matches
-              </li>
-            )}
-          </ul>
-        )}
-      </section>
+                  {submitting ? "Creating..." : "Create Match"}
+                </button>
+                <button
+                  type="button"
+                  onClick={() => setView("list")}
+                  className="bg-slate-800 border border-slate-700 hover:bg-slate-700 text-white rounded-xl px-6 py-3 font-medium transition"
+                >
+                  Cancel
+                </button>
+              </div>
+            </form>
+          </section>
+        </>
+      )}
     </div>
   );
 }
@@ -2418,11 +2635,9 @@ function DashboardSection({
   onNavigate: (t: Tab) => void;
 }) {
   const totalUsers = users.length;
-  const totalMatches = matches.length;
+  const completedMatches = matches.filter((m) => m.status === "completed" || m.status === "ended").length;
   const totalDeposits = deposits.filter((d) => d.status === "accepted").reduce((sum, d) => sum + d.amount, 0);
   const totalWithdrawals = withdrawals.filter((w) => w.status === "accepted").reduce((sum, w) => sum + w.amount, 0);
-  const completedDepositsCount = deposits.filter((d) => d.status === "accepted").length;
-  const pendingWithdrawals = withdrawals.filter((w) => w.status === "pending").length;
 
   return (
     <div className="space-y-8">
@@ -2432,7 +2647,7 @@ function DashboardSection({
       </div>
 
       <div className="stat-card-grid">
-        <div className="stat-card red cursor-pointer" onClick={() => onNavigate("modes")}>
+        <div className="stat-card red cursor-pointer" onClick={() => onNavigate("users")}>
           <div>
             <p className="text-slate-400 text-xs font-semibold uppercase tracking-wider mb-1">Total Users</p>
             <h3 className="text-3xl font-extrabold text-white">{totalUsers}</h3>
@@ -2444,8 +2659,8 @@ function DashboardSection({
 
         <div className="stat-card green cursor-pointer" onClick={() => onNavigate("modes")}>
           <div>
-            <p className="text-slate-400 text-xs font-semibold uppercase tracking-wider mb-1">Available Matches</p>
-            <h3 className="text-3xl font-extrabold text-white">{totalMatches}</h3>
+            <p className="text-slate-400 text-xs font-semibold uppercase tracking-wider mb-1">Total Matches Completed</p>
+            <h3 className="text-3xl font-extrabold text-white">{completedMatches}</h3>
           </div>
           <div className="stat-icon-wrapper">
             <span className="stat-icon text-green-500">🎮</span>
@@ -2454,7 +2669,7 @@ function DashboardSection({
 
         <div className="stat-card blue cursor-pointer" onClick={() => onNavigate("moneyorders")}>
           <div>
-            <p className="text-slate-400 text-xs font-semibold uppercase tracking-wider mb-1">Received Money</p>
+            <p className="text-slate-400 text-xs font-semibold uppercase tracking-wider mb-1">Total Deposit</p>
             <h3 className="text-3xl font-extrabold text-white">💵 {totalDeposits}</h3>
           </div>
           <div className="stat-icon-wrapper">
@@ -2464,81 +2679,12 @@ function DashboardSection({
 
         <div className="stat-card amber cursor-pointer" onClick={() => onNavigate("withdrawals")}>
           <div>
-            <p className="text-slate-400 text-xs font-semibold uppercase tracking-wider mb-1">Withdrawn Money</p>
+            <p className="text-slate-400 text-xs font-semibold uppercase tracking-wider mb-1">Total Withdrawal</p>
             <h3 className="text-3xl font-extrabold text-white">💵 {totalWithdrawals}</h3>
           </div>
           <div className="stat-icon-wrapper">
             <span className="stat-icon text-amber-500">💸</span>
           </div>
-        </div>
-
-        <div className="stat-card cyan cursor-pointer" onClick={() => onNavigate("moneyorders")}>
-          <div>
-            <p className="text-slate-400 text-xs font-semibold uppercase tracking-wider mb-1">Completed Deposits</p>
-            <h3 className="text-3xl font-extrabold text-white">{completedDepositsCount}</h3>
-          </div>
-          <div className="stat-icon-wrapper">
-            <span className="stat-icon text-cyan-500">📈</span>
-          </div>
-        </div>
-
-        <div className="stat-card purple cursor-pointer" onClick={() => onNavigate("withdrawals")}>
-          <div>
-            <p className="text-slate-400 text-xs font-semibold uppercase tracking-wider mb-1">Pending Withdrawals</p>
-            <h3 className="text-3xl font-extrabold text-white">{pendingWithdrawals}</h3>
-          </div>
-          <div className="stat-icon-wrapper">
-            <span className="stat-icon text-purple-500">⏳</span>
-          </div>
-        </div>
-      </div>
-
-      <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
-        <div className="admin-card rounded-2xl p-6">
-          <h3 className="text-lg font-bold text-white mb-4">Quick Actions</h3>
-          <div className="grid grid-cols-2 gap-3">
-            <button
-              type="button"
-              onClick={() => onNavigate("modes")}
-              className="admin-btn-primary rounded-xl py-3 px-4 text-sm font-semibold text-center text-white"
-            >
-              Create Match
-            </button>
-            <button
-              type="button"
-              onClick={() => onNavigate("notifications")}
-              className="bg-slate-800 border border-slate-700 hover:bg-slate-700 text-white rounded-xl py-3 px-4 text-sm font-semibold text-center transition"
-            >
-              Send Notification
-            </button>
-          </div>
-        </div>
-
-        <div className="admin-card rounded-2xl p-6">
-          <h3 className="text-lg font-bold text-white mb-4">Recent Deposits</h3>
-          {deposits.filter((d) => d.status === "accepted").length === 0 ? (
-            <p className="text-sm text-slate-500 py-4 text-center">No recent deposits found.</p>
-          ) : (
-            <div className="space-y-3">
-              {deposits.filter((d) => d.status === "accepted").slice(0, 3).map((d) => (
-                <div
-                  key={d.id}
-                  className="flex justify-between items-center text-sm border-b border-slate-800 pb-2 last:border-0 last:pb-0"
-                >
-                  <div>
-                    <p className="font-semibold text-slate-300">{d.user?.displayName || d.userId}</p>
-                    <p className="text-xs text-slate-500">UTR: {d.utr}</p>
-                  </div>
-                  <div className="text-right">
-                    <p className="font-bold text-amber-300">💵 {d.amount}</p>
-                    <span className="text-xs px-2 py-0.5 rounded bg-emerald-500/20 text-emerald-300">
-                      succeeded
-                    </span>
-                  </div>
-                </div>
-              ))}
-            </div>
-          )}
         </div>
       </div>
     </div>
@@ -3457,6 +3603,7 @@ function BannersSection() {
   }
 
   const [banners, setBanners] = useState<Banner[]>([]);
+  const [view, setView] = useState<"list" | "create" | "edit">("list");
   const [loading, setLoading] = useState(true);
   const [submitting, setSubmitting] = useState(false);
   const [deletingId, setDeletingId] = useState<string | null>(null);
@@ -3536,6 +3683,7 @@ function BannersSection() {
         setImageFile(null);
         setPreviewUrl(null);
         fetchBanners();
+        setView("list");
       } else {
         const data = await res.json();
         alert(data.error || "Failed to add banner");
@@ -3580,6 +3728,7 @@ function BannersSection() {
         setEditImageFile(null);
         setEditPreviewUrl(null);
         fetchBanners();
+        setView("list");
       } else {
         const data = await res.json();
         alert(data.error || "Failed to save banner");
@@ -3619,180 +3768,213 @@ function BannersSection() {
     setEditDisplayEarn(banner.displayEarn);
     setEditPreviewUrl(banner.imageUrl);
     setEditImageFile(null);
+    setView("edit");
   };
 
   return (
     <div className="space-y-6">
-      <div className="flex items-center justify-between">
-        <h2 className="text-xl font-bold text-white">App Banners</h2>
-      </div>
-
-      {/* Add New Banner Form Card */}
-      <section className="admin-card">
-        <h3 className="mb-4 text-base font-semibold text-white">Add New Banner</h3>
-        <form onSubmit={handleAddBanner} className="space-y-4">
-          <div className="grid gap-4 sm:grid-cols-2">
+      {view === "list" && (
+        <>
+          <div className="flex items-center justify-between">
             <div>
-              <label className="mb-2 block text-sm font-medium text-slate-300">Banner Image URL</label>
-              <input
-                type="text"
-                value={imageUrl}
-                onChange={(e) => setImageUrl(e.target.value)}
-                placeholder="Paste Image URL"
-                className="admin-input w-full rounded-xl px-4 py-3 text-white outline-none"
-              />
-              <span className="mt-1 block text-xs text-slate-500">Or use the uploader below</span>
+              <h2 className="text-xl font-bold text-white">App Banners</h2>
+              <p className="text-slate-400 text-sm">Manage promotional and event banners shown in the app.</p>
             </div>
-            <div>
-              <label className="mb-2 block text-sm font-medium text-slate-300">Destination Link URL</label>
-              <input
-                type="text"
-                value={linkUrl}
-                onChange={(e) => setLinkUrl(e.target.value)}
-                placeholder="e.g. https://youtube.com/..."
-                required
-                className="admin-input w-full rounded-xl px-4 py-3 text-white outline-none"
-              />
-              <span className="mt-1 block text-xs text-slate-500">URL to open when clicked</span>
-            </div>
+            <button
+              type="button"
+              onClick={() => setView("create")}
+              className="admin-btn-primary rounded-xl px-5 py-2.5 text-sm font-semibold text-white shrink-0"
+            >
+              + Add New Banner
+            </button>
           </div>
 
-          <div className="grid gap-4 sm:grid-cols-2">
-            <ImageUpload
-              file={imageFile}
-              previewUrl={previewUrl}
-              onChange={(file) => {
-                setImageFile(file);
-                setPreviewUrl(URL.createObjectURL(file));
-              }}
-              onClear={() => {
-                setImageFile(null);
-                setPreviewUrl(null);
-              }}
-            />
-
-            <div className="flex flex-col justify-center space-y-3 rounded-xl border border-slate-800 bg-slate-900/20 p-4">
-              <label className="text-sm font-medium text-slate-300">Display Locations</label>
-              
-              <label className="flex items-center gap-3 cursor-pointer select-none">
-                <input
-                  type="checkbox"
-                  checked={displayPlayCarousel}
-                  onChange={(e) => setDisplayPlayCarousel(e.target.checked)}
-                  className="h-4 w-4 rounded border-slate-700 bg-slate-900 text-green-500 focus:ring-green-500/20"
-                />
-                <span className="text-sm text-slate-400">Show in Play Carousel (Homepage)</span>
-              </label>
-
-              <label className="flex items-center gap-3 cursor-pointer select-none">
-                <input
-                  type="checkbox"
-                  checked={displayEarn}
-                  onChange={(e) => setDisplayEarn(e.target.checked)}
-                  className="h-4 w-4 rounded border-slate-700 bg-slate-900 text-green-500 focus:ring-green-500/20"
-                />
-                <span className="text-sm text-slate-400">Show in Earn Tab</span>
-              </label>
-            </div>
-          </div>
-
-          <button
-            type="submit"
-            disabled={submitting}
-            className="admin-btn-primary rounded-xl px-6 py-3 font-medium text-white disabled:opacity-50"
-          >
-            {submitting ? "Adding..." : "Add Banner"}
-          </button>
-        </form>
-      </section>
-
-      {/* Existing Banners List */}
-      <section className="space-y-4">
-        <h3 className="text-base font-semibold text-white">Existing Banners</h3>
-        {loading ? (
-          <div className="flex py-10 justify-center">
-            <LoadingSpinner label="Loading banners..." />
-          </div>
-        ) : banners.length === 0 ? (
-          <div className="text-center py-10 text-slate-500 border border-slate-800/40 rounded-xl bg-slate-950/20">
-            No banners configured yet.
-          </div>
-        ) : (
-          <div className="grid gap-6 sm:grid-cols-2 lg:grid-cols-3">
-            {banners.map((b) => (
-              <div key={b.id} className="admin-card overflow-hidden flex flex-col justify-between border border-slate-800">
-                <div>
-                  <div className="aspect-[16/9] w-full overflow-hidden rounded-lg bg-slate-950/50 relative">
-                    {b.imageUrl ? (
-                      <img src={b.imageUrl} alt="Banner" className="h-full w-full object-cover" />
-                    ) : (
-                      <div className="flex h-full items-center justify-center text-xs text-slate-600">No Image</div>
-                    )}
-                  </div>
-                  
-                  <div className="mt-4 space-y-3">
+          <section className="space-y-4">
+            <h3 className="text-base font-semibold text-white">Existing Banners</h3>
+            {loading ? (
+              <div className="flex py-10 justify-center">
+                <LoadingSpinner label="Loading banners..." />
+              </div>
+            ) : banners.length === 0 ? (
+              <div className="text-center py-10 text-slate-500 border border-slate-800/40 rounded-xl bg-slate-950/20">
+                No banners configured yet.
+              </div>
+            ) : (
+              <div className="grid gap-6 sm:grid-cols-2 lg:grid-cols-3">
+                {banners.map((b) => (
+                  <div key={b.id} className="admin-card overflow-hidden flex flex-col justify-between border border-slate-800">
                     <div>
-                      <span className="text-xs font-semibold uppercase tracking-wider text-slate-500">Link URL</span>
-                      <a
-                        href={b.linkUrl}
-                        target="_blank"
-                        rel="noreferrer"
-                        className="block truncate font-mono text-xs text-green-400 hover:underline mt-0.5"
-                        title={b.linkUrl}
-                      >
-                        {b.linkUrl}
-                      </a>
+                      <div className="aspect-[16/9] w-full overflow-hidden rounded-lg bg-slate-950/50 relative">
+                        {b.imageUrl ? (
+                          <img src={b.imageUrl} alt="Banner" className="h-full w-full object-cover" />
+                        ) : (
+                          <div className="flex h-full items-center justify-center text-xs text-slate-600">No Image</div>
+                        )}
+                      </div>
+                      
+                      <div className="mt-4 space-y-3">
+                        <div>
+                          <span className="text-xs font-semibold uppercase tracking-wider text-slate-500">Link URL</span>
+                          <a
+                            href={b.linkUrl}
+                            target="_blank"
+                            rel="noreferrer"
+                            className="block truncate font-mono text-xs text-green-400 hover:underline mt-0.5"
+                            title={b.linkUrl}
+                          >
+                            {b.linkUrl}
+                          </a>
+                        </div>
+
+                        <div className="flex gap-2">
+                          <span className={`rounded-full px-2 py-0.5 text-2xs font-semibold ${b.displayPlayCarousel ? "bg-green-500/10 text-green-400 border border-green-500/20" : "bg-slate-800/50 text-slate-500 border border-slate-700/20"}`}>
+                            Play Carousel
+                          </span>
+                          <span className={`rounded-full px-2 py-0.5 text-2xs font-semibold ${b.displayEarn ? "bg-green-500/10 text-green-400 border border-green-500/20" : "bg-slate-800/50 text-slate-500 border border-slate-700/20"}`}>
+                            Earn Tab
+                          </span>
+                        </div>
+                      </div>
                     </div>
 
-                    <div className="flex gap-2">
-                      <span className={`rounded-full px-2 py-0.5 text-2xs font-semibold ${b.displayPlayCarousel ? "bg-green-500/10 text-green-400 border border-green-500/20" : "bg-slate-800/50 text-slate-500 border border-slate-700/20"}`}>
-                        Play Carousel
-                      </span>
-                      <span className={`rounded-full px-2 py-0.5 text-2xs font-semibold ${b.displayEarn ? "bg-green-500/10 text-green-400 border border-green-500/20" : "bg-slate-800/50 text-slate-500 border border-slate-700/20"}`}>
-                        Earn Tab
-                      </span>
+                    <div className="mt-4 flex gap-2 border-t border-slate-800/60 pt-4">
+                      <button
+                        type="button"
+                        onClick={() => startEdit(b)}
+                        className="flex-1 rounded-lg bg-slate-800/60 py-2 text-xs font-semibold text-slate-300 hover:bg-slate-700 transition"
+                      >
+                        Edit
+                      </button>
+                      <button
+                        type="button"
+                        disabled={deletingId === b.id}
+                        onClick={() => handleDeleteBanner(b.id)}
+                        className="rounded-lg bg-red-950/20 border border-red-900/30 px-3 py-2 text-xs font-semibold text-red-400 hover:bg-red-950/40 transition disabled:opacity-50"
+                      >
+                        {deletingId === b.id ? "..." : "Delete"}
+                      </button>
                     </div>
                   </div>
-                </div>
+                ))}
+              </div>
+            )}
+          </section>
+        </>
+      )}
 
-                <div className="mt-4 flex gap-2 border-t border-slate-800/60 pt-4">
-                  <button
-                    type="button"
-                    onClick={() => startEdit(b)}
-                    className="flex-1 rounded-lg bg-slate-800/60 py-2 text-xs font-semibold text-slate-300 hover:bg-slate-700 transition"
-                  >
-                    Edit
-                  </button>
-                  <button
-                    type="button"
-                    disabled={deletingId === b.id}
-                    onClick={() => handleDeleteBanner(b.id)}
-                    className="rounded-lg bg-red-950/20 border border-red-900/30 px-3 py-2 text-xs font-semibold text-red-400 hover:bg-red-950/40 transition disabled:opacity-50"
-                  >
-                    {deletingId === b.id ? "..." : "Delete"}
-                  </button>
+      {view === "create" && (
+        <>
+          <button
+            type="button"
+            onClick={() => setView("list")}
+            className="flex items-center gap-2 text-sm text-slate-400 transition hover:text-white"
+          >
+            ← Back to Banners List
+          </button>
+
+          <section className="admin-card rounded-2xl p-6 sm:p-8 max-w-2xl">
+            <h3 className="mb-1 text-lg font-bold text-white">Add New Banner</h3>
+            <p className="mb-6 text-sm text-slate-400">Configure promotional or navigation banner details.</p>
+            <form onSubmit={handleAddBanner} className="space-y-4">
+              <div className="grid gap-4 sm:grid-cols-2">
+                <div>
+                  <label className="mb-2 block text-sm font-medium text-slate-300">Banner Image URL</label>
+                  <input
+                    type="text"
+                    value={imageUrl}
+                    onChange={(e) => setImageUrl(e.target.value)}
+                    placeholder="Paste Image URL"
+                    className="admin-input w-full rounded-xl px-4 py-3 text-white outline-none"
+                  />
+                  <span className="mt-1 block text-xs text-slate-500">Or use the uploader below</span>
+                </div>
+                <div>
+                  <label className="mb-2 block text-sm font-medium text-slate-300">Destination Link URL</label>
+                  <input
+                    type="text"
+                    value={linkUrl}
+                    onChange={(e) => setLinkUrl(e.target.value)}
+                    placeholder="e.g. https://youtube.com/..."
+                    required
+                    className="admin-input w-full rounded-xl px-4 py-3 text-white outline-none"
+                  />
+                  <span className="mt-1 block text-xs text-slate-500">URL to open when clicked</span>
                 </div>
               </div>
-            ))}
-          </div>
-        )}
-      </section>
 
-      {/* Edit Modal */}
-      {editingBanner && (
-        <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/60 backdrop-blur-sm p-4">
-          <div className="admin-card w-full max-w-lg border border-slate-800 bg-slate-950 p-6 shadow-2xl rounded-2xl">
-            <div className="flex items-center justify-between border-b border-slate-800 pb-3 mb-4">
-              <h3 className="text-lg font-bold text-white">Edit Banner</h3>
-              <button
-                type="button"
-                onClick={() => setEditingBanner(null)}
-                className="text-slate-400 hover:text-white"
-              >
-                ✕
-              </button>
-            </div>
+              <div className="grid gap-4 sm:grid-cols-2">
+                <ImageUpload
+                  file={imageFile}
+                  previewUrl={previewUrl}
+                  onChange={(file) => {
+                    setImageFile(file);
+                    setPreviewUrl(URL.createObjectURL(file));
+                  }}
+                  onClear={() => {
+                    setImageFile(null);
+                    setPreviewUrl(null);
+                  }}
+                />
 
+                <div className="flex flex-col justify-center space-y-3 rounded-xl border border-slate-800 bg-slate-900/20 p-4">
+                  <label className="text-sm font-medium text-slate-300">Display Locations</label>
+                  
+                  <label className="flex items-center gap-3 cursor-pointer select-none">
+                    <input
+                      type="checkbox"
+                      checked={displayPlayCarousel}
+                      onChange={(e) => setDisplayPlayCarousel(e.target.checked)}
+                      className="h-4 w-4 rounded border-slate-700 bg-slate-900 text-green-500 focus:ring-green-500/20"
+                    />
+                    <span className="text-sm text-slate-400">Show in Play Carousel (Homepage)</span>
+                  </label>
+
+                  <label className="flex items-center gap-3 cursor-pointer select-none">
+                    <input
+                      type="checkbox"
+                      checked={displayEarn}
+                      onChange={(e) => setDisplayEarn(e.target.checked)}
+                      className="h-4 w-4 rounded border-slate-700 bg-slate-900 text-green-500 focus:ring-green-500/20"
+                    />
+                    <span className="text-sm text-slate-400">Show in Earn Tab</span>
+                  </label>
+                </div>
+              </div>
+
+              <div className="flex gap-3 pt-2">
+                <button
+                  type="submit"
+                  disabled={submitting}
+                  className="admin-btn-primary rounded-xl px-6 py-3 font-medium text-white disabled:opacity-50"
+                >
+                  {submitting ? "Adding..." : "Add Banner"}
+                </button>
+                <button
+                  type="button"
+                  onClick={() => setView("list")}
+                  className="bg-slate-800 border border-slate-700 hover:bg-slate-700 text-white rounded-xl px-6 py-3 font-medium transition"
+                >
+                  Cancel
+                </button>
+              </div>
+            </form>
+          </section>
+        </>
+      )}
+
+      {view === "edit" && editingBanner && (
+        <>
+          <button
+            type="button"
+            onClick={() => { setView("list"); setEditingBanner(null); }}
+            className="flex items-center gap-2 text-sm text-slate-400 transition hover:text-white"
+          >
+            ← Back to Banners List
+          </button>
+
+          <section className="admin-card rounded-2xl p-6 sm:p-8 max-w-2xl">
+            <h3 className="mb-1 text-lg font-bold text-white">Edit Banner</h3>
+            <p className="mb-6 text-sm text-slate-400">Update promotional banner details.</p>
             <form onSubmit={handleSaveEdit} className="space-y-4">
               <div>
                 <label className="mb-2 block text-sm font-medium text-slate-300">Banner Image URL</label>
@@ -3855,25 +4037,25 @@ function BannersSection() {
                 </label>
               </div>
 
-              <div className="flex justify-end gap-3 pt-3 border-t border-slate-800">
-                <button
-                  type="button"
-                  onClick={() => setEditingBanner(null)}
-                  className="rounded-xl bg-slate-800 px-5 py-2.5 font-medium text-slate-300 hover:bg-slate-700"
-                >
-                  Cancel
-                </button>
+              <div className="flex gap-3 pt-2">
                 <button
                   type="submit"
                   disabled={submitting}
-                  className="admin-btn-primary rounded-xl px-5 py-2.5 font-medium text-white disabled:opacity-50"
+                  className="admin-btn-primary rounded-xl px-6 py-3 font-medium text-white disabled:opacity-50"
                 >
                   {submitting ? "Saving..." : "Save Changes"}
                 </button>
+                <button
+                  type="button"
+                  onClick={() => { setView("list"); setEditingBanner(null); }}
+                  className="bg-slate-800 border border-slate-700 hover:bg-slate-700 text-white rounded-xl px-6 py-3 font-medium transition"
+                >
+                  Cancel
+                </button>
               </div>
             </form>
-          </div>
-        </div>
+          </section>
+        </>
       )}
     </div>
   );

@@ -71,6 +71,7 @@ export type DbMatch = {
   matchType: string;
   prizePool: { coinsPerKill: number; totalPrizePool?: number; rankRewards: { fromRank: number; toRank: number; coins: number }[] };
   map: string;
+  participantCount?: number;
 };
 
 function toMatch(row: {
@@ -818,7 +819,22 @@ export const db = {
     let q = supabase.from("matches").select("*").order("starts_at", { ascending: true, nullsFirst: false });
     if (modeId) q = q.eq("game_mode_id", modeId);
     const { data } = await q;
-    return (data ?? []).map(toMatch);
+    if (!data) return [];
+    const matchesList = data.map(toMatch);
+    
+    const { data: participantsData } = await supabase
+      .from("app_match_participants")
+      .select("match_id");
+    const countMap: Record<string, number> = {};
+    if (participantsData) {
+      for (const p of participantsData) {
+        countMap[p.match_id] = (countMap[p.match_id] ?? 0) + 1;
+      }
+    }
+    for (const m of matchesList) {
+      m.participantCount = countMap[m.id] ?? 0;
+    }
+    return matchesList;
   },
 
   async addMatch(
