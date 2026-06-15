@@ -12,7 +12,9 @@ export async function POST(
 
     const { id: matchId } = await params;
     const body = await request.json();
-    const { inGameName, inGameUid, teamMembers } = body;
+    const inGameName = body.inGameName || body.in_game_name;
+    const inGameUid = body.inGameUid || body.in_game_uid;
+    const teamMembers = body.teamMembers || body.team_members;
     if (!inGameName || !inGameUid) {
       return NextResponse.json(
         { error: "inGameName and inGameUid required" },

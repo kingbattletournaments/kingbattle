@@ -191,17 +191,24 @@ fun MatchesScreen(
                         }
                 }
 
+                // Determine if a match has been started by admin (room code/password set)
                 val filteredMatches = remember(matchesState.value, page) {
                     matchesState.value.filter { match ->
                         val status = canonicalStatus(match.status)
+                        val hasRoom = !match.room_code.isNullOrEmpty() && !match.room_password.isNullOrEmpty()
                         when (page) {
-                            0 -> status == "ongoing" || status == "open" || status == "start" || status == "upcoming"
-                            1 -> status == "upcoming"
-                            2 -> status == "completed" || status == "cancelled"
+                            0 -> // Ongoing tab: show matches that are officially ongoing or have room info set
+                                status == "ongoing" || hasRoom
+                            1 -> // Upcoming tab: only show matches that are upcoming and not yet started (no room info)
+                                status == "upcoming" && !hasRoom
+                            2 -> // Results tab
+                                status == "completed" || status == "cancelled"
                             else -> false
                         }
                     }
                 }
+                    // Duplicate filteredMatches block removed
+
 
 
                 Box(
@@ -313,19 +320,17 @@ fun MatchCard(
     var rewardsExpanded by remember { mutableStateOf(false) }
     val context = LocalContext.current
 
-    // Cover banner mapping based on image field or title content
-    val bannerRes = remember(match.image, match.title) {
-        val customResId = match.image?.let {
-            context.resources.getIdentifier(it, "drawable", context.packageName)
-        } ?: 0
-        if (customResId != 0) {
-            customResId
-        } else {
-            when {
-                match.title.contains("duo", ignoreCase = true) -> R.drawable.duo
-                match.title.contains("squad", ignoreCase = true) -> R.drawable.squad
-                else -> R.drawable.solo
-            }
+    // Determine if image is a URL or local resource
+    val isImageUrl = remember(match.image) {
+        match.image?.let { it.startsWith("http://") || it.startsWith("https://") } ?: false
+    }
+
+    // Fallback local drawable based on title
+    val fallbackRes = remember(match.title) {
+        when {
+            match.title.contains("duo", ignoreCase = true) -> R.drawable.duo
+            match.title.contains("squad", ignoreCase = true) -> R.drawable.squad
+            else -> R.drawable.solo
         }
     }
 
@@ -344,12 +349,30 @@ fun MatchCard(
                     .fillMaxWidth()
                     .height(180.dp)
             ) {
-                Image(
-                    painter = painterResource(id = bannerRes),
-                    contentDescription = "Match Banner",
-                    modifier = Modifier.fillMaxSize(),
-                    contentScale = ContentScale.Crop
-                )
+                if (isImageUrl) {
+                    coil.compose.AsyncImage(
+                        model = match.image,
+                        contentDescription = "Match Banner",
+                        modifier = Modifier.fillMaxSize(),
+                        contentScale = ContentScale.Crop,
+                        error = painterResource(id = fallbackRes),
+                        placeholder = painterResource(id = fallbackRes)
+                    )
+                } else {
+                    // Try local resource name, otherwise use fallback
+                    val localRes = remember(match.image) {
+                        val customResId = match.image?.let {
+                            context.resources.getIdentifier(it, "drawable", context.packageName)
+                        } ?: 0
+                        if (customResId != 0) customResId else fallbackRes
+                    }
+                    Image(
+                        painter = painterResource(id = localRes),
+                        contentDescription = "Match Banner",
+                        modifier = Modifier.fillMaxSize(),
+                        contentScale = ContentScale.Crop
+                    )
+                }
             }
 
             // 2. Info Row: Clash War logo, Match Title, Date/Time
