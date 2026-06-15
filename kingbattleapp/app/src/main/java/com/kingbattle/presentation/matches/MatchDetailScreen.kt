@@ -7,6 +7,7 @@ import androidx.compose.foundation.background
 import androidx.compose.foundation.border
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.*
+import androidx.compose.ui.draw.alpha
 import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.itemsIndexed
 import androidx.compose.foundation.rememberScrollState
@@ -58,6 +59,7 @@ fun MatchDetailScreen(
     val tabs = listOf("DESCRIPTION", "JOINED MEMBER")
 
     var showJoinDialog by remember { mutableStateOf(false) }
+    var isJoining by remember { mutableStateOf(false) }
 
     LaunchedEffect(matchId) {
         viewModel.loadData(matchId)
@@ -111,17 +113,13 @@ fun MatchDetailScreen(
             )
         },
         bottomBar = {
+            // Determine join status safely
             matchDetailState.value?.match?.let { match ->
-                val localJoined = viewModel.matchDetail.value?.match?.id?.let {
-                    // Check local or remote joined status
-                    val prefs = context.getSharedPreferences("king_battle_prefs", android.content.Context.MODE_PRIVATE)
-                    val localList = prefs.getStringSet("joined_matches", emptySet()) ?: emptySet()
-                    localList.contains(it)
-                } ?: false
-
-                val isJoined = localJoined || match.status.equals("joined", ignoreCase = true)
-                val status = match.status.lowercase()
-
+                val prefs = context.getSharedPreferences("king_battle_prefs", android.content.Context.MODE_PRIVATE)
+                val localList = prefs.getStringSet("joined_matches", emptySet()) ?: emptySet()
+                val localJoined = localList.contains(match.id)
+                val isJoined = localJoined || (match.status?.equals("joined", ignoreCase = true) == true)
+                val status = match.status?.lowercase() ?: ""
                 Box(
                     modifier = Modifier
                         .fillMaxWidth()
@@ -141,6 +139,7 @@ fun MatchDetailScreen(
                             }
                         }
                         status == "upcoming" -> {
+                            val buttonAlpha = if (isJoining) 0.6f else 1f
                             Button(
                                 onClick = {
                                     val userCoins = userState.value?.coins ?: 0
@@ -151,9 +150,10 @@ fun MatchDetailScreen(
                                         showJoinDialog = true
                                     }
                                 },
-                                modifier = Modifier.fillMaxWidth().height(48.dp),
+                                modifier = Modifier.fillMaxWidth().height(48.dp).alpha(buttonAlpha),
                                 colors = ButtonDefaults.buttonColors(containerColor = AccentOrange),
-                                shape = RoundedCornerShape(8.dp)
+                                shape = RoundedCornerShape(8.dp),
+                                enabled = !isJoining
                             ) {
                                 Text("JOIN MATCH", color = Color.White, fontWeight = FontWeight.Bold, fontSize = 16.sp)
                             }
@@ -231,12 +231,24 @@ fun MatchDetailScreen(
                                 .fillMaxWidth()
                                 .height(180.dp)
                         ) {
-                            Image(
-                                painter = painterResource(id = bannerRes),
-                                contentDescription = "Match Banner",
-                                modifier = Modifier.fillMaxSize(),
-                                contentScale = ContentScale.Crop
-                            )
+                            if (bannerRes != 0) {
+                                Image(
+                                    painter = painterResource(id = bannerRes),
+                                    contentDescription = "Match Banner",
+                                    modifier = Modifier.fillMaxSize(),
+                                    contentScale = ContentScale.Crop
+                                )
+                            } else {
+                                // Fallback placeholder with solid background
+                                Box(
+                                    modifier = Modifier
+                                        .fillMaxSize()
+                                        .background(Color(0xFF1E293B)),
+                                    contentAlignment = Alignment.Center
+                                ) {
+                                    Text("No Image", color = Color.White, fontSize = 14.sp)
+                                }
+                            }
                         }
 
                         // 2. Tab Row
@@ -299,19 +311,38 @@ fun MatchDetailScreen(
             onDismiss = { showJoinDialog = false },
             onSubmit = { ign, igid ->
                 showJoinDialog = false
+                isJoining = true
                 viewModel.joinMatch(
                     matchId = match.id,
                     inGameName = ign,
                     inGameUid = igid,
                     onSuccess = {
+                        // Save joined match locally
+                        val prefs = context.getSharedPreferences("king_battle_prefs", android.content.Context.MODE_PRIVATE)
+                        val set = prefs.getStringSet("joined_matches", mutableSetOf())?.toMutableSet() ?: mutableSetOf()
+                        set.add(match.id)
+                        prefs.edit().putStringSet("joined_matches", set).apply()
+                        isJoining = false
                         Toast.makeText(context, "Successfully joined tournament!", Toast.LENGTH_LONG).show()
                     },
                     onError = { err ->
+                        isJoining = false
                         Toast.makeText(context, "Failed: $err", Toast.LENGTH_LONG).show()
                     }
                 )
             }
         )
+    }
+    // Show a loading overlay while the join request is in progress
+    if (isJoining) {
+        Box(
+            modifier = Modifier
+                .fillMaxSize()
+                .background(Color(0x88000000)),
+            contentAlignment = Alignment.Center
+        ) {
+            CircularProgressIndicator(color = AccentOrange)
+        }
     }
 }
 
