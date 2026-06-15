@@ -166,25 +166,43 @@ fun MatchesScreen(
                 }
             }
 
-            HorizontalPager(
+                HorizontalPager(
                 state = pagerState,
                 modifier = Modifier
                     .fillMaxSize()
                     .weight(1f)
             ) { page ->
-                // Filter matches based on current page index status
+                fun canonicalStatus(raw: String?): String {
+                    return raw
+                        ?.trim()
+                        ?.lowercase()
+                        .let { s ->
+                            when (s) {
+                                null -> ""
+                                "open", "opened" -> "open"
+                                "start", "started" -> "start"
+                                "pending", "scheduled" -> "upcoming"
+                                "upcoming" -> "upcoming"
+                                "ongoing" -> "ongoing"
+                                "complete", "completed", "finished" -> "completed"
+                                "cancelled", "canceled", "void" -> "cancelled"
+                                else -> s
+                            }
+                        }
+                }
+
                 val filteredMatches = remember(matchesState.value, page) {
                     matchesState.value.filter { match ->
+                        val status = canonicalStatus(match.status)
                         when (page) {
-                            0 -> match.status.equals("ongoing", ignoreCase = true)
-                            1 -> match.status.equals("upcoming", ignoreCase = true)
-                            2 -> match.status.equals("completed", ignoreCase = true) ||
-                                 match.status.equals("finished", ignoreCase = true) ||
-                                 match.status.equals("cancelled", ignoreCase = true)
+                            0 -> status == "ongoing" || status == "open" || status == "start" || status == "upcoming"
+                            1 -> status == "upcoming"
+                            2 -> status == "completed" || status == "cancelled"
                             else -> false
                         }
                     }
                 }
+
 
                 Box(
                     modifier = Modifier
@@ -601,15 +619,26 @@ fun MatchCard(
                     }
 
                     // Button actions depending on state
-                    val btnEnabled = match.status.equals("upcoming", ignoreCase = true) && !match.registration_locked
+                    val status = match.status.trim().lowercase()
+                    val canonicalStatus = when (status) {
+                        "open", "opened" -> "open"
+                        "start", "started" -> "start"
+                        "pending", "scheduled", "upcoming" -> "upcoming"
+                        "ongoing" -> "ongoing"
+                        "complete", "completed", "finished" -> "completed"
+                        "cancelled", "canceled", "void" -> "cancelled"
+                        else -> status
+                    }
+
+                    val btnEnabled = canonicalStatus == "upcoming" && !match.registration_locked
                     val btnText = when {
-                        match.status.equals("ongoing", ignoreCase = true) -> "ONGOING"
-                        match.status.equals("completed", ignoreCase = true) ||
-                        match.status.equals("finished", ignoreCase = true) -> "COMPLETED"
-                        match.status.equals("cancelled", ignoreCase = true) -> "CANCELLED"
+                        canonicalStatus == "ongoing" -> "ONGOING"
+                        canonicalStatus == "completed" -> "COMPLETED"
+                        canonicalStatus == "cancelled" -> "CANCELLED"
                         match.registration_locked -> "LOCKED"
                         else -> "JOIN"
                     }
+
 
                     Button(
                         onClick = onJoinClick,

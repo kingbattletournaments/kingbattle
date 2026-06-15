@@ -24,11 +24,11 @@ interface KingBattleApi {
     suspend fun getGames(): Response<List<Game>>
 
     @GET("modes")
-    suspend fun getGameModes(@Query("game_id") gameId: String? = null): Response<List<GameMode>>
+    suspend fun getGameModes(@Query("gameId") gameId: String? = null): Response<List<GameMode>>
 
     // ===== Matches =====
     @GET("matches")
-    suspend fun getMatches(@Query("mode_id") modeId: String? = null): Response<List<Match>>
+    suspend fun getMatches(@Query("modeId") modeId: String? = null): Response<List<Match>>
 
     @GET("matches/{id}")
     suspend fun getMatchDetail(@Path("id") matchId: String): Response<MatchDetail>

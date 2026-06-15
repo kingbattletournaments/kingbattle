@@ -12,7 +12,7 @@ const NO_STORE = {
 export async function GET(request: Request) {
   unstable_noStore();
   const { searchParams } = new URL(request.url);
-  const modeId = searchParams.get("modeId");
+  const modeId = searchParams.get("modeId") || searchParams.get("mode_id");
   if (!modeId) {
     return NextResponse.json({ error: "modeId required" }, { status: 400, headers: NO_STORE });
   }

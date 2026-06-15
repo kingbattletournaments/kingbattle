@@ -875,6 +875,7 @@ export const db = {
         entry_fee: entryFee,
         max_participants: maxParticipants,
         starts_at: scheduledAt || null,
+        status: "upcoming",
         match_type: matchType || "solo",
         coins_per_kill: prizePool?.coinsPerKill ?? 5,
         total_prize_pool: prizePool?.totalPrizePool ?? 0,
