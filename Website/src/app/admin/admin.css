@@ -256,6 +256,28 @@
   font-size: 1.4rem;
 }
 
+/* Full-width table/list panels (no nested admin-card padding on mobile) */
+.admin-table-panel {
+  width: 100%;
+  max-width: 100%;
+}
+
+.admin-table-panel .excel-table-container {
+  padding-left: 0;
+  padding-right: 0;
+  margin-left: 0;
+  margin-right: 0;
+}
+
+.admin-table-panel .excel-table {
+  border-radius: 1rem;
+}
+
+.admin-match-list {
+  width: 100%;
+  max-width: 100%;
+}
+
 /* Excel Table styles */
 .excel-table-container {
   width: 100%;

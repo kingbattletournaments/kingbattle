@@ -823,10 +823,30 @@ export const db = {
   },
 
   async renameGameMode(id: string, name: string): Promise<{ id: string; gameId: string; name: string; imageUrl: string | null } | null> {
+    return db.updateGameMode(id, { name });
+  },
+
+  async updateGameMode(
+    id: string,
+    updates: { name?: string; imageUrl?: string | null }
+  ): Promise<{ id: string; gameId: string; name: string; imageUrl: string | null } | null> {
     const supabase = getSupabase();
     if (!supabase) return null;
-    const { data, error } = await supabase.from("game_modes").update({ name, updated_at: new Date().toISOString() }).eq("id", id).select("id, game_id, name, image_url").single();
-    if (error || !data) return null;
+    const payload: { name?: string; image_url?: string | null; updated_at: string } = {
+      updated_at: new Date().toISOString(),
+    };
+    if (updates.name !== undefined) payload.name = updates.name;
+    if (updates.imageUrl !== undefined) payload.image_url = updates.imageUrl;
+    const { data, error } = await supabase
+      .from("game_modes")
+      .update(payload)
+      .eq("id", id)
+      .select("id, game_id, name, image_url")
+      .single();
+    if (error || !data) {
+      console.error("updateGameMode failed:", error?.message ?? "no data returned");
+      return null;
+    }
     return { id: data.id, gameId: data.game_id, name: data.name, imageUrl: data.image_url ?? null };
   },
 

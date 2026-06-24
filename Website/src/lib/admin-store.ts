@@ -653,6 +653,13 @@ export const adminStore = {
     m.name = name;
     return m;
   },
+  updateMode: (id: string, updates: { name?: string; imageUrl?: string | null }) => {
+    const m = gameModes.find((x) => x.id === id);
+    if (!m) return null;
+    if (updates.name !== undefined) m.name = updates.name;
+    if (updates.imageUrl !== undefined) m.imageUrl = updates.imageUrl;
+    return m;
+  },
 
   matches: (modeId?: string) => {
     const list = modeId ? matches.filter((m) => m.gameModeId === modeId) : [...matches];

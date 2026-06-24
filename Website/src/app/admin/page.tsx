@@ -363,11 +363,13 @@ export default function AdminPage() {
 function ItemMenu({
   onDelete,
   onRename,
+  onChangeImage,
   currentName,
   stopPropagation = true,
 }: {
   onDelete: () => void;
   onRename: (newName: string) => void;
+  onChangeImage?: () => void;
   currentName: string;
   stopPropagation?: boolean;
 }) {
@@ -418,6 +420,19 @@ function ItemMenu({
           >
             Rename
           </button>
+          {onChangeImage && (
+            <button
+              type="button"
+              onClick={(e) => {
+                if (stopPropagation) e.stopPropagation();
+                setOpen(false);
+                onChangeImage();
+              }}
+              className="flex w-full items-center gap-2 px-4 py-2 text-left text-sm text-slate-200 hover:bg-slate-700"
+            >
+              Change image
+            </button>
+          )}
           <button
             type="button"
             onClick={(e) => {
@@ -708,6 +723,8 @@ function ModesSection({
   const [imageFile, setImageFile] = useState<File | null>(null);
   const [imagePreview, setImagePreview] = useState<string | null>(null);
   const [submitting, setSubmitting] = useState(false);
+  const [pendingImageModeId, setPendingImageModeId] = useState<string | null>(null);
+  const modeImageInputRef = useRef<HTMLInputElement>(null);
   const gameName = games.find((g) => g.id === gameId)?.name ?? "Game";
 
   const handleImageChange = (file: File) => {
@@ -782,8 +799,51 @@ function ModesSection({
     }
   };
 
+  const handleChangeModeImage = (modeId: string) => {
+    setPendingImageModeId(modeId);
+    modeImageInputRef.current?.click();
+  };
+
+  const handleModeImageSelected = async (e: React.ChangeEvent<HTMLInputElement>) => {
+    const file = e.target.files?.[0];
+    const modeId = pendingImageModeId;
+    e.target.value = "";
+    setPendingImageModeId(null);
+    if (!file || !modeId) return;
+
+    try {
+      const imageUrl = await uploadImage(file);
+      const res = await fetch(`/api/admin/modes/${modeId}`, {
+        method: "PATCH",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ imageUrl }),
+      });
+      if (!res.ok) {
+        const text = await res.text();
+        let errMsg = "Failed to update mode image";
+        try {
+          const errData = JSON.parse(text);
+          if (errData?.error) errMsg = errData.error;
+        } catch {
+          if (text) errMsg = text;
+        }
+        throw new Error(errMsg);
+      }
+      onSuccess();
+    } catch (err) {
+      alert(err instanceof Error ? err.message : "Failed to update mode image");
+    }
+  };
+
   return (
     <div className="space-y-6">
+      <input
+        ref={modeImageInputRef}
+        type="file"
+        accept="image/jpeg,image/png,image/gif,image/webp"
+        className="hidden"
+        onChange={handleModeImageSelected}
+      />
       {view === "list" ? (
         <>
           <div className="flex flex-col gap-4 sm:flex-row sm:items-center sm:justify-between">
@@ -846,6 +906,7 @@ function ModesSection({
                         currentName={m.name}
                         onDelete={() => handleDeleteMode(m.id)}
                         onRename={(newName) => handleRenameMode(m.id, newName)}
+                        onChangeImage={() => handleChangeModeImage(m.id)}
                       />
                     </div>
                   </li>
@@ -1099,7 +1160,7 @@ function MatchesSection({
             )}
           </div>
 
-          <div className="admin-card rounded-2xl p-6 sm:p-8">
+          <div className="admin-match-list space-y-6">
             {selectedMatchId ? (
               <MatchDetailView
                 matchId={selectedMatchId}
@@ -2381,7 +2442,7 @@ function UsersSection({
         />
       </div>
 
-      <section className="admin-card rounded-2xl py-6 px-0 sm:py-8">
+      <section className="admin-table-panel w-full">
         {filteredUsers.length === 0 ? (
           <p className="py-12 text-center text-sm text-slate-400">No users found</p>
         ) : (
@@ -2781,7 +2842,7 @@ function MoneyOrdersSection({
         />
       </div>
 
-      <div className="admin-card rounded-2xl py-6 px-0">
+      <div className="admin-table-panel w-full">
         {filtered.length === 0 ? (
           <p className="py-12 text-center text-sm text-slate-400">No successful money orders found</p>
         ) : (
@@ -2988,7 +3049,7 @@ function WithdrawalsSection({
         />
       </div>
 
-      <div className="admin-card rounded-2xl py-6 px-0">
+      <div className="admin-table-panel w-full">
         {filtered.length === 0 ? (
           <p className="py-12 text-center text-sm text-slate-400">No withdrawal requests found</p>
         ) : (
@@ -4208,13 +4269,13 @@ function ReferralsSection() {
         </form>
       </section>
 
-      <section className="admin-card rounded-2xl py-6 px-0 sm:py-8">
-        <div className="px-6 sm:px-8">
+      <section className="admin-table-panel w-full space-y-4">
+        <div>
           <h2 className="mb-1 text-base font-semibold text-white/90">Referrals History</h2>
           <p className="mb-5 text-sm text-slate-400">{referrals.length} referral(s) recorded</p>
         </div>
         {referrals.length === 0 ? (
-          <div className="mx-6 sm:mx-8 text-center py-10 text-slate-500 border border-slate-800/40 rounded-xl bg-slate-950/20">
+          <div className="text-center py-10 text-slate-500 border border-slate-800/40 rounded-xl bg-slate-950/20">
             No referrals found
           </div>
         ) : (

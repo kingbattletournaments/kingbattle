@@ -24,6 +24,8 @@ export function getStore() {
       addGameMode: (gameId: string, name: string, imageUrl: string | null) => db.addGameMode(gameId, name, imageUrl),
       deleteMode: (id: string) => db.deleteGameMode(id),
       renameMode: (id: string, name: string) => db.renameGameMode(id, name),
+      updateMode: (id: string, updates: { name?: string; imageUrl?: string | null }) =>
+        db.updateGameMode(id, updates),
       getMode: (id: string) => db.getMode(id),
       canAccessGames: (adminId: string) =>
         db.getAdminById(adminId).then((a) => !!(a && (a.isMasterAdmin || a.gamesAccessType === "all" || a.allowedGameIds.length > 0))),
@@ -119,6 +121,8 @@ export function getStore() {
     addGameMode: (gameId: string, name: string, imageUrl: string | null) => Promise.resolve(adminStore.addGameMode(gameId, name, imageUrl)),
     deleteMode: (id: string) => Promise.resolve(adminStore.deleteMode(id)),
     renameMode: (id: string, name: string) => Promise.resolve(adminStore.renameMode(id, name)),
+    updateMode: (id: string, updates: { name?: string; imageUrl?: string | null }) =>
+      Promise.resolve(adminStore.updateMode(id, updates)),
     getMode: (id: string) => Promise.resolve(adminStore.getMode(id)),
     canAccessGames: (adminId: string) => Promise.resolve(adminStore.canAccessGames(adminId)),
     matches: (modeId?: string) => Promise.resolve(adminStore.matches(modeId)),
