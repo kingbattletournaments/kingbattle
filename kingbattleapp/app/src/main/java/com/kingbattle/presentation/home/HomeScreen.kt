@@ -80,6 +80,36 @@ val AccentGold = Color(0xFFFFB000)       // Gold color for coins
 val TextWhite = Color(0xFFF8FAFC)        // Slate-50 main text
 val TextMuted = Color(0xFF94A3B8)        // Slate-400 secondary text
 
+private const val APP_SHARE_LINK = "https://kingbattle-tournaments.vercel.app/"
+
+fun buildAppShareMessage(
+    username: String?,
+    referralSettings: com.kingbattle.domain.model.ReferralSettings?,
+): String {
+    val lines = mutableListOf(
+        "Ready to turn your Free Fire skills into real rewards?",
+        "",
+        "King Battle hosts daily Free Fire tournaments — join matches, climb the leaderboard, and win coins you can cash out!",
+        "",
+        "Get the app: $APP_SHARE_LINK",
+    )
+
+    val code = username?.trim().orEmpty()
+    if (referralSettings?.enabled == true && code.isNotEmpty()) {
+        val signupBonus = referralSettings.signupBonus
+        lines.add("")
+        lines.add(
+            if (signupBonus > 0) {
+                "Use my code $code during signup to get ${signupBonus} Rs signup bonus!"
+            } else {
+                "Use my code $code during signup!"
+            }
+        )
+    }
+
+    return lines.joinToString("\n")
+}
+
 // Custom ImageVectors for navbar icons (since SportsEsports and Leaderboard are not in the core Material icons library)
 val SportsEsportsIcon: ImageVector
     get() = ImageVector.Builder(
@@ -344,13 +374,15 @@ fun HomeScreen(
                     HomeTab.ACCOUNT -> {
                         AccountTabContent(
                             user = userState.value,
+                            referralSettings = homeViewModel.referralSettings.collectAsState().value,
                             onCustomerSupportClick = { homeViewModel.openCustomerSupport(context) },
                             onLogoutClick = {
                                 authViewModel.logout()
                                 onLogout()
                             },
                             onWalletClick = onNavigateToWallet,
-                            onLeaderboardClick = { showLeaderboard = true }
+                            onLeaderboardClick = { showLeaderboard = true },
+                            onMyMatchesClick = { onNavigateToMatches("my_matches", 2) }
                         )
                     }
                 }
@@ -1025,10 +1057,12 @@ fun EarnTabContent(
 @Composable
 fun AccountTabContent(
     user: com.kingbattle.domain.model.User?,
+    referralSettings: com.kingbattle.domain.model.ReferralSettings?,
     onCustomerSupportClick: () -> Unit,
     onLogoutClick: () -> Unit,
     onWalletClick: () -> Unit,
-    onLeaderboardClick: () -> Unit
+    onLeaderboardClick: () -> Unit,
+    onMyMatchesClick: () -> Unit,
 ) {
     val context = LocalContext.current
     val clipboardManager = LocalClipboardManager.current
@@ -1110,21 +1144,21 @@ fun AccountTabContent(
                         .border(1.dp, ThemeBorderColor, RoundedCornerShape(8.dp))
                         .clickable {
                             clipboardManager.setText(AnnotatedString(user.username))
-                            Toast.makeText(context, "Referral code copied!", Toast.LENGTH_SHORT).show()
+                            Toast.makeText(context, "Username copied!", Toast.LENGTH_SHORT).show()
                         }
                         .padding(horizontal = 16.dp, vertical = 8.dp),
                     verticalAlignment = Alignment.CenterVertically,
                     horizontalArrangement = Arrangement.spacedBy(8.dp)
                 ) {
                     Text(
-                        text = "Referral Code: ${user.username}",
+                        text = "Username: ${user.username}",
                         color = AccentOrange,
                         fontSize = 14.sp,
                         fontWeight = FontWeight.Bold
                     )
                     Icon(
                         imageVector = Icons.Filled.ContentCopy,
-                        contentDescription = "Copy referral code",
+                        contentDescription = "Copy username",
                         modifier = Modifier.size(16.dp),
                         tint = AccentOrange
                     )
@@ -1261,9 +1295,7 @@ fun AccountTabContent(
             val menuItems = listOf(
                 Triple("My Wallet", Icons.Filled.AccountBalanceWallet, onWalletClick),
                 Triple("Leaderboard", Icons.Filled.EmojiEvents, onLeaderboardClick),
-                Triple("My Matches", SportsEsportsIcon, {
-                    Toast.makeText(context, "View matches under Play tab!", Toast.LENGTH_SHORT).show()
-                }),
+                Triple("My Matches", SportsEsportsIcon, onMyMatchesClick),
                 Triple("Customer Support", Icons.Filled.SupportAgent, onCustomerSupportClick),
                 Triple("About Us", Icons.Filled.Info, { showAboutDialog = true }),
                 Triple("Terms & Conditions", Icons.Filled.Description, { showTermsDialog = true }),
@@ -1271,8 +1303,11 @@ fun AccountTabContent(
                     try {
                         val shareIntent = Intent(Intent.ACTION_SEND).apply {
                             type = "text/plain"
-                            putExtra(Intent.EXTRA_SUBJECT, "King Battle App")
-                            putExtra(Intent.EXTRA_TEXT, "Hey! Join daily Free Fire tournaments on King Battle and win real coins! Download now: https://kingbattle.com")
+                            putExtra(Intent.EXTRA_SUBJECT, "King Battle — Free Fire Tournaments")
+                            putExtra(
+                                Intent.EXTRA_TEXT,
+                                buildAppShareMessage(user?.username, referralSettings)
+                            )
                         }
                         context.startActivity(Intent.createChooser(shareIntent, "Share App via"))
                     } catch (e: Exception) {
@@ -1707,10 +1742,11 @@ fun ReferScreen(
                         try {
                             val shareIntent = Intent(Intent.ACTION_SEND).apply {
                                 type = "text/plain"
-                                putExtra(Intent.EXTRA_SUBJECT, "King Battle Referral")
-                                val appLink = "https://kingbattle.com"
-                                val shareText = "Hey! Use my referral code *${code}* to join King Battle and get $signupBonus Rs as signup bonus! Compete in daily Free Fire matches and earn coins. Download the app here: $appLink"
-                                putExtra(Intent.EXTRA_TEXT, shareText)
+                                putExtra(Intent.EXTRA_SUBJECT, "King Battle — Free Fire Tournaments")
+                                putExtra(
+                                    Intent.EXTRA_TEXT,
+                                    buildAppShareMessage(code, referralSettings)
+                                )
                             }
                             context.startActivity(Intent.createChooser(shareIntent, "Share Referral Code via"))
                         } catch (e: Exception) {
