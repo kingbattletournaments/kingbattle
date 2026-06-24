@@ -92,8 +92,9 @@
 }
 
 .landing-hero {
+  --hero-px: 1.25rem;
   min-height: 560px;
-  padding: 7.5rem 1.25rem 4rem;
+  padding: 7.5rem var(--hero-px) 4rem;
   overflow-x: hidden;
   background:
     linear-gradient(135deg, rgba(22, 163, 74, 0.18), rgba(54, 54, 54, 0.92)),
@@ -119,8 +120,7 @@
 .landing-hero-phone-wrap {
   width: 100%;
   max-width: 100%;
-  padding-left: 1.5rem;
-  padding-right: 1.5rem;
+  padding: 0;
   box-sizing: border-box;
   display: flex;
   justify-content: center;
@@ -180,16 +180,16 @@
 }
 
 .landing-phone-mock {
-  width: min(340px, calc(100vw - 3rem));
-  max-width: 100%;
+  width: 100%;
+  max-width: min(240px, calc(100vw - (var(--hero-px) * 2)));
   box-sizing: border-box;
-  border-radius: 36px;
-  border: 4px solid rgba(255, 255, 255, 0.18);
+  border-radius: 32px;
+  border: 3px solid rgba(255, 255, 255, 0.18);
   background: #0a0a0a;
   box-shadow:
     0 28px 70px rgba(0, 0, 0, 0.55),
     inset 0 0 0 1px rgba(255, 255, 255, 0.06);
-  padding: 12px;
+  padding: 10px;
   flex-shrink: 0;
 }
 
@@ -606,6 +606,12 @@
   color: #9ca3af;
 }
 
+@media (max-width: 767px) {
+  .landing-hero-phone-wrap {
+    justify-content: flex-start;
+  }
+}
+
 @media (min-width: 768px) {
   .landing-nav-links {
     display: flex;
@@ -621,12 +627,13 @@
   }
 
   .landing-hero-phone-wrap {
-    padding-left: 1rem;
-    padding-right: 1.5rem;
+    padding-left: 0;
+    padding-right: 0;
   }
 
   .landing-phone-mock {
     width: min(360px, 100%);
+    max-width: 360px;
   }
 
   .landing-tournament-grid {
