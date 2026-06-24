@@ -1,5 +1,11 @@
 package com.kingbattle.util
 
+import android.graphics.Bitmap
+import android.graphics.BitmapFactory
+import android.graphics.Canvas
+import android.graphics.Paint
+import android.graphics.PorterDuff
+import android.graphics.PorterDuffXfermode
 import android.Manifest
 import android.app.NotificationChannel
 import android.app.NotificationManager
@@ -14,6 +20,7 @@ import androidx.core.app.NotificationManagerCompat
 import androidx.core.content.ContextCompat
 import com.kingbattle.MainActivity
 import com.kingbattle.R
+import kotlin.math.min
 
 object NotificationHelper {
     const val CHANNEL_ID = "king_battle_alerts_v2"
@@ -24,7 +31,6 @@ object NotificationHelper {
         if (Build.VERSION.SDK_INT < Build.VERSION_CODES.O) return
         val manager = context.getSystemService(Context.NOTIFICATION_SERVICE) as NotificationManager
 
-        // Remove legacy channel that may have been created with wrong importance.
         manager.deleteNotificationChannel(LEGACY_CHANNEL_ID)
 
         val existing = manager.getNotificationChannel(CHANNEL_ID)
@@ -75,13 +81,21 @@ object NotificationHelper {
             PendingIntent.FLAG_UPDATE_CURRENT or PendingIntent.FLAG_IMMUTABLE,
         )
 
+        val largeIcon = buildLargeNotificationIcon(context)
+
         val notification = NotificationCompat.Builder(context, CHANNEL_ID)
             .setSmallIcon(R.drawable.ic_stat_notification)
+            .apply {
+                if (largeIcon != null) {
+                    setLargeIcon(largeIcon)
+                }
+            }
             .setContentTitle(title)
             .setContentText(body)
             .setStyle(NotificationCompat.BigTextStyle().bigText(body))
             .setAutoCancel(true)
             .setPriority(NotificationCompat.PRIORITY_HIGH)
+            .setColorized(false)
             .setDefaults(NotificationCompat.DEFAULT_ALL)
             .setContentIntent(pendingIntent)
             .build()
@@ -95,5 +109,25 @@ object NotificationHelper {
         } catch (e: SecurityException) {
             Log.e(TAG, "Failed to post notification", e)
         }
+    }
+
+    private fun buildLargeNotificationIcon(context: Context): Bitmap? {
+        val decoded = BitmapFactory.decodeResource(context.resources, R.drawable.app_logo) ?: return null
+        val targetPx = (256 * context.resources.displayMetrics.density).toInt().coerceAtLeast(128)
+        val scaled = Bitmap.createScaledBitmap(decoded, targetPx, targetPx, true)
+        return toCircleBitmap(scaled)
+    }
+
+    private fun toCircleBitmap(source: Bitmap): Bitmap {
+        val size = min(source.width, source.height)
+        val output = Bitmap.createBitmap(size, size, Bitmap.Config.ARGB_8888)
+        val canvas = Canvas(output)
+        val paint = Paint(Paint.ANTI_ALIAS_FLAG)
+        canvas.drawCircle(size / 2f, size / 2f, size / 2f, paint)
+        paint.xfermode = PorterDuffXfermode(PorterDuff.Mode.SRC_IN)
+        val left = (source.width - size) / 2
+        val top = (source.height - size) / 2
+        canvas.drawBitmap(source, -left.toFloat(), -top.toFloat(), paint)
+        return output
     }
 }
