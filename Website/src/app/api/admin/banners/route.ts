@@ -1,5 +1,6 @@
 import { NextResponse } from "next/server";
 import { getStore } from "@/lib/store";
+import { getProductionStoreError } from "@/lib/store-config";
 import { getAdminSession } from "@/lib/admin-auth";
 
 export async function GET() {
@@ -18,6 +19,10 @@ export async function GET() {
 }
 
 export async function POST(request: Request) {
+  const storeError = getProductionStoreError();
+  if (storeError) {
+    return NextResponse.json({ error: storeError }, { status: 503 });
+  }
   const admin = await getAdminSession();
   if (!admin) return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
   if (!admin.coinsAccess) return NextResponse.json({ error: "No access" }, { status: 403 });
@@ -25,7 +30,7 @@ export async function POST(request: Request) {
   try {
     const body = await request.json();
     const { imageUrl, linkUrl, displayPlayCarousel, displayEarn } = body;
-    
+
     if (!imageUrl || !linkUrl) {
       return NextResponse.json({ error: "Missing required fields" }, { status: 400 });
     }
@@ -36,7 +41,11 @@ export async function POST(request: Request) {
       !!displayPlayCarousel,
       !!displayEarn
     );
-    
+
+    if (!newBanner) {
+      return NextResponse.json({ error: "Failed to create banner in database" }, { status: 500 });
+    }
+
     return NextResponse.json(newBanner);
   } catch (err: any) {
     return NextResponse.json({ error: err.message || "Invalid request" }, { status: 400 });

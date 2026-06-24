@@ -1379,7 +1379,10 @@ export const db = {
       })
       .select("*")
       .single();
-    if (error || !data) return null;
+    if (error || !data) {
+      console.error("addBanner failed:", error?.message ?? "no data returned");
+      return null;
+    }
     return {
       id: data.id,
       imageUrl: data.image_url,

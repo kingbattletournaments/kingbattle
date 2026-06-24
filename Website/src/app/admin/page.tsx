@@ -724,7 +724,19 @@ function ModesSection({
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({ gameId, name, imageUrl }),
       });
-      if (!res.ok) throw new Error(await res.text());
+      if (!res.ok) {
+        const text = await res.text();
+        let errMsg = "Failed to create mode";
+        try {
+          const errData = JSON.parse(text);
+          if (errData?.error) errMsg = errData.error;
+        } catch {
+          if (text) errMsg = text;
+        }
+        throw new Error(errMsg);
+      }
+      const data = await res.json();
+      if (!data?.id) throw new Error("Failed to create mode in database");
       setName("");
       handleImageClear();
       onSuccess();
@@ -3696,6 +3708,11 @@ function BannersSection() {
       });
 
       if (res.ok) {
+        const data = await res.json();
+        if (!data?.id) {
+          alert("Failed to add banner — server did not return a saved banner.");
+          return;
+        }
         setImageUrl("");
         setLinkUrl("");
         setDisplayPlayCarousel(false);

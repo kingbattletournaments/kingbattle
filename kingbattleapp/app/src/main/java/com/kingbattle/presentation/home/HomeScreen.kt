@@ -323,6 +323,7 @@ fun HomeScreen(
                     HomeTab.EARN -> {
                         EarnTabContent(
                             banners = bannersState.value,
+                            referralSettings = homeViewModel.referralSettings.collectAsState().value,
                             isLoading = isLoadingState.value,
                             errorMessage = errorState.value,
                             onRetry = { homeViewModel.loadData() },
@@ -699,6 +700,41 @@ fun BannerSection(
     }
 }
 
+@Composable
+fun ReferralBannerCard(
+    bannerUrl: String,
+    onClick: () -> Unit
+) {
+    Card(
+        modifier = Modifier
+            .fillMaxWidth()
+            .clickable { onClick() }
+            .border(1.dp, ThemeBorderColor, RoundedCornerShape(12.dp)),
+        shape = RoundedCornerShape(12.dp),
+        colors = CardDefaults.cardColors(containerColor = ThemeCardBg)
+    ) {
+        if (bannerUrl.isNotBlank()) {
+            AsyncImage(
+                url = bannerUrl,
+                contentDescription = "Refer & Earn Banner",
+                modifier = Modifier
+                    .fillMaxWidth()
+                    .aspectRatio(16f / 9f),
+                contentScale = ContentScale.Crop
+            )
+        } else {
+            Image(
+                painter = androidx.compose.ui.res.painterResource(id = com.kingbattle.R.drawable.refer_banner),
+                contentDescription = "Refer & Earn Banner",
+                modifier = Modifier
+                    .fillMaxWidth()
+                    .aspectRatio(16f / 9f),
+                contentScale = ContentScale.Crop
+            )
+        }
+    }
+}
+
 // ==================== MY MATCHES SECTION ====================
 @Composable
 fun MyMatchesSection(onNavigateToMatches: (String, Int) -> Unit) {
@@ -884,6 +920,7 @@ fun ModeCardItem(
 @Composable
 fun EarnTabContent(
     banners: List<com.kingbattle.domain.model.AppBanner>,
+    referralSettings: com.kingbattle.domain.model.ReferralSettings?,
     isLoading: Boolean,
     errorMessage: String?,
     onRetry: () -> Unit,
@@ -893,6 +930,7 @@ fun EarnTabContent(
     val earnBanners = remember(banners) {
         banners.filter { it.displayEarn }
     }
+    val referralBannerUrl = referralSettings?.bannerUrl?.trim().orEmpty()
 
     Column(
         modifier = Modifier
@@ -918,25 +956,12 @@ fun EarnTabContent(
             verticalArrangement = Arrangement.spacedBy(16.dp),
             contentPadding = PaddingValues(bottom = 24.dp)
         ) {
-            // 1. Referral Banner at the top of Earn Tab (redirects to the Refer page)
+            // 1. Referral banner from admin panel (Referrals tab → banner upload)
             item {
-                Card(
-                    modifier = Modifier
-                        .fillMaxWidth()
-                        .clickable { onReferClick() }
-                        .border(1.dp, ThemeBorderColor, RoundedCornerShape(12.dp)),
-                    shape = RoundedCornerShape(12.dp),
-                    colors = CardDefaults.cardColors(containerColor = ThemeCardBg)
-                ) {
-                    Image(
-                        painter = androidx.compose.ui.res.painterResource(id = com.kingbattle.R.drawable.refer_banner),
-                        contentDescription = "Refer & Earn Banner",
-                        modifier = Modifier
-                            .fillMaxWidth()
-                            .aspectRatio(16f / 9f),
-                        contentScale = ContentScale.Crop
-                    )
-                }
+                ReferralBannerCard(
+                    bannerUrl = referralBannerUrl,
+                    onClick = onReferClick
+                )
             }
 
             // 2. Dynamic Earn Banners (remote from server)
