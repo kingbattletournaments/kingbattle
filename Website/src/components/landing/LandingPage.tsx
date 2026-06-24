@@ -2,23 +2,7 @@
 
 import { useEffect, useState } from "react";
 import { brand } from "@config/brand";
-import { formatMatchDateTime } from "@/lib/format-match-datetime";
 import type { LandingPageData } from "@/lib/landing-data";
-
-function matchTypeLabel(type: string): string {
-  const t = type.toLowerCase();
-  if (t.includes("duo")) return "Duo";
-  if (t.includes("squad")) return "Squad";
-  return "Solo";
-}
-
-function winPrize(match: LandingPageData["tournamentSections"][0]["matches"][0]): number {
-  return match.prizePool?.totalPrizePool ?? 0;
-}
-
-function perKill(match: LandingPageData["tournamentSections"][0]["matches"][0]): number {
-  return match.prizePool?.coinsPerKill ?? 0;
-}
 
 export default function LandingPage({ data }: { data: LandingPageData }) {
   const [menuOpen, setMenuOpen] = useState(false);
@@ -53,7 +37,6 @@ export default function LandingPage({ data }: { data: LandingPageData }) {
             <a href="#home">Home</a>
             <a href="#screenshot">Screenshots</a>
             <a href="#features">Features</a>
-            <a href="#tournaments">Tournaments</a>
             <a href="#howtoplay">How To Play</a>
             <a href="#download">Download</a>
           </div>
@@ -70,7 +53,6 @@ export default function LandingPage({ data }: { data: LandingPageData }) {
           <a href="#home" onClick={() => setMenuOpen(false)}>Home</a>
           <a href="#screenshot" onClick={() => setMenuOpen(false)}>Screenshots</a>
           <a href="#features" onClick={() => setMenuOpen(false)}>Features</a>
-          <a href="#tournaments" onClick={() => setMenuOpen(false)}>Tournaments</a>
           <a href="#howtoplay" onClick={() => setMenuOpen(false)}>How To Play</a>
           <a href="#download" onClick={() => setMenuOpen(false)}>Download</a>
         </div>
@@ -78,7 +60,14 @@ export default function LandingPage({ data }: { data: LandingPageData }) {
 
       <header className="landing-hero" id="home">
         <div className="landing-hero-grid">
-          <div>
+          <div className="landing-hero-copy">
+            <div className="landing-hero-app-logo">
+              {/* eslint-disable-next-line @next/next/no-img-element */}
+              <img
+                src={brand.images.appLogo}
+                alt={`${brand.appName} logo`}
+              />
+            </div>
             <h1>
               <span className="landing-hero-typed">{phrases[typedIndex]}</span>
               <br />
@@ -160,104 +149,6 @@ export default function LandingPage({ data }: { data: LandingPageData }) {
         </div>
       </section>
 
-      <section className="landing-section light" id="tournaments">
-        <div className="landing-container">
-          <h2 className="landing-section-title">Tournaments</h2>
-          <p className="landing-section-subtitle">
-            Upcoming matches live from the platform. Download the app to join.
-          </p>
-
-          {data.tournamentSections.length === 0 ? (
-            <p style={{ textAlign: "center", color: "#6b7280", padding: "2rem 0" }}>
-              No upcoming tournaments right now. Check back soon or download the app for alerts.
-            </p>
-          ) : (
-            data.tournamentSections.map((section) => (
-              <div key={section.modeId} className="landing-tournament-block">
-                <div className="landing-tournament-header">
-                  <h3>{section.modeName}</h3>
-                  <span className="hidden md:inline">Top 10 players</span>
-                </div>
-                <div className="landing-tournament-grid">
-                  <div className="landing-tour-cards">
-                    {section.matches.map((match) => {
-                      const filled = match.participantCount ?? 0;
-                      const max = match.maxParticipants || 1;
-                      const pct = Math.min(100, Math.round((filled / max) * 100));
-                      return (
-                        <div key={match.id} className="landing-tour-card">
-                          {match.image || section.modeImage ? (
-                            // eslint-disable-next-line @next/next/no-img-element
-                            <img
-                              src={match.image || section.modeImage || ""}
-                              alt={match.title}
-                              className="landing-tour-img-fallback"
-                            />
-                          ) : (
-                            <div className="landing-tour-img-fallback" />
-                          )}
-                          <div className="landing-tour-body">
-                            <span className="landing-badge pink">{matchTypeLabel(match.matchType)}</span>
-                            <span className="landing-badge blue">{match.map || "BERMUDA"}</span>
-                            <div className="landing-tour-title">🎮 {match.title}</div>
-                            <div className="landing-progress-row">
-                              <div className="landing-progress">
-                                <div className="landing-progress-bar" style={{ width: `${pct}%` }} />
-                              </div>
-                              <div className="landing-progress-count">
-                                {filled}/{max}
-                              </div>
-                            </div>
-                            <div className="landing-tour-stats">
-                              <div>
-                                <span className="label">Starts</span>
-                                <span className="value green">{formatMatchDateTime(match.scheduledAt)}</span>
-                              </div>
-                              <div>
-                                <span className="label">Win Prize</span>
-                                <span className="value pink">{winPrize(match)}</span>
-                              </div>
-                              <div>
-                                <span className="label">Per Kill</span>
-                                <span className="value blue">{perKill(match)}</span>
-                              </div>
-                            </div>
-                            <a className="landing-join-btn" href={downloadHref}>
-                              💵 {match.entryFee} Join &gt;
-                            </a>
-                          </div>
-                        </div>
-                      );
-                    })}
-                  </div>
-                  <div className="landing-leaderboard">
-                    <h4>Top 10 players</h4>
-                    <table>
-                      <thead>
-                        <tr>
-                          <th>Place</th>
-                          <th>User</th>
-                          <th style={{ textAlign: "right" }}>Wins</th>
-                        </tr>
-                      </thead>
-                      <tbody>
-                        {data.leaderboard.map((player, index) => (
-                          <tr key={player.id}>
-                            <td>#{index + 1}</td>
-                            <td>{player.displayName}</td>
-                            <td className="wins">{player.wins}</td>
-                          </tr>
-                        ))}
-                      </tbody>
-                    </table>
-                  </div>
-                </div>
-              </div>
-            ))
-          )}
-        </div>
-      </section>
-
       <section className="landing-section dark" id="howtoplay">
         <div className="landing-container">
           <h2 className="landing-section-title">{brand.howToPlay.title}</h2>
@@ -278,9 +169,12 @@ export default function LandingPage({ data }: { data: LandingPageData }) {
         <div className="landing-container">
           <h2 className="landing-section-title">{brand.prizes.title}</h2>
           <p>{brand.prizes.description}</p>
-          <div className="landing-payment-tags">
+          <div className="landing-payment-methods">
             {brand.prizes.methods.map((method) => (
-              <span key={method}>{method}</span>
+              <div key={method.name} className="landing-payment-method">
+                <img src={method.logo} alt="" className="landing-payment-logo" aria-hidden="true" />
+                <span>{method.name}</span>
+              </div>
             ))}
           </div>
           <p style={{ marginBottom: "1.25rem", color: "var(--cw-mint)", fontWeight: 600 }}>Happy earning!</p>
@@ -307,7 +201,7 @@ export default function LandingPage({ data }: { data: LandingPageData }) {
             <h5>Quick Links</h5>
             <ul>
               <li><a href="#home">Home</a></li>
-              <li><a href="#tournaments">Tournaments</a></li>
+              <li><a href="#features">Features</a></li>
               <li><a href="#download">Download</a></li>
             </ul>
           </div>

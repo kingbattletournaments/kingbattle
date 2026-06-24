@@ -16,6 +16,7 @@ export const brand = {
   /** Image paths — files in Website/public/ */
   images: {
     welcomeScreen: "/images/welcome-screen.jpg",
+    appLogo: "/images/app-logo.jpg",
   },
   download: {
     apkUrl: process.env.NEXT_PUBLIC_APK_DOWNLOAD_URL ?? "",
@@ -58,8 +59,11 @@ export const brand = {
   prizes: {
     title: "Money Prizes",
     description:
-      "Once you win your first tournament, request a withdrawal from your King Battle wallet. Keep playing to win bigger prizes. Supported payout methods include UPI, GPay, and Paytm.",
-    methods: ["UPI", "GPay", "Paytm"],
+      "Once you win your first tournament, request a withdrawal from your King Battle wallet. Keep playing to win bigger prizes. Payouts are sent via UPI or Google Play redeem codes.",
+    methods: [
+      { name: "UPI", logo: "/images/payments/upi.png" },
+      { name: "Google Play Redeem Code", logo: "/images/payments/google-play.png" },
+    ],
   },
 
   footer: {
