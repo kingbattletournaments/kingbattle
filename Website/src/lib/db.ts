@@ -1570,7 +1570,46 @@ export const db = {
       .from("app_users")
       .update({ fcm_token: token })
       .eq("username", userId);
-    return !error;
+    if (error) {
+      console.error("updateFcmToken failed:", error.message);
+      return false;
+    }
+    return true;
+  },
+
+  async clearFcmToken(userId: string): Promise<boolean> {
+    const supabase = getSupabase();
+    if (!supabase) return false;
+    const { error } = await supabase
+      .from("app_users")
+      .update({ fcm_token: null })
+      .eq("username", userId);
+    if (error) {
+      console.error("clearFcmToken failed:", error.message);
+      return false;
+    }
+    return true;
+  },
+
+  async getFcmTokensForTarget(
+    target: "all" | "active" | "blocked",
+  ): Promise<{ userId: string; token: string }[]> {
+    const supabase = getSupabase();
+    if (!supabase) return [];
+    let q = supabase
+      .from("app_users")
+      .select("username, fcm_token, is_blocked")
+      .not("fcm_token", "is", null);
+    if (target === "active") q = q.eq("is_blocked", false);
+    if (target === "blocked") q = q.eq("is_blocked", true);
+    const { data, error } = await q;
+    if (error || !data) {
+      console.error("getFcmTokensForTarget failed:", error?.message ?? "no data");
+      return [];
+    }
+    return data
+      .filter((row) => row.fcm_token)
+      .map((row) => ({ userId: row.username, token: row.fcm_token as string }));
   },
 
   async matchPresets(modeId?: string): Promise<DbMatchPreset[]> {

@@ -1427,7 +1427,24 @@ export const adminStore = {
   updateFcmToken: (userId: string, token: string) => {
     const u = users.find((x) => x.id === userId);
     if (!u) return false;
-    (u as any).fcmToken = token;
+    (u as { fcmToken?: string }).fcmToken = token;
     return true;
-  }
+  },
+  clearFcmToken: (userId: string) => {
+    const u = users.find((x) => x.id === userId);
+    if (!u) return false;
+    delete (u as { fcmToken?: string }).fcmToken;
+    return true;
+  },
+  getFcmTokensForTarget: (target: "all" | "active" | "blocked") => {
+    return users
+      .filter((u) => {
+        const token = (u as { fcmToken?: string }).fcmToken;
+        if (!token) return false;
+        if (target === "active") return !u.isBlocked;
+        if (target === "blocked") return !!u.isBlocked;
+        return true;
+      })
+      .map((u) => ({ userId: u.id, token: (u as { fcmToken: string }).fcmToken }));
+  },
 };

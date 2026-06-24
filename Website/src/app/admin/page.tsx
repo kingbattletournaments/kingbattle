@@ -3704,27 +3704,51 @@ function PushNotificationsSection() {
       return;
     }
     setSending(true);
+    try {
+      const res = await fetch("/api/admin/notifications/send", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          title: title.trim(),
+          body: body.trim(),
+          link: link.trim() || null,
+          target,
+        }),
+      });
+      const data = await res.json().catch(() => ({}));
+      if (!res.ok) {
+        throw new Error(data.error || "Failed to send notification");
+      }
 
-    await new Promise((resolve) => setTimeout(resolve, 1000));
+      const newNotification = {
+        id: `push-${Date.now()}`,
+        title: title.trim(),
+        body: body.trim(),
+        link: link.trim() || null,
+        target,
+        sentAt: new Date().toISOString(),
+        successCount: data.successCount ?? 0,
+        failureCount: data.failureCount ?? 0,
+        totalTokens: data.totalTokens ?? 0,
+      };
 
-    const newNotification = {
-      id: `push-${Date.now()}`,
-      title: title.trim(),
-      body: body.trim(),
-      link: link.trim() || null,
-      target,
-      sentAt: new Date().toISOString(),
-    };
+      const updatedHistory = [newNotification, ...history];
+      setHistory(updatedHistory);
+      localStorage.setItem("admin_push_history", JSON.stringify(updatedHistory));
 
-    const updatedHistory = [newNotification, ...history];
-    setHistory(updatedHistory);
-    localStorage.setItem("admin_push_history", JSON.stringify(updatedHistory));
-
-    setTitle("");
-    setBody("");
-    setLink("");
-    setSending(false);
-    alert("Push notification broadcasted successfully to all target devices!");
+      setTitle("");
+      setBody("");
+      setLink("");
+      alert(
+        `Sent to ${data.successCount ?? 0} device${data.successCount === 1 ? "" : "s"}` +
+          (data.failureCount ? ` (${data.failureCount} failed)` : "") +
+          `.`,
+      );
+    } catch (err) {
+      alert(err instanceof Error ? err.message : "Failed to send notification");
+    } finally {
+      setSending(false);
+    }
   };
 
   const handleClearHistory = () => {
@@ -3829,6 +3853,12 @@ function PushNotificationsSection() {
                   </div>
                   <h4 className="font-semibold text-sm text-slate-200">{h.title}</h4>
                   <p className="text-xs text-slate-400 line-clamp-2">{h.body}</p>
+                  {typeof h.successCount === "number" && (
+                    <p className="text-[10px] text-slate-500">
+                      {h.successCount} delivered
+                      {h.failureCount ? ` · ${h.failureCount} failed` : ""}
+                    </p>
+                  )}
                 </div>
               ))
             )}

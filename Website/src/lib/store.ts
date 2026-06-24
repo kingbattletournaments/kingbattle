@@ -103,6 +103,8 @@ export function getStore() {
       updateBanner: (id: string, imageUrl: string, linkUrl: string, displayPlayCarousel: boolean, displayEarn: boolean) => db.updateBanner(id, imageUrl, linkUrl, displayPlayCarousel, displayEarn),
       deleteBanner: (id: string) => db.deleteBanner(id),
       updateFcmToken: (userId: string, token: string) => db.updateFcmToken(userId, token),
+      clearFcmToken: (userId: string) => db.clearFcmToken(userId),
+      getFcmTokensForTarget: (target: "all" | "active" | "blocked") => db.getFcmTokensForTarget(target),
       matchPresets: (modeId?: string) => db.matchPresets(modeId),
       getMatchPreset: (id: string) => db.getMatchPreset(id),
       addMatchPreset: (input: {
@@ -250,6 +252,9 @@ export function getStore() {
     updateBanner: (id: string, imageUrl: string, linkUrl: string, displayPlayCarousel: boolean, displayEarn: boolean) => adminStore.updateBanner(id, imageUrl, linkUrl, displayPlayCarousel, displayEarn),
     deleteBanner: (id: string) => adminStore.deleteBanner(id),
     updateFcmToken: (userId: string, token: string) => Promise.resolve(adminStore.updateFcmToken(userId, token)),
+    clearFcmToken: (userId: string) => Promise.resolve(adminStore.clearFcmToken(userId)),
+    getFcmTokensForTarget: (target: "all" | "active" | "blocked") =>
+      Promise.resolve(adminStore.getFcmTokensForTarget(target)),
     matchPresets: (modeId?: string) => Promise.resolve(adminStore.matchPresets(modeId)),
     getMatchPreset: (id: string) => Promise.resolve(adminStore.getMatchPreset(id)),
     addMatchPreset: (input: {

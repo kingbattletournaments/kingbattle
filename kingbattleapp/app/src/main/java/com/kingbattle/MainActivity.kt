@@ -38,16 +38,16 @@ class MainActivity : ComponentActivity() {
     ) { isGranted: Boolean ->
         if (isGranted) {
             Log.d("MainActivity", "Notification permission granted")
-            fetchAndSyncFcmToken()
         } else {
-            Log.w("MainActivity", "Notification permission denied")
+            Log.w("MainActivity", "Notification permission denied — token still registered for server-side push")
         }
     }
 
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
         enableEdgeToEdge()
-        
+
+        fetchAndSyncFcmToken()
         askNotificationPermission()
 
         setContent {
@@ -61,15 +61,11 @@ class MainActivity : ComponentActivity() {
 
     private fun askNotificationPermission() {
         if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.TIRAMISU) {
-            if (ContextCompat.checkSelfPermission(this, Manifest.permission.POST_NOTIFICATIONS) ==
+            if (ContextCompat.checkSelfPermission(this, Manifest.permission.POST_NOTIFICATIONS) !=
                 PackageManager.PERMISSION_GRANTED
             ) {
-                fetchAndSyncFcmToken()
-            } else {
                 requestPermissionLauncher.launch(Manifest.permission.POST_NOTIFICATIONS)
             }
-        } else {
-            fetchAndSyncFcmToken()
         }
     }
 

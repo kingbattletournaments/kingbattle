@@ -66,18 +66,20 @@ class KingBattleMessagingService : FirebaseMessagingService() {
         remoteMessage.notification?.let {
             val title = it.title ?: "King Battle"
             val body = it.body ?: ""
-            showNotification(title, body)
+            val link = remoteMessage.data["link"]
+            showNotification(title, body, link)
         } ?: run {
             // Check if message contains data payload
             if (remoteMessage.data.isNotEmpty()) {
                 val title = remoteMessage.data["title"] ?: "King Battle"
                 val body = remoteMessage.data["body"] ?: ""
-                showNotification(title, body)
+                val link = remoteMessage.data["link"]
+                showNotification(title, body, link)
             }
         }
     }
 
-    private fun showNotification(title: String, body: String) {
+    private fun showNotification(title: String, body: String, link: String? = null) {
         val channelId = "king_battle_notifications"
         val notificationManager = getSystemService(Context.NOTIFICATION_SERVICE) as NotificationManager
 
@@ -95,6 +97,9 @@ class KingBattleMessagingService : FirebaseMessagingService() {
 
         val intent = Intent(this, MainActivity::class.java).apply {
             flags = Intent.FLAG_ACTIVITY_CLEAR_TOP or Intent.FLAG_ACTIVITY_SINGLE_TOP
+            if (!link.isNullOrBlank()) {
+                putExtra("notification_link", link)
+            }
         }
         val pendingIntent = PendingIntent.getActivity(
             this,
@@ -104,7 +109,7 @@ class KingBattleMessagingService : FirebaseMessagingService() {
         )
 
         val notificationBuilder = NotificationCompat.Builder(this, channelId)
-            .setSmallIcon(R.drawable.app_logo)
+            .setSmallIcon(R.drawable.ic_stat_notification)
             .setContentTitle(title)
             .setContentText(body)
             .setAutoCancel(true)
