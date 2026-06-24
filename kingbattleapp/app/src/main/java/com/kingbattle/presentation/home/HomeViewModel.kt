@@ -1,6 +1,9 @@
 package com.kingbattle.presentation.home
 
 import android.content.Context
+import android.content.Intent
+import android.net.Uri
+import android.widget.Toast
 import androidx.lifecycle.ViewModel
 import androidx.lifecycle.viewModelScope
 import com.kingbattle.data.api.KingBattleApi
@@ -127,13 +130,9 @@ class HomeViewModel @Inject constructor(
                 }
 
                 try {
-                    val supRes = api.getCustomerSupportUrl()
-                    if (supRes.isSuccessful && supRes.body() != null) {
-                        val url = supRes.body()!!["customerSupportUrl"] ?: supRes.body()!!["url"]
-                        if (!url.isNullOrBlank()) {
-                            _supportUrl.value = url
-                            hadSuccessfulFetch = true
-                        }
+                    fetchSupportUrlFromApi()?.let {
+                        _supportUrl.value = it
+                        hadSuccessfulFetch = true
                     }
                 } catch (e: Exception) {
                     e.printStackTrace()
@@ -158,6 +157,54 @@ class HomeViewModel @Inject constructor(
             } finally {
                 _isLoading.value = false
             }
+        }
+    }
+
+    fun refreshSupportUrl() {
+        viewModelScope.launch {
+            fetchSupportUrlFromApi()?.let { _supportUrl.value = it }
+        }
+    }
+
+    fun openCustomerSupport(context: Context) {
+        viewModelScope.launch {
+            val fetched = fetchSupportUrlFromApi()
+            val raw = fetched?.takeIf { it.isNotBlank() } ?: _supportUrl.value.takeIf { it.isNotBlank() }
+            val url = normalizeSupportUrl(raw)
+
+            if (url.isNullOrBlank()) {
+                Toast.makeText(context, "Support link not configured yet", Toast.LENGTH_SHORT).show()
+                return@launch
+            }
+
+            if (fetched != null) {
+                _supportUrl.value = fetched
+            }
+
+            try {
+                context.startActivity(Intent(Intent.ACTION_VIEW, Uri.parse(url)))
+            } catch (e: Exception) {
+                Toast.makeText(context, "Could not open support link", Toast.LENGTH_SHORT).show()
+            }
+        }
+    }
+
+    private suspend fun fetchSupportUrlFromApi(): String? {
+        val supRes = api.getCustomerSupportUrl()
+        if (!supRes.isSuccessful) return null
+        return normalizeSupportUrl(supRes.body()?.resolvedUrl())
+    }
+
+    private fun normalizeSupportUrl(raw: String?): String? {
+        val trimmed = raw?.trim().orEmpty()
+        if (trimmed.isEmpty()) return null
+        return if (
+            trimmed.startsWith("http://", ignoreCase = true) ||
+            trimmed.startsWith("https://", ignoreCase = true)
+        ) {
+            trimmed
+        } else {
+            "https://$trimmed"
         }
     }
 }

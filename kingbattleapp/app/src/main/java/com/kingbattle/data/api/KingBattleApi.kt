@@ -99,7 +99,7 @@ interface KingBattleApi {
 
     // ===== Support =====
     @GET("customer-support")
-    suspend fun getCustomerSupportUrl(): Response<Map<String, String>>
+    suspend fun getCustomerSupportUrl(): Response<CustomerSupportResponse>
 
     @GET("announcement")
     suspend fun getAnnouncement(): Response<Map<String, String>>

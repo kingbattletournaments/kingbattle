@@ -28,7 +28,16 @@ import androidx.compose.material.icons.filled.Star
 import androidx.compose.material.icons.filled.PlayArrow
 import androidx.compose.material.icons.filled.Notifications
 import androidx.compose.material.icons.filled.Check
+import androidx.compose.material.icons.filled.AccountBalanceWallet
 import androidx.compose.material.icons.filled.ArrowBack
+import androidx.compose.material.icons.filled.ChevronRight
+import androidx.compose.material.icons.filled.ContentCopy
+import androidx.compose.material.icons.filled.Description
+import androidx.compose.material.icons.filled.EmojiEvents
+import androidx.compose.material.icons.filled.ExitToApp
+import androidx.compose.material.icons.filled.MonetizationOn
+import androidx.compose.material.icons.filled.Share
+import androidx.compose.material.icons.filled.SupportAgent
 import androidx.compose.ui.graphics.vector.ImageVector
 import androidx.compose.ui.graphics.vector.path
 import androidx.compose.ui.graphics.SolidColor
@@ -268,11 +277,13 @@ fun HomeScreen(
     val isLoadingState = homeViewModel.isLoading.collectAsState()
     val isOfflineState = homeViewModel.isOffline.collectAsState()
     val errorState = homeViewModel.errorMessage.collectAsState()
-    val supportUrlState = homeViewModel.supportUrl.collectAsState()
 
-    // Trigger loadData when activeTab is selected to refresh values
     LaunchedEffect(activeTab) {
-        homeViewModel.loadData()
+        if (activeTab == HomeTab.ACCOUNT) {
+            homeViewModel.refreshSupportUrl()
+        } else {
+            homeViewModel.loadData()
+        }
     }
 
     if (showReferScreen) {
@@ -333,7 +344,7 @@ fun HomeScreen(
                     HomeTab.ACCOUNT -> {
                         AccountTabContent(
                             user = userState.value,
-                            supportUrl = supportUrlState.value,
+                            onCustomerSupportClick = { homeViewModel.openCustomerSupport(context) },
                             onLogoutClick = {
                                 authViewModel.logout()
                                 onLogout()
@@ -1014,7 +1025,7 @@ fun EarnTabContent(
 @Composable
 fun AccountTabContent(
     user: com.kingbattle.domain.model.User?,
-    supportUrl: String,
+    onCustomerSupportClick: () -> Unit,
     onLogoutClick: () -> Unit,
     onWalletClick: () -> Unit,
     onLeaderboardClick: () -> Unit
@@ -1111,9 +1122,11 @@ fun AccountTabContent(
                         fontSize = 14.sp,
                         fontWeight = FontWeight.Bold
                     )
-                    Text(
-                        text = "📋",
-                        fontSize = 14.sp
+                    Icon(
+                        imageVector = Icons.Filled.ContentCopy,
+                        contentDescription = "Copy referral code",
+                        modifier = Modifier.size(16.dp),
+                        tint = AccentOrange
                     )
                 }
             }
@@ -1212,7 +1225,12 @@ fun AccountTabContent(
                           verticalAlignment = Alignment.CenterVertically,
                           horizontalArrangement = Arrangement.spacedBy(4.dp)
                         ) {
-                            Text(text = "💵", fontSize = 18.sp)
+                            Icon(
+                                imageVector = Icons.Filled.MonetizationOn,
+                                contentDescription = null,
+                                modifier = Modifier.size(18.dp),
+                                tint = AccentGold
+                            )
                             Text(
                                 text = "${user?.lifetime_earned_points ?: 0}",
                                 color = AccentGold,
@@ -1241,23 +1259,15 @@ fun AccountTabContent(
 
             // Menu Options (Individual dark cards exactly like reference UI but themed)
             val menuItems = listOf(
-                Triple("My Wallet", "👛", onWalletClick),
-                Triple("Leaderboard", "🏆", onLeaderboardClick),
-                Triple("My Matches", "🎮", {
+                Triple("My Wallet", Icons.Filled.AccountBalanceWallet, onWalletClick),
+                Triple("Leaderboard", Icons.Filled.EmojiEvents, onLeaderboardClick),
+                Triple("My Matches", SportsEsportsIcon, {
                     Toast.makeText(context, "View matches under Play tab!", Toast.LENGTH_SHORT).show()
                 }),
-                Triple("Customer Support", "💬", {
-                    val url = if (supportUrl.isNotBlank()) supportUrl else "https://kingbattle.com/support"
-                    try {
-                        val intent = Intent(Intent.ACTION_VIEW, Uri.parse(url))
-                        context.startActivity(intent)
-                    } catch (e: Exception) {
-                        Toast.makeText(context, "Could not open support link", Toast.LENGTH_SHORT).show()
-                    }
-                }),
-                Triple("About Us", "ℹ️", { showAboutDialog = true }),
-                Triple("Terms & Conditions", "📜", { showTermsDialog = true }),
-                Triple("Share App", "📢", {
+                Triple("Customer Support", Icons.Filled.SupportAgent, onCustomerSupportClick),
+                Triple("About Us", Icons.Filled.Info, { showAboutDialog = true }),
+                Triple("Terms & Conditions", Icons.Filled.Description, { showTermsDialog = true }),
+                Triple("Share App", Icons.Filled.Share, {
                     try {
                         val shareIntent = Intent(Intent.ACTION_SEND).apply {
                             type = "text/plain"
@@ -1269,10 +1279,10 @@ fun AccountTabContent(
                         Toast.makeText(context, "Could not share app", Toast.LENGTH_SHORT).show()
                     }
                 }),
-                Triple("Logout", "🚪", onLogoutClick)
+                Triple("Logout", Icons.Filled.ExitToApp, onLogoutClick)
             )
 
-            menuItems.forEach { (label, emoji, action) ->
+            menuItems.forEach { (label, icon, action) ->
                 val isLogout = label == "Logout"
                 Card(
                     modifier = Modifier
@@ -1295,9 +1305,11 @@ fun AccountTabContent(
                             verticalAlignment = Alignment.CenterVertically,
                             horizontalArrangement = Arrangement.spacedBy(14.dp)
                         ) {
-                            Text(
-                                text = emoji,
-                                fontSize = 20.sp
+                            Icon(
+                                imageVector = icon,
+                                contentDescription = label,
+                                modifier = Modifier.size(22.dp),
+                                tint = if (isLogout) Color(0xFFDC2626) else AccentOrange
                             )
                             Text(
                                 text = label,
@@ -1306,11 +1318,11 @@ fun AccountTabContent(
                                 fontWeight = FontWeight.Bold
                             )
                         }
-                        Text(
-                            text = "➔",
-                            color = if (isLogout) Color(0xFFDC2626).copy(alpha = 0.5f) else TextMuted,
-                            fontSize = 14.sp,
-                            fontWeight = FontWeight.Bold
+                        Icon(
+                            imageVector = Icons.Filled.ChevronRight,
+                            contentDescription = null,
+                            modifier = Modifier.size(20.dp),
+                            tint = if (isLogout) Color(0xFFDC2626).copy(alpha = 0.5f) else TextMuted
                         )
                     }
                 }
@@ -1649,9 +1661,11 @@ fun ReferScreen(
                         fontSize = 20.sp,
                         fontWeight = FontWeight.Bold
                     )
-                    Text(
-                        text = "📋",
-                        fontSize = 18.sp
+                    Icon(
+                        imageVector = Icons.Filled.ContentCopy,
+                        contentDescription = "Copy referral code",
+                        modifier = Modifier.size(18.dp),
+                        tint = AccentOrange
                     )
                 }
             }

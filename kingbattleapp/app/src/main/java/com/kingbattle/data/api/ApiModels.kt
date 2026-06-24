@@ -17,3 +17,13 @@ data class SignUpRequest(
     val referred_by: String? = null
 )
 
+data class CustomerSupportResponse(
+    val url: String? = null,
+    @SerializedName("customerSupportUrl")
+    val customerSupportUrl: String? = null,
+) {
+    fun resolvedUrl(): String? =
+        customerSupportUrl?.trim()?.takeIf { it.isNotEmpty() }
+            ?: url?.trim()?.takeIf { it.isNotEmpty() }
+}
+
