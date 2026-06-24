@@ -278,6 +278,25 @@
   max-width: 100%;
 }
 
+/* Full-width panels (forms, tables, lists — no nested card width on mobile) */
+.admin-panel,
+.admin-form-section {
+  width: 100%;
+  max-width: 100%;
+}
+
+.admin-form-section {
+  display: flex;
+  flex-direction: column;
+  gap: 1.25rem;
+}
+
+.admin-content-card {
+  background: rgba(255, 255, 255, 0.02);
+  border: 1px solid rgba(255, 255, 255, 0.06);
+  border-radius: 1rem;
+}
+
 /* Excel Table styles */
 .excel-table-container {
   width: 100%;

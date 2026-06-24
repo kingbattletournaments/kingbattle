@@ -279,7 +279,7 @@ export default function AdminPage() {
           )}
 
           {loading ? (
-            <div className="admin-card flex flex-col items-center justify-center rounded-2xl p-16">
+            <div className="admin-panel flex flex-col items-center justify-center py-16 w-full">
               <LoadingSpinner size="lg" label="Loading data..." />
             </div>
           ) : (
@@ -542,6 +542,91 @@ function MatchTypeDropdown({ value, onChange }: { value: MatchType; onChange: (v
   );
 }
 
+const DEFAULT_RANK_REWARDS: RankReward[] = [
+  { fromRank: 1, toRank: 1, coins: 0 },
+  { fromRank: 2, toRank: 2, coins: 0 },
+  { fromRank: 3, toRank: 3, coins: 0 },
+];
+
+function nextRankRange(prev: RankReward[]): RankReward {
+  const maxTo = prev.length > 0 ? Math.max(...prev.map((r) => r.toRank)) : 0;
+  return { fromRank: maxTo + 1, toRank: maxTo + 1, coins: 0 };
+}
+
+function RankRewardsEditor({
+  value,
+  onChange,
+}: {
+  value: RankReward[];
+  onChange: (next: RankReward[]) => void;
+}) {
+  return (
+    <div className="space-y-3">
+      <label className="block text-xs font-semibold text-slate-400">Rank rewards (coins per rank range)</label>
+      <p className="text-[11px] text-slate-500">
+        Add ranges like rank 5–10 with a prize for each player in that range. Use the same from/to for a single rank.
+      </p>
+      {value.length === 0 && (
+        <p className="text-sm text-slate-500">No rank ranges yet. Add one below.</p>
+      )}
+      {value.map((r, i) => (
+        <div key={i} className="flex flex-wrap items-center gap-2">
+          <input
+            type="number"
+            min="1"
+            value={r.fromRank}
+            onChange={(e) =>
+              onChange(value.map((x, j) => (j === i ? { ...x, fromRank: Number(e.target.value) || 1 } : x)))
+            }
+            className="admin-input w-16 rounded-lg px-3 py-2 text-sm text-white outline-none"
+            aria-label={`Range ${i + 1} from rank`}
+          />
+          <span className="text-slate-500">-</span>
+          <input
+            type="number"
+            min="1"
+            value={r.toRank}
+            onChange={(e) =>
+              onChange(value.map((x, j) => (j === i ? { ...x, toRank: Number(e.target.value) || 1 } : x)))
+            }
+            className="admin-input w-16 rounded-lg px-3 py-2 text-sm text-white outline-none"
+            aria-label={`Range ${i + 1} to rank`}
+          />
+          <span className="text-slate-500">→</span>
+          <input
+            type="number"
+            min="0"
+            value={r.coins}
+            onChange={(e) =>
+              onChange(value.map((x, j) => (j === i ? { ...x, coins: Number(e.target.value) || 0 } : x)))
+            }
+            className="admin-input w-20 rounded-lg px-3 py-2 text-sm text-white outline-none"
+            placeholder="coins"
+          />
+          <span className="text-slate-400 text-sm">coins</span>
+          <button
+            type="button"
+            onClick={() => onChange(value.filter((_, j) => j !== i))}
+            className="rounded p-1.5 text-rose-400 hover:bg-rose-500/20"
+            aria-label="Remove range"
+          >
+            <svg className="h-4 w-4" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+              <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M6 18L18 6M6 6l12 12" />
+            </svg>
+          </button>
+        </div>
+      ))}
+      <button
+        type="button"
+        onClick={() => onChange([...value, nextRankRange(value)])}
+        className="rounded-lg border border-dashed border-slate-500 px-3 py-2 text-sm text-slate-400 hover:border-green-500/50 hover:text-green-400"
+      >
+        + Add rank range
+      </button>
+    </div>
+  );
+}
+
 function ImageUpload({
   file,
   previewUrl,
@@ -655,7 +740,7 @@ function GamesSection({
   return (
     <div className="space-y-8">
       {showCreateGame && (
-        <section className="admin-card rounded-2xl p-6 sm:p-8">
+        <section className="admin-panel w-full">
           <h2 className="mb-1 text-base font-semibold text-white/90">Create Game</h2>
           <p className="mb-6 text-sm text-slate-400">Add a new game to the platform</p>
           <form onSubmit={handleSubmit} className="space-y-5">
@@ -686,7 +771,7 @@ function GamesSection({
           </form>
         </section>
       )}
-      <section className="admin-card rounded-2xl p-6 sm:p-8">
+      <section className="admin-panel w-full">
         <h2 className="mb-1 text-base font-semibold text-white/90">Existing Games</h2>
         <p className="mb-5 text-sm text-slate-400">Click a game to manage modes and matches</p>
         <ul className="space-y-2">
@@ -902,7 +987,7 @@ function ModesSection({
             </button>
           </div>
 
-          <div className="admin-card rounded-2xl p-6 sm:p-8">
+          <div className="admin-panel w-full">
             <h3 className="mb-4 text-base font-semibold text-white/90">Existing Modes</h3>
             {modes.length === 0 ? (
               <p className="py-8 text-center text-sm text-slate-400">No game modes configured yet</p>
@@ -955,7 +1040,7 @@ function ModesSection({
             ← Back to Modes
           </button>
           
-          <section className="admin-card rounded-2xl p-6 sm:p-8 max-w-xl">
+          <section className="admin-form-section w-full">
             <h2 className="mb-1 text-lg font-bold text-white">Create Game Mode</h2>
             <p className="mb-6 text-sm text-slate-400">Define a new game mode block under {gameName}.</p>
             
@@ -1053,11 +1138,7 @@ function MatchesSection({
   const [matchType, setMatchType] = useState<MatchType>("solo");
   const [coinsPerKill, setCoinsPerKill] = useState("5");
   const [totalPrizePool, setTotalPrizePool] = useState("");
-  const [rankRewards, setRankRewards] = useState<RankReward[]>([
-    { fromRank: 1, toRank: 1, coins: 0 },
-    { fromRank: 2, toRank: 2, coins: 0 },
-    { fromRank: 3, toRank: 3, coins: 0 },
-  ]);
+  const [rankRewards, setRankRewards] = useState<RankReward[]>(DEFAULT_RANK_REWARDS);
   const [imageFile, setImageFile] = useState<File | null>(null);
   const [imagePreview, setImagePreview] = useState<string | null>(null);
   const [submitting, setSubmitting] = useState(false);
@@ -1161,11 +1242,7 @@ function MatchesSection({
       setMatchType("solo");
       setCoinsPerKill("5");
       setTotalPrizePool("");
-      setRankRewards([
-        { fromRank: 1, toRank: 1, coins: 0 },
-        { fromRank: 2, toRank: 2, coins: 0 },
-        { fromRank: 3, toRank: 3, coins: 0 },
-      ]);
+      setRankRewards([...DEFAULT_RANK_REWARDS]);
       handleImageClear();
       setSelectedMatchId(data?.id ?? null);
       setMatchTab("upcoming");
@@ -1297,7 +1374,7 @@ function MatchesSection({
                       const maxParticipants = m.maxParticipants ?? 100;
                       const spotsLeft = Math.max(0, maxParticipants - spotsTaken);
                       return (
-                        <div key={m.id} className="admin-card rounded-2xl overflow-hidden border border-slate-800 hover:border-green-500/30 transition flex flex-col">
+                        <div key={m.id} className="admin-content-card rounded-2xl overflow-hidden hover:border-green-500/30 transition flex flex-col">
                           {/* 1. Banner image */}
                           <div className="relative aspect-[16/9] w-full bg-slate-950 overflow-hidden">
                             <img
@@ -1434,7 +1511,7 @@ function MatchesSection({
             ← Back to Matches List
           </button>
 
-          <section className="admin-card rounded-2xl p-6 sm:p-8 max-w-2xl">
+          <section className="admin-form-section w-full">
             <h2 className="mb-1 text-lg font-bold text-white">Create Matches from Preset</h2>
             <p className="mb-6 text-sm text-slate-400">
               Select a preset and schedule multiple matches for {modeName} on one day.
@@ -1550,7 +1627,7 @@ function MatchesSection({
             ← Back to Matches List
           </button>
 
-          <section className="admin-card rounded-2xl p-6 sm:p-8 max-w-2xl">
+          <section className="admin-form-section w-full">
             <h2 className="mb-1 text-lg font-bold text-white">Create New Match</h2>
             <p className="mb-6 text-sm text-slate-400">Setup matches and reward parameters under {modeName}.</p>
 
@@ -1635,109 +1712,7 @@ function MatchesSection({
                     />
                   </div>
                 </div>
-                <div className="space-y-3">
-                  <label className="block text-xs text-slate-400 font-semibold">Rank rewards (coins per rank range)</label>
-                  <p className="text-[11px] text-slate-500">
-                    Ranks 1–3 are fixed; use + Add rank range for more (e.g. 4th–10th).
-                  </p>
-                  {([0, 1, 2] as const).map((slot) => (
-                    <div key={slot} className="flex flex-wrap items-center gap-2">
-                      <span className="inline-flex w-16 shrink-0 items-center justify-center rounded-lg border border-slate-700 bg-slate-800/40 px-3 py-2 text-sm text-slate-300">
-                        {slot + 1}
-                      </span>
-                      <span className="text-slate-500">-</span>
-                      <span className="inline-flex w-16 shrink-0 items-center justify-center rounded-lg border border-slate-700 bg-slate-800/40 px-3 py-2 text-sm text-slate-300">
-                        {slot + 1}
-                      </span>
-                      <span className="text-slate-500">→</span>
-                      <input
-                        type="number"
-                        min="0"
-                        value={rankRewards[slot]?.coins ?? 0}
-                        onChange={(e) => {
-                          const coins = Number(e.target.value) || 0;
-                          setRankRewards((prev) => {
-                            const next = [...prev];
-                            while (next.length < 3) {
-                              next.push({ fromRank: next.length + 1, toRank: next.length + 1, coins: 0 });
-                            }
-                            next[slot] = { fromRank: slot + 1, toRank: slot + 1, coins };
-                            return next;
-                          });
-                        }}
-                        className="admin-input w-20 rounded-lg px-3 py-2 text-sm text-white outline-none"
-                        placeholder="coins"
-                      />
-                      <span className="text-slate-400 text-sm">coins</span>
-                    </div>
-                  ))}
-                  {rankRewards.slice(3).map((r, sliceIdx) => {
-                    const i = sliceIdx + 3;
-                    return (
-                      <div key={i} className="flex flex-wrap items-center gap-2">
-                        <input
-                          type="number"
-                          min="1"
-                          value={r.fromRank}
-                          onChange={(e) =>
-                            setRankRewards((prev) =>
-                              prev.map((x, j) => (j === i ? { ...x, fromRank: Number(e.target.value) || 1 } : x)),
-                            )
-                          }
-                          className="admin-input w-16 rounded-lg px-3 py-2 text-sm text-white outline-none"
-                        />
-                        <span className="text-slate-500">-</span>
-                        <input
-                          type="number"
-                          min="1"
-                          value={r.toRank}
-                          onChange={(e) =>
-                            setRankRewards((prev) =>
-                              prev.map((x, j) => (j === i ? { ...x, toRank: Number(e.target.value) || 1 } : x)),
-                            )
-                          }
-                          className="admin-input w-16 rounded-lg px-3 py-2 text-sm text-white outline-none"
-                        />
-                        <span className="text-slate-500">→</span>
-                        <input
-                          type="number"
-                          min="0"
-                          value={r.coins}
-                          onChange={(e) =>
-                            setRankRewards((prev) =>
-                              prev.map((x, j) => (j === i ? { ...x, coins: Number(e.target.value) || 0 } : x)),
-                            )
-                          }
-                          className="admin-input w-20 rounded-lg px-3 py-2 text-sm text-white outline-none"
-                          placeholder="coins"
-                        />
-                        <span className="text-slate-400 text-sm">coins</span>
-                        <button
-                          type="button"
-                          onClick={() => setRankRewards((prev) => prev.filter((_, j) => j !== i))}
-                          className="rounded p-1.5 text-rose-400 hover:bg-rose-500/20"
-                          aria-label="Remove range"
-                        >
-                          <svg className="h-4 w-4" fill="none" viewBox="0 0 24 24" stroke="currentColor">
-                            <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M6 18L18 6M6 6l12 12" />
-                          </svg>
-                        </button>
-                      </div>
-                    );
-                  })}
-                  <button
-                    type="button"
-                    onClick={() =>
-                      setRankRewards((prev) => {
-                        const maxTo = prev.length > 0 ? Math.max(...prev.map((r) => r.toRank)) : 0;
-                        return [...prev, { fromRank: maxTo + 1, toRank: maxTo + 3, coins: 0 }];
-                      })
-                    }
-                    className="rounded-lg border border-dashed border-slate-500 px-3 py-2 text-sm text-slate-400 hover:border-green-500/50 hover:text-green-400"
-                  >
-                    + Add rank range
-                  </button>
-                </div>
+                <RankRewardsEditor value={rankRewards} onChange={setRankRewards} />
               </div>
               <div className="flex gap-3 pt-2">
                 <button
@@ -1786,11 +1761,7 @@ function MatchPresetsSection({
   const [map, setMap] = useState("BERMUDA");
   const [coinsPerKill, setCoinsPerKill] = useState("5");
   const [totalPrizePool, setTotalPrizePool] = useState("");
-  const [rankRewards, setRankRewards] = useState<RankReward[]>([
-    { fromRank: 1, toRank: 1, coins: 0 },
-    { fromRank: 2, toRank: 2, coins: 0 },
-    { fromRank: 3, toRank: 3, coins: 0 },
-  ]);
+  const [rankRewards, setRankRewards] = useState<RankReward[]>(DEFAULT_RANK_REWARDS);
   const [imageFile, setImageFile] = useState<File | null>(null);
   const [imagePreview, setImagePreview] = useState<string | null>(null);
   const [submitting, setSubmitting] = useState(false);
@@ -1814,11 +1785,7 @@ function MatchPresetsSection({
     setMap("BERMUDA");
     setCoinsPerKill("5");
     setTotalPrizePool("");
-    setRankRewards([
-      { fromRank: 1, toRank: 1, coins: 0 },
-      { fromRank: 2, toRank: 2, coins: 0 },
-      { fromRank: 3, toRank: 3, coins: 0 },
-    ]);
+    setRankRewards([...DEFAULT_RANK_REWARDS]);
     if (imagePreview) URL.revokeObjectURL(imagePreview);
     setImageFile(null);
     setImagePreview(null);
@@ -1996,7 +1963,7 @@ function MatchPresetsSection({
           >
             ← Back to presets
           </button>
-          <section className="admin-card rounded-2xl p-6 sm:p-8 max-w-2xl">
+          <section className="admin-form-section w-full">
             <h2 className="mb-1 text-lg font-bold text-white">Create Match Preset</h2>
             <p className="mb-6 text-sm text-slate-400">All match details except date and time.</p>
             <form onSubmit={handleSubmit} className="space-y-5">
@@ -2108,32 +2075,7 @@ function MatchPresetsSection({
                     />
                   </div>
                 </div>
-                <div className="space-y-3">
-                  <label className="block text-xs text-slate-400 font-semibold">Rank rewards</label>
-                  {[0, 1, 2].map((slot) => (
-                    <div key={slot} className="flex flex-wrap items-center gap-2">
-                      <span className="text-slate-500 text-sm w-16">Rank {slot + 1}</span>
-                      <input
-                        type="number"
-                        min="0"
-                        value={rankRewards[slot]?.coins ?? 0}
-                        onChange={(e) => {
-                          const coins = Number(e.target.value) || 0;
-                          setRankRewards((prev) => {
-                            const next = [...prev];
-                            while (next.length < 3) {
-                              next.push({ fromRank: next.length + 1, toRank: next.length + 1, coins: 0 });
-                            }
-                            next[slot] = { fromRank: slot + 1, toRank: slot + 1, coins };
-                            return next;
-                          });
-                        }}
-                        className="admin-input w-20 rounded-lg px-3 py-2 text-sm text-white outline-none"
-                      />
-                      <span className="text-slate-400 text-sm">coins</span>
-                    </div>
-                  ))}
-                </div>
+                <RankRewardsEditor value={rankRewards} onChange={setRankRewards} />
               </div>
               <div className="flex gap-3 pt-2">
                 <button
@@ -2841,7 +2783,7 @@ function CreateAdminSection({
 
   return (
     <div className="space-y-8">
-      <section className="admin-card rounded-2xl p-6 sm:p-8">
+      <section className="admin-panel w-full">
         <h2 className="mb-1 text-base font-semibold text-white/90">Create Admin</h2>
         <p className="mb-6 text-sm text-slate-400">Create credentials for a new admin. Set permissions below.</p>
         <form onSubmit={handleSubmit} className="space-y-5">
@@ -2942,7 +2884,7 @@ function CreateAdminSection({
           </button>
         </form>
       </section>
-      <section className="admin-card rounded-2xl p-6 sm:p-8">
+      <section className="admin-panel w-full">
         <h2 className="mb-1 text-base font-semibold text-white/90">Existing Admins</h2>
         <p className="mb-5 text-sm text-slate-400">{admins.length} admin(s)</p>
         <ul className="space-y-2">
@@ -3604,7 +3546,7 @@ function WithdrawalsSection({
         <p className="text-slate-400 text-sm">Review players' payouts, verify their UPI IDs, and handle payouts.</p>
       </div>
 
-      <section className="admin-card rounded-2xl p-6">
+      <section className="admin-panel w-full">
         <h3 className="mb-2 text-sm font-semibold text-slate-300">Withdrawal Service Charge</h3>
         <p className="mb-4 text-xs text-slate-400 font-medium">
           Define the platform commission (%) deducted automatically upon payout.
@@ -3800,7 +3742,7 @@ function PushNotificationsSection() {
       </div>
 
       <div className="grid grid-cols-1 lg:grid-cols-3 gap-6">
-        <form onSubmit={handleSend} className="admin-card rounded-2xl p-6 sm:p-8 lg:col-span-2 space-y-5">
+        <form onSubmit={handleSend} className="admin-panel w-full lg:col-span-2 space-y-5">
           <h3 className="text-lg font-bold text-white mb-2">Compose Broadcast</h3>
 
           <div>
@@ -3865,7 +3807,7 @@ function PushNotificationsSection() {
           </button>
         </form>
 
-        <div className="admin-card rounded-2xl p-6 flex flex-col h-[520px]">
+        <div className="admin-panel w-full flex flex-col h-[520px]">
           <div className="flex justify-between items-center mb-4">
             <h3 className="text-md font-bold text-white">Broadcast History</h3>
             {history.length > 0 && (
@@ -4071,7 +4013,7 @@ function AppSettingsSection({ onSuccess }: { onSuccess: () => void }) {
       </div>
 
       <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
-        <section className="admin-card rounded-2xl p-6 space-y-4">
+        <section className="admin-panel w-full space-y-4">
           <div>
             <h3 className="text-md font-bold text-slate-300">Marquee Announcement</h3>
             <p className="text-xs text-slate-500 mt-1">This text scrolls at the top of the user app home page.</p>
@@ -4095,7 +4037,7 @@ function AppSettingsSection({ onSuccess }: { onSuccess: () => void }) {
           </div>
         </section>
 
-        <section className="admin-card rounded-2xl p-6 space-y-4">
+        <section className="admin-panel w-full space-y-4">
           <div>
             <h3 className="text-md font-bold text-slate-300">Signup Coin Bonus</h3>
             <p className="text-xs text-slate-500 mt-1">Free balance credited to newly registered players.</p>
@@ -4119,7 +4061,7 @@ function AppSettingsSection({ onSuccess }: { onSuccess: () => void }) {
           </div>
         </section>
 
-        <section className="admin-card rounded-2xl p-6 space-y-4">
+        <section className="admin-panel w-full space-y-4">
           <div>
             <h3 className="text-md font-bold text-slate-300">Customer Support URL</h3>
             <p className="text-xs text-slate-500 mt-1">
@@ -4145,7 +4087,7 @@ function AppSettingsSection({ onSuccess }: { onSuccess: () => void }) {
           </div>
         </section>
 
-        <section className="admin-card rounded-2xl p-6 space-y-4">
+        <section className="admin-panel w-full space-y-4">
           <div>
             <h3 className="text-md font-bold text-slate-300">Manual Deposit QR Code</h3>
             <p className="text-xs text-slate-500 mt-1">UPI barcode scanned by users to deposit money manually.</p>
@@ -4241,7 +4183,7 @@ function AddCoinsSection({
   };
 
   return (
-    <section className="admin-card rounded-2xl p-6 sm:p-8">
+    <section className="admin-panel w-full">
       <h2 className="mb-1 text-base font-semibold text-white/90">Add Coins</h2>
       <p className="mb-6 text-sm text-slate-400">Search by user ID, then add coins to their account</p>
       <form onSubmit={handleSubmit} className="space-y-5">
@@ -4519,7 +4461,7 @@ function BannersSection() {
             ) : (
               <div className="grid gap-6 sm:grid-cols-2 lg:grid-cols-3">
                 {banners.map((b) => (
-                  <div key={b.id} className="admin-card overflow-hidden flex flex-col justify-between border border-slate-800">
+                  <div key={b.id} className="admin-content-card overflow-hidden flex flex-col justify-between">
                     <div>
                       <div className="aspect-[16/9] w-full overflow-hidden rounded-lg bg-slate-950/50 relative">
                         {b.imageUrl ? (
@@ -4589,7 +4531,7 @@ function BannersSection() {
             ← Back to Banners List
           </button>
 
-          <section className="admin-card rounded-2xl p-6 sm:p-8 max-w-2xl">
+          <section className="admin-form-section w-full">
             <h3 className="mb-1 text-lg font-bold text-white">Add New Banner</h3>
             <p className="mb-6 text-sm text-slate-400">Configure promotional or navigation banner details.</p>
             <form onSubmit={handleAddBanner} className="space-y-4">
@@ -4676,7 +4618,7 @@ function BannersSection() {
             ← Back to Banners List
           </button>
 
-          <section className="admin-card rounded-2xl p-6 sm:p-8 max-w-2xl">
+          <section className="admin-form-section w-full">
             <h3 className="mb-1 text-lg font-bold text-white">Edit Banner</h3>
             <p className="mb-6 text-sm text-slate-400">Update promotional banner details.</p>
             <form onSubmit={handleSaveEdit} className="space-y-4">
@@ -4827,7 +4769,7 @@ function ReferralsSection() {
 
   return (
     <div className="space-y-8">
-      <section className="admin-card rounded-2xl p-6 sm:p-8">
+      <section className="admin-panel w-full">
         <h2 className="mb-2 text-base font-semibold text-white/90">Referral System Settings</h2>
         <p className="mb-6 text-sm text-slate-400">Configure the behavior of your referral system.</p>
         <form onSubmit={handleSaveSettings} className="space-y-5">
