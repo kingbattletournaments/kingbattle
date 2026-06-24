@@ -1,3 +1,5 @@
+import { formatInAppTimezone } from "./app-timezone";
+
 function ordinalDay(day: number): string {
   const mod100 = day % 100;
   if (mod100 >= 11 && mod100 <= 13) return `${day}th`;
@@ -13,20 +15,22 @@ function ordinalDay(day: number): string {
   }
 }
 
-/** e.g. 7th July 2026, 7:00 PM */
+/** e.g. 7th July 2026, 7:00 PM (always shown in IST) */
 export function formatMatchDateTime(value: string | Date | null | undefined): string {
   if (!value) return "TBD";
   const date = value instanceof Date ? value : new Date(value);
   if (Number.isNaN(date.getTime())) return "TBD";
 
-  const day = ordinalDay(date.getDate());
-  const month = date.toLocaleString("en-GB", { month: "long" });
-  const year = date.getFullYear();
-  const time = date.toLocaleString("en-US", {
+  const day = Number(
+    formatInAppTimezone(date, { day: "numeric" }),
+  );
+  const month = formatInAppTimezone(date, { month: "long" });
+  const year = formatInAppTimezone(date, { year: "numeric" });
+  const time = formatInAppTimezone(date, {
     hour: "numeric",
     minute: "2-digit",
     hour12: true,
   });
 
-  return `${day} ${month} ${year}, ${time}`;
+  return `${ordinalDay(day)} ${month} ${year}, ${time}`;
 }

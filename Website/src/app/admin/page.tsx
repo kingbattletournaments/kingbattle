@@ -1153,6 +1153,46 @@ function calcCoinsForPosition(
   return coins;
 }
 
+const PRESET_PREVIEW_PAGE = 10;
+
+function PresetSchedulePreviewList({ times }: { times: Date[] }) {
+  const [visibleCount, setVisibleCount] = useState(PRESET_PREVIEW_PAGE);
+  const visible = times.slice(0, visibleCount);
+  const hasMore = times.length > visibleCount;
+  const canSeeLess = visibleCount > PRESET_PREVIEW_PAGE;
+
+  return (
+    <div className="space-y-1">
+      {visible.map((t, i) => (
+        <p key={`${t.getTime()}-${i}`} className="text-sm text-slate-400">
+          {formatMatchDateTime(t)}
+        </p>
+      ))}
+      {(hasMore || canSeeLess) && (
+        <div className="pt-1">
+          {hasMore ? (
+            <button
+              type="button"
+              onClick={() => setVisibleCount((c) => Math.min(c + PRESET_PREVIEW_PAGE, times.length))}
+              className="text-xs font-semibold text-green-400 hover:text-green-300"
+            >
+              See more
+            </button>
+          ) : (
+            <button
+              type="button"
+              onClick={() => setVisibleCount(PRESET_PREVIEW_PAGE)}
+              className="text-xs font-semibold text-slate-400 hover:text-slate-300"
+            >
+              See less
+            </button>
+          )}
+        </div>
+      )}
+    </div>
+  );
+}
+
 function MatchesSection({
   games,
   modes,
@@ -1813,9 +1853,7 @@ function MatchesSection({
                     <p className="text-sm font-medium text-slate-300 mb-2">
                       {presetSchedulePreview.length} match{presetSchedulePreview.length === 1 ? "" : "es"} will be created at:
                     </p>
-                    <p className="text-sm text-slate-400">
-                      {presetSchedulePreview.map(formatMatchDateTime).join(", ")}
-                    </p>
+                    <PresetSchedulePreviewList times={presetSchedulePreview} />
                   </div>
                 )}
                 {selectedPresetId && presetSchedulePreview.length === 0 && (

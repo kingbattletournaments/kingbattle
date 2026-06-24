@@ -3,6 +3,7 @@ import { getStore } from "@/lib/store";
 import { getProductionStoreError } from "@/lib/store-config";
 import { getAdminSession } from "@/lib/admin-auth";
 import { buildMatchScheduleTimes } from "@/lib/match-preset-schedule";
+import { toScheduledAtIso } from "@/lib/app-timezone";
 
 export async function POST(request: Request) {
   const storeError = getProductionStoreError();
@@ -49,7 +50,7 @@ export async function POST(request: Request) {
     );
   }
 
-  const scheduledAtList = scheduleTimes.map((d) => d.toISOString());
+  const scheduledAtList = scheduleTimes.map((d) => toScheduledAtIso(d));
   const matches = await store.createMatchesFromPreset(presetId, gameModeId, scheduledAtList);
   if (!matches || matches.length === 0) {
     return NextResponse.json({ error: "Failed to create matches" }, { status: 500 });

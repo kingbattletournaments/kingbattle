@@ -1,13 +1,10 @@
-/** Build local Date from YYYY-MM-DD and HH:mm (24h). */
-function parseLocalDateTime(dateStr: string, timeStr: string): Date {
-  const [y, m, d] = dateStr.split("-").map(Number);
-  const [hh, mm] = timeStr.split(":").map(Number);
-  return new Date(y, m - 1, d, hh, mm ?? 0, 0, 0);
-}
+import { formatMatchDateTime } from "./format-match-datetime";
+import { parseAppWallClock } from "./app-timezone";
 
 /**
  * Schedule match start times from startingTime, adding gapMinutes each step,
  * while each time is <= endingTime (last slot may be before end by less than gap).
+ * Times are interpreted as IST wall-clock (same on browser and Vercel).
  */
 export function buildMatchScheduleTimes(
   matchDate: string,
@@ -17,20 +14,21 @@ export function buildMatchScheduleTimes(
 ): Date[] {
   if (!matchDate || !startingTime || !endingTime || gapMinutes <= 0) return [];
 
-  const start = parseLocalDateTime(matchDate, startingTime);
-  const end = parseLocalDateTime(matchDate, endingTime);
+  const start = parseAppWallClock(matchDate, startingTime);
+  const end = parseAppWallClock(matchDate, endingTime);
   if (Number.isNaN(start.getTime()) || Number.isNaN(end.getTime()) || end < start) return [];
 
   const times: Date[] = [];
-  let current = start;
-  while (current <= end) {
-    times.push(new Date(current));
-    current = new Date(current.getTime() + gapMinutes * 60 * 1000);
+  let currentMs = start.getTime();
+  const endMs = end.getTime();
+  const stepMs = gapMinutes * 60 * 1000;
+
+  while (currentMs <= endMs) {
+    times.push(new Date(currentMs));
+    currentMs += stepMs;
   }
   return times;
 }
-
-import { formatMatchDateTime } from "./format-match-datetime";
 
 export function formatSchedulePreviewTime(d: Date): string {
   return formatMatchDateTime(d);

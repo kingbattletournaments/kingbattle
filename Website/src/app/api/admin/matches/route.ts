@@ -2,6 +2,7 @@ import { NextResponse } from "next/server";
 import { getStore } from "@/lib/store";
 import { getProductionStoreError } from "@/lib/store-config";
 import { getAdminSession } from "@/lib/admin-auth";
+import { toScheduledAtIso } from "@/lib/app-timezone";
 
 export async function GET(request: Request) {
   const admin = await getAdminSession();
@@ -65,7 +66,7 @@ export async function POST(request: Request) {
     title,
     Number(entryFee),
     Number(maxParticipants) || 16,
-    scheduledAt || new Date().toISOString(),
+    toScheduledAtIso(scheduledAt),
     validMatchType,
     validPrizePool,
     "BERMUDA",
