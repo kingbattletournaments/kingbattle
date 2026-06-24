@@ -75,6 +75,59 @@ export type DbMatch = {
   participantCount?: number;
 };
 
+export type DbMatchPreset = {
+  id: string;
+  gameModeId: string;
+  name: string;
+  title: string;
+  entryFee: number;
+  maxParticipants: number;
+  matchType: string;
+  map: string;
+  prizePool: { coinsPerKill: number; totalPrizePool?: number; rankRewards: { fromRank: number; toRank: number; coins: number }[] };
+  image?: string | null;
+  createdAt?: string;
+};
+
+function toMatchPreset(row: {
+  id: string;
+  game_mode_id: string;
+  name: string;
+  title: string;
+  entry_fee: number;
+  max_participants: number;
+  match_type?: string;
+  map?: string | null;
+  coins_per_kill?: number;
+  total_prize_pool?: number;
+  rank_rewards?: unknown;
+  image?: string | null;
+  created_at?: string;
+}): DbMatchPreset {
+  const rewards = Array.isArray(row.rank_rewards)
+    ? (row.rank_rewards as { fromRank?: number; toRank?: number; coins?: number }[])
+        .filter((r) => r && typeof r.fromRank === "number" && typeof r.toRank === "number" && typeof r.coins === "number")
+        .map((r) => ({ fromRank: r.fromRank!, toRank: r.toRank!, coins: r.coins! }))
+    : [];
+  return {
+    id: row.id,
+    gameModeId: row.game_mode_id,
+    name: row.name,
+    title: row.title,
+    entryFee: row.entry_fee ?? 0,
+    maxParticipants: row.max_participants ?? 16,
+    matchType: row.match_type ?? "solo",
+    map: row.map ?? "BERMUDA",
+    prizePool: {
+      coinsPerKill: row.coins_per_kill ?? 5,
+      totalPrizePool: row.total_prize_pool ?? 0,
+      rankRewards: rewards,
+    },
+    image: row.image ?? null,
+    createdAt: row.created_at,
+  };
+}
+
 function toMatch(row: {
   id: string;
   game_mode_id: string;
@@ -1518,7 +1571,131 @@ export const db = {
       .update({ fcm_token: token })
       .eq("username", userId);
     return !error;
-  }
+  },
+
+  async matchPresets(modeId?: string): Promise<DbMatchPreset[]> {
+    const supabase = getSupabase();
+    if (!supabase) return [];
+    let q = supabase.from("match_presets").select("*").order("created_at", { ascending: false });
+    if (modeId) q = q.eq("game_mode_id", modeId);
+    const { data } = await q;
+    if (!data) return [];
+    return data.map(toMatchPreset);
+  },
+
+  async getMatchPreset(id: string): Promise<DbMatchPreset | null> {
+    const supabase = getSupabase();
+    if (!supabase) return null;
+    const { data, error } = await supabase.from("match_presets").select("*").eq("id", id).single();
+    if (error || !data) return null;
+    return toMatchPreset(data);
+  },
+
+  async addMatchPreset(input: {
+    gameModeId: string;
+    name: string;
+    title: string;
+    entryFee: number;
+    maxParticipants: number;
+    matchType: string;
+    map?: string;
+    prizePool: { coinsPerKill: number; totalPrizePool?: number; rankRewards: { fromRank: number; toRank: number; coins: number }[] };
+    image?: string | null;
+  }): Promise<DbMatchPreset | null> {
+    const supabase = getSupabase();
+    if (!supabase) return null;
+    const { data, error } = await supabase
+      .from("match_presets")
+      .insert({
+        game_mode_id: input.gameModeId,
+        name: input.name,
+        title: input.title,
+        entry_fee: input.entryFee,
+        max_participants: input.maxParticipants,
+        match_type: input.matchType || "solo",
+        map: input.map || "BERMUDA",
+        coins_per_kill: input.prizePool?.coinsPerKill ?? 5,
+        total_prize_pool: input.prizePool?.totalPrizePool ?? 0,
+        rank_rewards: input.prizePool?.rankRewards ?? [],
+        image: input.image || null,
+      })
+      .select()
+      .single();
+    if (error || !data) {
+      console.error("addMatchPreset failed:", error?.message ?? "no data returned");
+      return null;
+    }
+    return toMatchPreset(data);
+  },
+
+  async updateMatchPreset(
+    id: string,
+    updates: Partial<{
+      name: string;
+      title: string;
+      entryFee: number;
+      maxParticipants: number;
+      matchType: string;
+      map: string;
+      prizePool: { coinsPerKill: number; totalPrizePool?: number; rankRewards: { fromRank: number; toRank: number; coins: number }[] };
+      image: string | null;
+    }>,
+  ): Promise<DbMatchPreset | null> {
+    const supabase = getSupabase();
+    if (!supabase) return null;
+    const payload: Record<string, unknown> = { updated_at: new Date().toISOString() };
+    if (updates.name !== undefined) payload.name = updates.name;
+    if (updates.title !== undefined) payload.title = updates.title;
+    if (updates.entryFee !== undefined) payload.entry_fee = updates.entryFee;
+    if (updates.maxParticipants !== undefined) payload.max_participants = updates.maxParticipants;
+    if (updates.matchType !== undefined) payload.match_type = updates.matchType;
+    if (updates.map !== undefined) payload.map = updates.map;
+    if (updates.image !== undefined) payload.image = updates.image;
+    if (updates.prizePool) {
+      payload.coins_per_kill = updates.prizePool.coinsPerKill;
+      payload.total_prize_pool = updates.prizePool.totalPrizePool ?? 0;
+      payload.rank_rewards = updates.prizePool.rankRewards;
+    }
+    const { data, error } = await supabase.from("match_presets").update(payload).eq("id", id).select().single();
+    if (error || !data) {
+      console.error("updateMatchPreset failed:", error?.message ?? "no data returned");
+      return null;
+    }
+    return toMatchPreset(data);
+  },
+
+  async deleteMatchPreset(id: string): Promise<boolean> {
+    const supabase = getSupabase();
+    if (!supabase) return false;
+    const { error } = await supabase.from("match_presets").delete().eq("id", id);
+    return !error;
+  },
+
+  async createMatchesFromPreset(
+    presetId: string,
+    gameModeId: string,
+    scheduledAtList: string[],
+  ): Promise<DbMatch[] | null> {
+    const preset = await this.getMatchPreset(presetId);
+    if (!preset || scheduledAtList.length === 0) return null;
+    const created: DbMatch[] = [];
+    for (const scheduledAt of scheduledAtList) {
+      const match = await this.addMatch(
+        gameModeId,
+        preset.title,
+        preset.entryFee,
+        preset.maxParticipants,
+        scheduledAt,
+        preset.matchType,
+        preset.prizePool,
+        preset.map,
+        preset.image,
+      );
+      if (!match) return created.length > 0 ? created : null;
+      created.push(match);
+    }
+    return created;
+  },
 };
 
 export function isDbConfigured(): boolean {

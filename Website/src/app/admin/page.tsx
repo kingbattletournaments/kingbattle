@@ -4,8 +4,9 @@ import { useState, useEffect, useRef, useCallback } from "react";
 import { useRouter } from "next/navigation";
 import Image from "next/image";
 import { LoadingSpinner } from "@/components/ui";
+import { buildMatchScheduleTimes, formatSchedulePreviewTime } from "@/lib/match-preset-schedule";
 
-type Tab = "dashboard" | "modes" | "moneyorders" | "withdrawals" | "admins" | "notifications" | "appsettings" | "banners" | "referrals" | "users";
+type Tab = "dashboard" | "modes" | "presets" | "moneyorders" | "withdrawals" | "admins" | "notifications" | "appsettings" | "banners" | "referrals" | "users";
 type Game = { id: string; name: string; imageUrl: string | null };
 type GameMode = { id: string; gameId: string; name: string; imageUrl: string | null };
 type MatchType = "solo" | "duo" | "squad";
@@ -28,6 +29,18 @@ type Match = {
   participantCount?: number;
   map?: string;
 };
+type MatchPreset = {
+  id: string;
+  gameModeId: string;
+  name: string;
+  title: string;
+  entryFee: number;
+  maxParticipants: number;
+  matchType?: MatchType;
+  map?: string;
+  prizePool?: PrizePool;
+  image?: string | null;
+};
 type User = { id: string; email: string; displayName: string; coins: number; wonCoins?: number; isBlocked?: boolean; username?: string };
 
 type AdminSession = {
@@ -49,6 +62,7 @@ export default function AdminPage() {
   const [games, setGames] = useState<Game[]>([]);
   const [modes, setModes] = useState<GameMode[]>([]);
   const [matches, setMatches] = useState<Match[]>([]);
+  const [matchPresets, setMatchPresets] = useState<MatchPreset[]>([]);
   const [users, setUsers] = useState<User[]>([]);
   const [deposits, setDeposits] = useState<any[]>([]);
   const [withdrawals, setWithdrawals] = useState<any[]>([]);
@@ -64,6 +78,7 @@ export default function AdminPage() {
     visibleTabs.push({ id: "dashboard", label: "Dashboard", icon: "📊" });
     if (session.isMasterAdmin || session.gamesAccessType === "all" || session.allowedGameIds.length > 0) {
       visibleTabs.push({ id: "modes", label: "Modes", icon: "🎮" });
+      visibleTabs.push({ id: "presets", label: "Match Presets", icon: "📋" });
     }
     if (session.coinsAccess) {
       visibleTabs.push({ id: "moneyorders", label: "Money Orders", icon: "💎" });
@@ -89,7 +104,10 @@ export default function AdminPage() {
     if (!session) return;
     const hasGames = session.isMasterAdmin || session.gamesAccessType === "all" || session.allowedGameIds.length > 0;
     const validTabs: Tab[] = ["dashboard"];
-    if (hasGames) validTabs.push("modes");
+    if (hasGames) {
+      validTabs.push("modes");
+      validTabs.push("presets");
+    }
     if (session.coinsAccess) {
       validTabs.push("moneyorders");
       validTabs.push("withdrawals");
@@ -124,10 +142,11 @@ export default function AdminPage() {
 
     if (showLoading) setLoading(true);
     try {
-      const [gRes, mRes, matRes, uRes, depRes, withRes] = await Promise.all([
+      const [gRes, mRes, matRes, presetRes, uRes, depRes, withRes] = await Promise.all([
         fetch("/api/admin/games"),
         fetch("/api/admin/modes"),
         fetch("/api/admin/matches"),
+        fetch("/api/admin/match-presets"),
         (sessionData.admin.usersAccess || sessionData.admin.coinsAccess) ? fetch("/api/admin/users") : Promise.resolve(null),
         sessionData.admin.coinsAccess ? fetch("/api/admin/deposits") : Promise.resolve(null),
         sessionData.admin.coinsAccess ? fetch("/api/admin/withdrawals") : Promise.resolve(null),
@@ -136,6 +155,7 @@ export default function AdminPage() {
       if (gRes.ok) setGames(await gRes.json());
       if (mRes.ok) setModes(await mRes.json());
       if (matRes.ok) setMatches(await matRes.json());
+      if (presetRes.ok) setMatchPresets(await presetRes.json());
       if (uRes?.ok) setUsers(await uRes.json());
       if (depRes?.ok) setDeposits(await depRes.json());
       if (withRes?.ok) setWithdrawals(await withRes.json());
@@ -226,7 +246,7 @@ export default function AdminPage() {
               onClick={() => {
                 setTab(t.id);
                 setSidebarOpen(false);
-                if (t.id !== "modes") {
+                if (t.id !== "modes" && t.id !== "presets") {
                   setSelectedGameId(null);
                   setSelectedModeId(null);
                 } else if (hasSingleGameAccess && session && games.length > 0) {
@@ -280,6 +300,7 @@ export default function AdminPage() {
                     games={games}
                     modes={modes}
                     matches={matches.filter((m) => m.gameModeId === selectedModeId)}
+                    matchPresets={matchPresets.filter((p) => p.gameModeId === selectedModeId)}
                     modeId={selectedModeId}
                     users={users}
                     onBack={() => setSelectedModeId(null)}
@@ -302,6 +323,15 @@ export default function AdminPage() {
                     showCreateGame={!hasSpecificGameAccess}
                   />
                 )
+              )}
+              
+              {tab === "presets" && (
+                <MatchPresetsSection
+                  games={games}
+                  modes={modes}
+                  presets={matchPresets}
+                  onSuccess={() => { fetchData(); showMsg("ok", "Preset saved"); }}
+                />
               )}
               
               {tab === "moneyorders" && (
@@ -1000,6 +1030,7 @@ function MatchesSection({
   games,
   modes,
   matches,
+  matchPresets,
   modeId,
   users,
   onBack,
@@ -1008,12 +1039,13 @@ function MatchesSection({
   games: Game[];
   modes: GameMode[];
   matches: Match[];
+  matchPresets: MatchPreset[];
   modeId: string;
   users: User[];
   onBack: () => void;
   onSuccess: (opts?: { silent?: boolean }) => void;
 }) {
-  const [view, setView] = useState<"list" | "create">("list");
+  const [view, setView] = useState<"list" | "create" | "createFromPreset">("list");
   const [title, setTitle] = useState("");
   const [entryFee, setEntryFee] = useState("");
   const [maxParticipants, setMaxParticipants] = useState("16");
@@ -1032,6 +1064,22 @@ function MatchesSection({
   const [selectedMatchId, setSelectedMatchId] = useState<string | null>(null);
   const [matchTab, setMatchTab] = useState<"upcoming" | "ongoing" | "finished">("upcoming");
   const [expandedMatchId, setExpandedMatchId] = useState<string | null>(null);
+  const [selectedPresetId, setSelectedPresetId] = useState("");
+  const [presetMatchDate, setPresetMatchDate] = useState(() => new Date().toISOString().slice(0, 10));
+  const [presetStartingTime, setPresetStartingTime] = useState("10:00");
+  const [presetGapMinutes, setPresetGapMinutes] = useState("60");
+  const [presetEndingTime, setPresetEndingTime] = useState("18:00");
+  const [presetSubmitting, setPresetSubmitting] = useState(false);
+
+  const presetSchedulePreview =
+    selectedPresetId && presetMatchDate && presetStartingTime && presetEndingTime && Number(presetGapMinutes) > 0
+      ? buildMatchScheduleTimes(
+          presetMatchDate,
+          presetStartingTime,
+          Number(presetGapMinutes),
+          presetEndingTime,
+        )
+      : [];
 
   const handleImageChange = (file: File) => {
     setImageFile(file);
@@ -1130,6 +1178,42 @@ function MatchesSection({
     }
   };
 
+  const handleCreateFromPreset = async (e: React.FormEvent) => {
+    e.preventDefault();
+    if (!selectedPresetId) {
+      alert("Select a preset");
+      return;
+    }
+    setPresetSubmitting(true);
+    try {
+      const res = await fetch("/api/admin/matches/from-preset", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          presetId: selectedPresetId,
+          gameModeId: modeId,
+          matchDate: presetMatchDate,
+          startingTime: presetStartingTime,
+          gapMinutes: Number(presetGapMinutes),
+          endingTime: presetEndingTime,
+        }),
+      });
+      if (!res.ok) {
+        const errData = await res.json().catch(() => ({}));
+        throw new Error(errData?.error || "Failed to create matches");
+      }
+      const data = await res.json();
+      setView("list");
+      setMatchTab("upcoming");
+      onSuccess({ silent: true });
+      alert(`Created ${data.count} match${data.count === 1 ? "" : "es"}`);
+    } catch (err) {
+      alert(err instanceof Error ? err.message : "Failed to create matches");
+    } finally {
+      setPresetSubmitting(false);
+    }
+  };
+
   return (
     <div className="space-y-6">
       {view === "list" ? (
@@ -1150,13 +1234,26 @@ function MatchesSection({
               </div>
             </div>
             {!selectedMatchId && (
-              <button
-                type="button"
-                onClick={() => setView("create")}
-                className="admin-btn-primary rounded-xl px-5 py-2.5 text-sm font-semibold text-white shrink-0"
-              >
-                + Create New Match
-              </button>
+              <div className="flex flex-col gap-2 shrink-0">
+                <button
+                  type="button"
+                  onClick={() => setView("create")}
+                  className="admin-btn-primary rounded-xl px-5 py-2.5 text-sm font-semibold text-white"
+                >
+                  + Create New Match
+                </button>
+                <button
+                  type="button"
+                  onClick={() => {
+                    setSelectedPresetId(matchPresets[0]?.id ?? "");
+                    setView("createFromPreset");
+                  }}
+                  disabled={matchPresets.length === 0}
+                  className="rounded-xl border border-green-500/40 bg-green-500/10 px-5 py-2.5 text-sm font-semibold text-green-300 hover:bg-green-500/20 disabled:opacity-40 disabled:cursor-not-allowed"
+                >
+                  Create using preset
+                </button>
+              </div>
             )}
           </div>
 
@@ -1326,6 +1423,122 @@ function MatchesSection({
               </>
             )}
           </div>
+        </>
+      ) : view === "createFromPreset" ? (
+        <>
+          <button
+            type="button"
+            onClick={() => setView("list")}
+            className="flex items-center gap-2 text-sm text-slate-400 transition hover:text-white"
+          >
+            ← Back to Matches List
+          </button>
+
+          <section className="admin-card rounded-2xl p-6 sm:p-8 max-w-2xl">
+            <h2 className="mb-1 text-lg font-bold text-white">Create Matches from Preset</h2>
+            <p className="mb-6 text-sm text-slate-400">
+              Select a preset and schedule multiple matches for {modeName} on one day.
+            </p>
+
+            {matchPresets.length === 0 ? (
+              <p className="text-slate-400 text-sm">
+                No presets for this mode yet. Create one in the Match Presets tab first.
+              </p>
+            ) : (
+              <form onSubmit={handleCreateFromPreset} className="space-y-5">
+                <div>
+                  <label className="mb-2 block text-sm font-medium text-slate-300">Preset</label>
+                  <select
+                    value={selectedPresetId}
+                    onChange={(e) => setSelectedPresetId(e.target.value)}
+                    required
+                    className="admin-input w-full rounded-xl px-4 py-3 text-white outline-none"
+                  >
+                    <option value="">Select preset...</option>
+                    {matchPresets.map((p) => (
+                      <option key={p.id} value={p.id}>
+                        {p.name} — {p.title} ({p.entryFee} coins, {p.matchType ?? "solo"})
+                      </option>
+                    ))}
+                  </select>
+                </div>
+                <div>
+                  <label className="mb-2 block text-sm font-medium text-slate-300">Match date</label>
+                  <input
+                    type="date"
+                    value={presetMatchDate}
+                    onChange={(e) => setPresetMatchDate(e.target.value)}
+                    required
+                    className="admin-input w-full rounded-xl px-4 py-3 text-white outline-none"
+                  />
+                </div>
+                <div className="grid gap-5 sm:grid-cols-3">
+                  <div>
+                    <label className="mb-2 block text-sm font-medium text-slate-300">Starting time</label>
+                    <input
+                      type="time"
+                      value={presetStartingTime}
+                      onChange={(e) => setPresetStartingTime(e.target.value)}
+                      required
+                      className="admin-input w-full rounded-xl px-4 py-3 text-white outline-none"
+                    />
+                  </div>
+                  <div>
+                    <label className="mb-2 block text-sm font-medium text-slate-300">Time gap (minutes)</label>
+                    <input
+                      type="number"
+                      min="1"
+                      value={presetGapMinutes}
+                      onChange={(e) => setPresetGapMinutes(e.target.value)}
+                      required
+                      className="admin-input w-full rounded-xl px-4 py-3 text-white outline-none"
+                    />
+                  </div>
+                  <div>
+                    <label className="mb-2 block text-sm font-medium text-slate-300">Ending time</label>
+                    <input
+                      type="time"
+                      value={presetEndingTime}
+                      onChange={(e) => setPresetEndingTime(e.target.value)}
+                      required
+                      className="admin-input w-full rounded-xl px-4 py-3 text-white outline-none"
+                    />
+                  </div>
+                </div>
+                {presetSchedulePreview.length > 0 && (
+                  <div className="rounded-xl border border-slate-700/80 bg-slate-800/20 p-4">
+                    <p className="text-sm font-medium text-slate-300 mb-2">
+                      {presetSchedulePreview.length} match{presetSchedulePreview.length === 1 ? "" : "es"} will be created at:
+                    </p>
+                    <p className="text-sm text-slate-400">
+                      {presetSchedulePreview.map(formatSchedulePreviewTime).join(", ")}
+                    </p>
+                  </div>
+                )}
+                {selectedPresetId && presetSchedulePreview.length === 0 && (
+                  <p className="text-sm text-amber-400/90">
+                    No valid slots with this schedule. Ending time must be after starting time.
+                  </p>
+                )}
+                <div className="flex gap-3 pt-2">
+                  <button
+                    type="submit"
+                    disabled={presetSubmitting || presetSchedulePreview.length === 0}
+                    className="admin-btn-primary rounded-xl px-6 py-3 font-medium text-white disabled:opacity-50"
+                  >
+                    {presetSubmitting ? "Creating..." : `Create ${presetSchedulePreview.length || ""} Matches`}
+                  </button>
+                  <button
+                    type="button"
+                    onClick={() => setView("list")}
+                    className="bg-slate-800 border border-slate-700 hover:bg-slate-700 text-white rounded-xl px-6 py-3 font-medium transition"
+                  >
+                    Cancel
+                  </button>
+                </div>
+              </form>
+            )}
+          </section>
         </>
       ) : (
         <>
@@ -1533,6 +1746,402 @@ function MatchesSection({
                   className="admin-btn-primary rounded-xl px-6 py-3 font-medium text-white disabled:opacity-50"
                 >
                   {submitting ? "Creating..." : "Create Match"}
+                </button>
+                <button
+                  type="button"
+                  onClick={() => setView("list")}
+                  className="bg-slate-800 border border-slate-700 hover:bg-slate-700 text-white rounded-xl px-6 py-3 font-medium transition"
+                >
+                  Cancel
+                </button>
+              </div>
+            </form>
+          </section>
+        </>
+      )}
+    </div>
+  );
+}
+
+function MatchPresetsSection({
+  games,
+  modes,
+  presets,
+  onSuccess,
+}: {
+  games: Game[];
+  modes: GameMode[];
+  presets: MatchPreset[];
+  onSuccess: () => void;
+}) {
+  const [view, setView] = useState<"list" | "create">("list");
+  const [filterGameId, setFilterGameId] = useState(games[0]?.id ?? "");
+  const [filterModeId, setFilterModeId] = useState("");
+  const [gameModeId, setGameModeId] = useState("");
+  const [name, setName] = useState("");
+  const [title, setTitle] = useState("");
+  const [entryFee, setEntryFee] = useState("");
+  const [maxParticipants, setMaxParticipants] = useState("16");
+  const [matchType, setMatchType] = useState<MatchType>("solo");
+  const [map, setMap] = useState("BERMUDA");
+  const [coinsPerKill, setCoinsPerKill] = useState("5");
+  const [totalPrizePool, setTotalPrizePool] = useState("");
+  const [rankRewards, setRankRewards] = useState<RankReward[]>([
+    { fromRank: 1, toRank: 1, coins: 0 },
+    { fromRank: 2, toRank: 2, coins: 0 },
+    { fromRank: 3, toRank: 3, coins: 0 },
+  ]);
+  const [imageFile, setImageFile] = useState<File | null>(null);
+  const [imagePreview, setImagePreview] = useState<string | null>(null);
+  const [submitting, setSubmitting] = useState(false);
+
+  const filteredModes = modes.filter((m) => !filterGameId || m.gameId === filterGameId);
+  const visiblePresets = presets.filter((p) => {
+    if (filterModeId) return p.gameModeId === filterModeId;
+    if (filterGameId) {
+      const modeIds = modes.filter((m) => m.gameId === filterGameId).map((m) => m.id);
+      return modeIds.includes(p.gameModeId);
+    }
+    return true;
+  });
+
+  const resetForm = () => {
+    setName("");
+    setTitle("");
+    setEntryFee("");
+    setMaxParticipants("16");
+    setMatchType("solo");
+    setMap("BERMUDA");
+    setCoinsPerKill("5");
+    setTotalPrizePool("");
+    setRankRewards([
+      { fromRank: 1, toRank: 1, coins: 0 },
+      { fromRank: 2, toRank: 2, coins: 0 },
+      { fromRank: 3, toRank: 3, coins: 0 },
+    ]);
+    if (imagePreview) URL.revokeObjectURL(imagePreview);
+    setImageFile(null);
+    setImagePreview(null);
+  };
+
+  const handleImageChange = (file: File) => {
+    setImageFile(file);
+    setImagePreview(URL.createObjectURL(file));
+  };
+
+  const handleImageClear = () => {
+    setImageFile(null);
+    if (imagePreview) URL.revokeObjectURL(imagePreview);
+    setImagePreview(null);
+  };
+
+  const handleSubmit = async (e: React.FormEvent) => {
+    e.preventDefault();
+    if (!gameModeId) {
+      alert("Select a game mode");
+      return;
+    }
+    setSubmitting(true);
+    try {
+      let imageUrl: string | null = null;
+      if (imageFile) imageUrl = await uploadImage(imageFile);
+      const res = await fetch("/api/admin/match-presets", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          gameModeId,
+          name,
+          title,
+          entryFee: Number(entryFee),
+          maxParticipants: Number(maxParticipants) || 16,
+          matchType,
+          map,
+          image: imageUrl,
+          prizePool: {
+            coinsPerKill: Number(coinsPerKill) || 0,
+            totalPrizePool: totalPrizePool ? Number(totalPrizePool) : 0,
+            rankRewards: rankRewards.filter((r) => r.fromRank > 0 && r.toRank >= r.fromRank && r.coins >= 0),
+          },
+        }),
+      });
+      if (!res.ok) {
+        const errData = await res.json().catch(() => ({}));
+        throw new Error(errData?.error || "Failed to create preset");
+      }
+      resetForm();
+      setView("list");
+      onSuccess();
+    } catch (err) {
+      alert(err instanceof Error ? err.message : "Failed to create preset");
+    } finally {
+      setSubmitting(false);
+    }
+  };
+
+  const handleDelete = async (id: string) => {
+    if (!confirm("Delete this preset?")) return;
+    const res = await fetch(`/api/admin/match-presets/${id}`, { method: "DELETE" });
+    if (!res.ok) {
+      const errData = await res.json().catch(() => ({}));
+      alert(errData?.error || "Failed to delete preset");
+      return;
+    }
+    onSuccess();
+  };
+
+  const modeLabel = (modeId: string) => {
+    const mode = modes.find((m) => m.id === modeId);
+    if (!mode) return modeId;
+    const game = games.find((g) => g.id === mode.gameId);
+    return `${game?.name ?? "?"} / ${mode.name}`;
+  };
+
+  return (
+    <div className="space-y-6">
+      <div className="flex flex-col gap-4 sm:flex-row sm:items-center sm:justify-between">
+        <div>
+          <h1 className="text-2xl font-bold text-white mb-1">Match Presets</h1>
+          <p className="text-slate-400 text-sm">Save match templates without date or time for bulk scheduling.</p>
+        </div>
+        {view === "list" && (
+          <button
+            type="button"
+            onClick={() => {
+              resetForm();
+              setGameModeId(filterModeId || filteredModes[0]?.id || "");
+              setView("create");
+            }}
+            className="admin-btn-primary rounded-xl px-5 py-2.5 text-sm font-semibold text-white shrink-0"
+          >
+            + Create Preset
+          </button>
+        )}
+      </div>
+
+      {view === "list" ? (
+        <>
+          <div className="flex flex-wrap gap-3">
+            <select
+              value={filterGameId}
+              onChange={(e) => {
+                setFilterGameId(e.target.value);
+                setFilterModeId("");
+              }}
+              className="admin-input rounded-xl px-4 py-2.5 text-sm text-white outline-none"
+            >
+              <option value="">All games</option>
+              {games.map((g) => (
+                <option key={g.id} value={g.id}>{g.name}</option>
+              ))}
+            </select>
+            <select
+              value={filterModeId}
+              onChange={(e) => setFilterModeId(e.target.value)}
+              className="admin-input rounded-xl px-4 py-2.5 text-sm text-white outline-none"
+            >
+              <option value="">All modes</option>
+              {filteredModes.map((m) => (
+                <option key={m.id} value={m.id}>{m.name}</option>
+              ))}
+            </select>
+          </div>
+
+          {visiblePresets.length === 0 ? (
+            <div className="rounded-xl border border-dashed border-slate-700 p-12 text-center text-slate-400 bg-slate-950/20">
+              No presets yet. Create one to schedule matches faster.
+            </div>
+          ) : (
+            <div className="admin-table-panel overflow-x-auto">
+              <table className="admin-table w-full min-w-[640px]">
+                <thead>
+                  <tr>
+                    <th>Preset name</th>
+                    <th>Mode</th>
+                    <th>Title</th>
+                    <th>Entry</th>
+                    <th>Type</th>
+                    <th></th>
+                  </tr>
+                </thead>
+                <tbody>
+                  {visiblePresets.map((p) => (
+                    <tr key={p.id}>
+                      <td className="font-medium text-white">{p.name}</td>
+                      <td>{modeLabel(p.gameModeId)}</td>
+                      <td>{p.title}</td>
+                      <td>{p.entryFee} coins</td>
+                      <td className="capitalize">{p.matchType ?? "solo"}</td>
+                      <td>
+                        <button
+                          type="button"
+                          onClick={() => handleDelete(p.id)}
+                          className="text-rose-400 hover:text-rose-300 text-sm"
+                        >
+                          Delete
+                        </button>
+                      </td>
+                    </tr>
+                  ))}
+                </tbody>
+              </table>
+            </div>
+          )}
+        </>
+      ) : (
+        <>
+          <button
+            type="button"
+            onClick={() => setView("list")}
+            className="flex items-center gap-2 text-sm text-slate-400 transition hover:text-white"
+          >
+            ← Back to presets
+          </button>
+          <section className="admin-card rounded-2xl p-6 sm:p-8 max-w-2xl">
+            <h2 className="mb-1 text-lg font-bold text-white">Create Match Preset</h2>
+            <p className="mb-6 text-sm text-slate-400">All match details except date and time.</p>
+            <form onSubmit={handleSubmit} className="space-y-5">
+              <div>
+                <label className="mb-2 block text-sm font-medium text-slate-300">Game mode</label>
+                <select
+                  value={gameModeId}
+                  onChange={(e) => setGameModeId(e.target.value)}
+                  required
+                  className="admin-input w-full rounded-xl px-4 py-3 text-white outline-none"
+                >
+                  <option value="">Select mode...</option>
+                  {modes.map((m) => {
+                    const game = games.find((g) => g.id === m.gameId);
+                    return (
+                      <option key={m.id} value={m.id}>
+                        {game?.name ?? "?"} / {m.name}
+                      </option>
+                    );
+                  })}
+                </select>
+              </div>
+              <div>
+                <label className="mb-2 block text-sm font-medium text-slate-300">Preset name</label>
+                <input
+                  type="text"
+                  value={name}
+                  onChange={(e) => setName(e.target.value)}
+                  required
+                  className="admin-input w-full rounded-xl px-4 py-3 text-white outline-none"
+                  placeholder="e.g. Morning Solo batch"
+                />
+              </div>
+              <div>
+                <label className="mb-2 block text-sm font-medium text-slate-300">Match title</label>
+                <input
+                  type="text"
+                  value={title}
+                  onChange={(e) => setTitle(e.target.value)}
+                  required
+                  className="admin-input w-full rounded-xl px-4 py-3 text-white outline-none"
+                  placeholder="e.g. Daily Cup"
+                />
+              </div>
+              <div>
+                <label className="mb-2 block text-sm font-medium text-slate-300">Match Type</label>
+                <MatchTypeDropdown value={matchType} onChange={setMatchType} />
+              </div>
+              <div className="grid gap-5 sm:grid-cols-2">
+                <div>
+                  <label className="mb-2 block text-sm font-medium text-slate-300">Entry Fee (coins)</label>
+                  <input
+                    type="number"
+                    min="0"
+                    value={entryFee}
+                    onChange={(e) => setEntryFee(e.target.value)}
+                    required
+                    className="admin-input w-full rounded-xl px-4 py-3 text-white outline-none"
+                  />
+                </div>
+                <div>
+                  <label className="mb-2 block text-sm font-medium text-slate-300">Max Participants</label>
+                  <input
+                    type="number"
+                    min="2"
+                    value={maxParticipants}
+                    onChange={(e) => setMaxParticipants(e.target.value)}
+                    className="admin-input w-full rounded-xl px-4 py-3 text-white outline-none"
+                  />
+                </div>
+              </div>
+              <div>
+                <label className="mb-2 block text-sm font-medium text-slate-300">Map</label>
+                <input
+                  type="text"
+                  value={map}
+                  onChange={(e) => setMap(e.target.value)}
+                  className="admin-input w-full rounded-xl px-4 py-3 text-white outline-none"
+                  placeholder="BERMUDA"
+                />
+              </div>
+              <ImageUpload
+                file={imageFile}
+                previewUrl={imagePreview}
+                onChange={handleImageChange}
+                onClear={handleImageClear}
+              />
+              <div className="rounded-xl border border-slate-700/80 bg-slate-800/10 p-5">
+                <h3 className="mb-3 text-sm font-semibold text-slate-300">Prize Pool</h3>
+                <div className="mb-4 grid gap-4 sm:grid-cols-2">
+                  <div>
+                    <label className="mb-1 block text-xs text-slate-400">Total prize pool (coins)</label>
+                    <input
+                      type="number"
+                      min="0"
+                      value={totalPrizePool}
+                      onChange={(e) => setTotalPrizePool(e.target.value)}
+                      className="admin-input w-full rounded-lg px-4 py-2.5 text-sm text-white outline-none"
+                    />
+                  </div>
+                  <div>
+                    <label className="mb-1 block text-xs text-slate-400">Coins per kill</label>
+                    <input
+                      type="number"
+                      min="0"
+                      value={coinsPerKill}
+                      onChange={(e) => setCoinsPerKill(e.target.value)}
+                      className="admin-input w-full rounded-lg px-4 py-2.5 text-sm text-white outline-none"
+                    />
+                  </div>
+                </div>
+                <div className="space-y-3">
+                  <label className="block text-xs text-slate-400 font-semibold">Rank rewards</label>
+                  {[0, 1, 2].map((slot) => (
+                    <div key={slot} className="flex flex-wrap items-center gap-2">
+                      <span className="text-slate-500 text-sm w-16">Rank {slot + 1}</span>
+                      <input
+                        type="number"
+                        min="0"
+                        value={rankRewards[slot]?.coins ?? 0}
+                        onChange={(e) => {
+                          const coins = Number(e.target.value) || 0;
+                          setRankRewards((prev) => {
+                            const next = [...prev];
+                            while (next.length < 3) {
+                              next.push({ fromRank: next.length + 1, toRank: next.length + 1, coins: 0 });
+                            }
+                            next[slot] = { fromRank: slot + 1, toRank: slot + 1, coins };
+                            return next;
+                          });
+                        }}
+                        className="admin-input w-20 rounded-lg px-3 py-2 text-sm text-white outline-none"
+                      />
+                      <span className="text-slate-400 text-sm">coins</span>
+                    </div>
+                  ))}
+                </div>
+              </div>
+              <div className="flex gap-3 pt-2">
+                <button
+                  type="submit"
+                  disabled={submitting}
+                  className="admin-btn-primary rounded-xl px-6 py-3 font-medium text-white disabled:opacity-50"
+                >
+                  {submitting ? "Saving..." : "Save Preset"}
                 </button>
                 <button
                   type="button"

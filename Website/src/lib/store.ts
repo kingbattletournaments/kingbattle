@@ -103,6 +103,35 @@ export function getStore() {
       updateBanner: (id: string, imageUrl: string, linkUrl: string, displayPlayCarousel: boolean, displayEarn: boolean) => db.updateBanner(id, imageUrl, linkUrl, displayPlayCarousel, displayEarn),
       deleteBanner: (id: string) => db.deleteBanner(id),
       updateFcmToken: (userId: string, token: string) => db.updateFcmToken(userId, token),
+      matchPresets: (modeId?: string) => db.matchPresets(modeId),
+      getMatchPreset: (id: string) => db.getMatchPreset(id),
+      addMatchPreset: (input: {
+        gameModeId: string;
+        name: string;
+        title: string;
+        entryFee: number;
+        maxParticipants: number;
+        matchType: string;
+        map?: string;
+        prizePool: { coinsPerKill: number; totalPrizePool?: number; rankRewards: { fromRank: number; toRank: number; coins: number }[] };
+        image?: string | null;
+      }) => db.addMatchPreset(input),
+      updateMatchPreset: (
+        id: string,
+        updates: Partial<{
+          name: string;
+          title: string;
+          entryFee: number;
+          maxParticipants: number;
+          matchType: string;
+          map: string;
+          prizePool: { coinsPerKill: number; totalPrizePool?: number; rankRewards: { fromRank: number; toRank: number; coins: number }[] };
+          image: string | null;
+        }>,
+      ) => db.updateMatchPreset(id, updates),
+      deleteMatchPreset: (id: string) => db.deleteMatchPreset(id),
+      createMatchesFromPreset: (presetId: string, gameModeId: string, scheduledAtList: string[]) =>
+        db.createMatchesFromPreset(presetId, gameModeId, scheduledAtList),
     };
   }
   return {
@@ -221,5 +250,53 @@ export function getStore() {
     updateBanner: (id: string, imageUrl: string, linkUrl: string, displayPlayCarousel: boolean, displayEarn: boolean) => adminStore.updateBanner(id, imageUrl, linkUrl, displayPlayCarousel, displayEarn),
     deleteBanner: (id: string) => adminStore.deleteBanner(id),
     updateFcmToken: (userId: string, token: string) => Promise.resolve(adminStore.updateFcmToken(userId, token)),
+    matchPresets: (modeId?: string) => Promise.resolve(adminStore.matchPresets(modeId)),
+    getMatchPreset: (id: string) => Promise.resolve(adminStore.getMatchPreset(id)),
+    addMatchPreset: (input: {
+      gameModeId: string;
+      name: string;
+      title: string;
+      entryFee: number;
+      maxParticipants: number;
+      matchType: string;
+      map?: string;
+      prizePool: { coinsPerKill: number; totalPrizePool?: number; rankRewards: { fromRank: number; toRank: number; coins: number }[] };
+      image?: string | null;
+    }) =>
+      Promise.resolve(
+        adminStore.addMatchPreset(
+          input.gameModeId,
+          input.name,
+          input.title,
+          input.entryFee,
+          input.maxParticipants,
+          input.matchType as "solo" | "duo" | "squad",
+          input.prizePool,
+          input.map,
+          input.image,
+        ),
+      ),
+    updateMatchPreset: (
+      id: string,
+      updates: Partial<{
+        name: string;
+        title: string;
+        entryFee: number;
+        maxParticipants: number;
+        matchType: string;
+        map: string;
+        prizePool: { coinsPerKill: number; totalPrizePool?: number; rankRewards: { fromRank: number; toRank: number; coins: number }[] };
+        image: string | null;
+      }>,
+    ) =>
+      Promise.resolve(
+        adminStore.updateMatchPreset(id, {
+          ...updates,
+          matchType: updates.matchType as "solo" | "duo" | "squad" | undefined,
+        }),
+      ),
+    deleteMatchPreset: (id: string) => Promise.resolve(adminStore.deleteMatchPreset(id)),
+    createMatchesFromPreset: (presetId: string, gameModeId: string, scheduledAtList: string[]) =>
+      Promise.resolve(adminStore.createMatchesFromPreset(presetId, gameModeId, scheduledAtList)),
   };
 }

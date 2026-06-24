@@ -34,6 +34,20 @@ export type Match = {
   image?: string;
 };
 
+export type MatchPreset = {
+  id: string;
+  gameModeId: string;
+  name: string;
+  title: string;
+  entryFee: number;
+  maxParticipants: number;
+  matchType: MatchType;
+  map: string;
+  prizePool: PrizePool;
+  image?: string | null;
+  createdAt?: string;
+};
+
 export type TeamMember = { inGameName: string; inGameUid: string; kills?: number };
 export type MatchParticipant = {
   id: string;
@@ -132,10 +146,12 @@ const globalForAdmin = globalThis as unknown as {
   adminStoreGames?: Game[];
   adminStoreGameModes?: GameMode[];
   adminStoreMatches?: Match[];
+  adminStoreMatchPresets?: MatchPreset[];
   adminStoreMatchParticipantOrder?: Record<string, string[]>;
   gameIdCounter?: number;
   modeIdCounter?: number;
   matchIdCounter?: number;
+  matchPresetIdCounter?: number;
   adminStoreBanners?: AppBanner[];
   bannerIdCounter?: number;
   referralSystemEnabled?: boolean;
@@ -148,6 +164,7 @@ const globalForAdmin = globalThis as unknown as {
 let gameIdCounter = globalForAdmin.gameIdCounter ?? 100;
 let modeIdCounter = globalForAdmin.modeIdCounter ?? 100;
 let matchIdCounter = globalForAdmin.matchIdCounter ?? 100;
+let matchPresetIdCounter = globalForAdmin.matchPresetIdCounter ?? 100;
 
 let referralSystemEnabled = globalForAdmin.referralSystemEnabled ?? false;
 let referralRewardCoins = globalForAdmin.referralRewardCoins ?? 10;
@@ -185,6 +202,7 @@ function nextBannerId() {
 const games: Game[] = globalForAdmin.adminStoreGames ?? (globalForAdmin.adminStoreGames = []);
 const gameModes: GameMode[] = globalForAdmin.adminStoreGameModes ?? (globalForAdmin.adminStoreGameModes = []);
 const matches: Match[] = globalForAdmin.adminStoreMatches ?? (globalForAdmin.adminStoreMatches = []);
+const matchPresets: MatchPreset[] = globalForAdmin.adminStoreMatchPresets ?? (globalForAdmin.adminStoreMatchPresets = []);
 const matchParticipantOrder: Record<string, string[]> = globalForAdmin.adminStoreMatchParticipantOrder ?? (globalForAdmin.adminStoreMatchParticipantOrder = {});
 
 const defaultPrizePool: PrizePool = {
@@ -793,6 +811,90 @@ export const adminStore = {
     if (i === -1) return false;
     matches.splice(i, 1);
     return true;
+  },
+  matchPresets: (modeId?: string) => {
+    const list = modeId ? matchPresets.filter((p) => p.gameModeId === modeId) : [...matchPresets];
+    return list.sort((a, b) => (b.createdAt ?? "").localeCompare(a.createdAt ?? ""));
+  },
+  getMatchPreset: (id: string) => matchPresets.find((p) => p.id === id) ?? null,
+  addMatchPreset: (
+    gameModeId: string,
+    name: string,
+    title: string,
+    entryFee: number,
+    maxParticipants: number,
+    matchType: MatchType = "solo",
+    prizePool: PrizePool = defaultPrizePool,
+    map: string = "BERMUDA",
+    image?: string | null,
+  ) => {
+    const id = `preset${matchPresetIdCounter++}`;
+    globalForAdmin.matchPresetIdCounter = matchPresetIdCounter;
+    matchPresets.push({
+      id,
+      gameModeId,
+      name,
+      title,
+      entryFee,
+      maxParticipants,
+      matchType,
+      map,
+      prizePool,
+      image: image ?? null,
+      createdAt: new Date().toISOString(),
+    });
+    return matchPresets[matchPresets.length - 1];
+  },
+  updateMatchPreset: (
+    id: string,
+    updates: Partial<{
+      name: string;
+      title: string;
+      entryFee: number;
+      maxParticipants: number;
+      matchType: MatchType;
+      map: string;
+      prizePool: PrizePool;
+      image: string | null;
+    }>,
+  ) => {
+    const p = matchPresets.find((x) => x.id === id);
+    if (!p) return null;
+    if (updates.name !== undefined) p.name = updates.name;
+    if (updates.title !== undefined) p.title = updates.title;
+    if (updates.entryFee !== undefined) p.entryFee = updates.entryFee;
+    if (updates.maxParticipants !== undefined) p.maxParticipants = updates.maxParticipants;
+    if (updates.matchType !== undefined) p.matchType = updates.matchType;
+    if (updates.map !== undefined) p.map = updates.map;
+    if (updates.prizePool !== undefined) p.prizePool = updates.prizePool;
+    if (updates.image !== undefined) p.image = updates.image;
+    return p;
+  },
+  deleteMatchPreset: (id: string) => {
+    const i = matchPresets.findIndex((p) => p.id === id);
+    if (i === -1) return false;
+    matchPresets.splice(i, 1);
+    return true;
+  },
+  createMatchesFromPreset: (presetId: string, gameModeId: string, scheduledAtList: string[]) => {
+    const preset = matchPresets.find((p) => p.id === presetId);
+    if (!preset || scheduledAtList.length === 0) return null;
+    const created: Match[] = [];
+    for (const scheduledAt of scheduledAtList) {
+      const match = adminStore.addMatch(
+        gameModeId,
+        preset.title,
+        preset.entryFee,
+        preset.maxParticipants,
+        scheduledAt,
+        preset.matchType,
+        preset.prizePool,
+        preset.map,
+        preset.image,
+      );
+      created.push(match);
+    }
+    return created;
   },
   renameMatch: (id: string, title: string) => {
     const m = matches.find((x) => x.id === id);
