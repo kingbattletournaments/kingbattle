@@ -3742,7 +3742,11 @@ function PushNotificationsSection() {
       alert(
         `Sent to ${data.successCount ?? 0} device${data.successCount === 1 ? "" : "s"}` +
           (data.failureCount ? ` (${data.failureCount} failed)` : "") +
-          `.`,
+          (data.invalidTokens?.length ? ` — ${data.invalidTokens.length} stale token(s) cleared` : "") +
+          `.` +
+          (Array.isArray(data.errors) && data.errors.length
+            ? `\n\nErrors:\n${data.errors.slice(0, 3).join("\n")}`
+            : ""),
       );
     } catch (err) {
       alert(err instanceof Error ? err.message : "Failed to send notification");

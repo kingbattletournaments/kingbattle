@@ -1436,6 +1436,12 @@ export const adminStore = {
     delete (u as { fcmToken?: string }).fcmToken;
     return true;
   },
+  clearFcmTokenByValue: (token: string) => {
+    const u = users.find((x) => (x as { fcmToken?: string }).fcmToken === token);
+    if (!u) return false;
+    delete (u as { fcmToken?: string }).fcmToken;
+    return true;
+  },
   getFcmTokensForTarget: (target: "all" | "active" | "blocked") => {
     return users
       .filter((u) => {

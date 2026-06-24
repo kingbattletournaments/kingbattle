@@ -16,15 +16,20 @@ import com.kingbattle.MainActivity
 import com.kingbattle.R
 
 object NotificationHelper {
-    const val CHANNEL_ID = "king_battle_alerts_v2"
-    private const val LEGACY_CHANNEL_ID = "king_battle_notifications"
+    const val CHANNEL_ID = "king_battle_alerts_v3"
+    private val LEGACY_CHANNEL_IDS = listOf(
+        "king_battle_notifications",
+        "king_battle_alerts_v2",
+    )
     private const val TAG = "NotificationHelper"
 
     fun createNotificationChannel(context: Context) {
         if (Build.VERSION.SDK_INT < Build.VERSION_CODES.O) return
         val manager = context.getSystemService(Context.NOTIFICATION_SERVICE) as NotificationManager
 
-        manager.deleteNotificationChannel(LEGACY_CHANNEL_ID)
+        LEGACY_CHANNEL_IDS.forEach { legacyId ->
+            manager.deleteNotificationChannel(legacyId)
+        }
 
         val existing = manager.getNotificationChannel(CHANNEL_ID)
         if (existing != null) return

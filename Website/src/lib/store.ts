@@ -104,6 +104,7 @@ export function getStore() {
       deleteBanner: (id: string) => db.deleteBanner(id),
       updateFcmToken: (userId: string, token: string) => db.updateFcmToken(userId, token),
       clearFcmToken: (userId: string) => db.clearFcmToken(userId),
+      clearFcmTokenByValue: (token: string) => db.clearFcmTokenByValue(token),
       getFcmTokensForTarget: (target: "all" | "active" | "blocked") => db.getFcmTokensForTarget(target),
       matchPresets: (modeId?: string) => db.matchPresets(modeId),
       getMatchPreset: (id: string) => db.getMatchPreset(id),
@@ -253,6 +254,7 @@ export function getStore() {
     deleteBanner: (id: string) => adminStore.deleteBanner(id),
     updateFcmToken: (userId: string, token: string) => Promise.resolve(adminStore.updateFcmToken(userId, token)),
     clearFcmToken: (userId: string) => Promise.resolve(adminStore.clearFcmToken(userId)),
+    clearFcmTokenByValue: (token: string) => Promise.resolve(adminStore.clearFcmTokenByValue(token)),
     getFcmTokensForTarget: (target: "all" | "active" | "blocked") =>
       Promise.resolve(adminStore.getFcmTokensForTarget(target)),
     matchPresets: (modeId?: string) => Promise.resolve(adminStore.matchPresets(modeId)),

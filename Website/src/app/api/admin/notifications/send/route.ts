@@ -48,6 +48,11 @@ export async function POST(request: Request) {
 
   try {
     const result = await sendPushToTokens(tokens, title, messageBody, link || null);
+
+    if (result.invalidTokens?.length) {
+      await Promise.all(result.invalidTokens.map((token) => store.clearFcmTokenByValue(token)));
+    }
+
     return NextResponse.json({
       ok: true,
       target,

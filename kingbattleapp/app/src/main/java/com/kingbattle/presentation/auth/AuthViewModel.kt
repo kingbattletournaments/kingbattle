@@ -3,6 +3,7 @@ package com.kingbattle.presentation.auth
 import android.util.Log
 import androidx.lifecycle.ViewModel
 import androidx.lifecycle.viewModelScope
+import com.google.firebase.messaging.FirebaseMessaging
 import com.kingbattle.data.api.AuthRequest
 import com.kingbattle.data.api.KingBattleApi
 import com.kingbattle.data.api.SignUpRequest
@@ -12,6 +13,9 @@ import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.asStateFlow
 import kotlinx.coroutines.launch
+import kotlinx.coroutines.suspendCancellableCoroutine
+import kotlin.coroutines.resume
+import kotlin.coroutines.resumeWithException
 import javax.inject.Inject
 
 @HiltViewModel
@@ -133,20 +137,45 @@ class AuthViewModel @Inject constructor(
     }
 
     private fun syncFcmToken(userId: String) {
-        val fcmToken = tokenManager.getFcmToken()
-        if (!fcmToken.isNullOrEmpty()) {
-            viewModelScope.launch {
+        viewModelScope.launch {
+            val cached = tokenManager.getFcmToken()
+            val fcmToken = if (!cached.isNullOrEmpty()) {
+                cached
+            } else {
                 try {
-                    val response = api.updateFcmToken(com.kingbattle.data.api.UpdateFcmTokenRequest(fcmToken))
-                    if (response.isSuccessful) {
-                        Log.d("AuthViewModel", "Successfully synced FCM token for user $userId")
-                    } else {
-                        Log.e("AuthViewModel", "Failed to sync FCM token for user $userId: ${response.code()}")
-                    }
+                    fetchFcmToken()
                 } catch (e: Exception) {
-                    Log.e("AuthViewModel", "Error syncing FCM token for user $userId", e)
+                    Log.e("AuthViewModel", "Failed to fetch FCM token on login", e)
+                    null
                 }
             }
+
+            if (fcmToken.isNullOrEmpty()) {
+                Log.w("AuthViewModel", "No FCM token available to sync for user $userId")
+                return@launch
+            }
+
+            tokenManager.saveFcmToken(fcmToken)
+            try {
+                val response = api.updateFcmToken(com.kingbattle.data.api.UpdateFcmTokenRequest(fcmToken))
+                if (response.isSuccessful) {
+                    Log.d("AuthViewModel", "Successfully synced FCM token for user $userId")
+                } else {
+                    Log.e("AuthViewModel", "Failed to sync FCM token for user $userId: ${response.code()}")
+                }
+            } catch (e: Exception) {
+                Log.e("AuthViewModel", "Error syncing FCM token for user $userId", e)
+            }
+        }
+    }
+}
+
+private suspend fun fetchFcmToken(): String = suspendCancellableCoroutine { cont ->
+    FirebaseMessaging.getInstance().token.addOnCompleteListener { task ->
+        if (task.isSuccessful && task.result != null) {
+            cont.resume(task.result)
+        } else {
+            cont.resumeWithException(task.exception ?: Exception("FCM token fetch failed"))
         }
     }
 }

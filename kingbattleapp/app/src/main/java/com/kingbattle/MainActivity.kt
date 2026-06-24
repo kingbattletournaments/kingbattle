@@ -38,6 +38,7 @@ class MainActivity : ComponentActivity() {
     ) { isGranted: Boolean ->
         if (isGranted) {
             Log.d("MainActivity", "Notification permission granted")
+            fetchAndSyncFcmToken()
         } else {
             Log.w("MainActivity", "Notification permission denied — token still registered for server-side push")
         }

@@ -1591,6 +1591,20 @@ export const db = {
     return true;
   },
 
+  async clearFcmTokenByValue(token: string): Promise<boolean> {
+    const supabase = getSupabase();
+    if (!supabase) return false;
+    const { error } = await supabase
+      .from("app_users")
+      .update({ fcm_token: null })
+      .eq("fcm_token", token);
+    if (error) {
+      console.error("clearFcmTokenByValue failed:", error.message);
+      return false;
+    }
+    return true;
+  },
+
   async getFcmTokensForTarget(
     target: "all" | "active" | "blocked",
   ): Promise<{ userId: string; token: string }[]> {
