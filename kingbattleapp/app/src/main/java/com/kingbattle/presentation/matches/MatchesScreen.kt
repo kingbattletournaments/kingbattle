@@ -65,6 +65,7 @@ fun MatchesScreen(
     val isLoadingState = viewModel.isLoading.collectAsState()
     val errorMessageState = viewModel.errorMessage.collectAsState()
     val modeNameState = viewModel.modeName.collectAsState()
+    val joinedMatchesState = viewModel.joinedMatches.collectAsState()
 
     val tabs = remember { listOf("ONGOING", "UPCOMING", "RESULTS") }
     val coroutineScope = rememberCoroutineScope()
@@ -257,6 +258,7 @@ fun MatchesScreen(
                             items(filteredMatches) { match ->
                                 MatchCard(
                                     match = match,
+                                    isJoined = joinedMatchesState.value.contains(match.id),
                                     onJoinClick = {
                                         val userCoins = userState.value?.coins ?: 0
                                         if (userCoins < match.entry_fee) {
@@ -268,6 +270,8 @@ fun MatchesScreen(
                                         }
                                     },
                                     onCardClick = {
+                                        // Store selected match for reuse
+                                        com.kingbattle.presentation.matches.SelectedMatchHolder.selectedMatch = match
                                         onNavigateToMatchDetail(match.id)
                                     }
                                 )
@@ -314,6 +318,7 @@ fun MatchesScreen(
 @Composable
 fun MatchCard(
     match: Match,
+    isJoined: Boolean = false,
     onJoinClick: () -> Unit,
     onCardClick: () -> Unit
 ) {
@@ -653,8 +658,9 @@ fun MatchCard(
                         else -> status
                     }
 
-                    val btnEnabled = canonicalStatus == "upcoming" && !match.registration_locked
+                    val btnEnabled = !isJoined && canonicalStatus == "upcoming" && !match.registration_locked
                     val btnText = when {
+                        isJoined -> "JOINED"
                         canonicalStatus == "ongoing" -> "ONGOING"
                         canonicalStatus == "completed" -> "COMPLETED"
                         canonicalStatus == "cancelled" -> "CANCELLED"
@@ -662,15 +668,17 @@ fun MatchCard(
                         else -> "JOIN"
                     }
 
+                    val joinButtonColor = if (isJoined) Color(0xFF10B981) else Color(0xFF7C3AED)
+
 
                     Button(
                         onClick = onJoinClick,
                         enabled = btnEnabled,
                         colors = ButtonDefaults.buttonColors(
-                            containerColor = Color(0xFF7C3AED), // Purple join button
+                            containerColor = joinButtonColor,
                             contentColor = Color.White,
-                            disabledContainerColor = Color(0xFFCBD5E1),
-                            disabledContentColor = Color(0xFF94A3B8)
+                            disabledContainerColor = if (isJoined) Color(0xFF10B981) else Color(0xFFCBD5E1),
+                            disabledContentColor = if (isJoined) Color.White else Color(0xFF94A3B8)
                         ),
                         shape = RoundedCornerShape(6.dp),
                         modifier = Modifier.height(36.dp),

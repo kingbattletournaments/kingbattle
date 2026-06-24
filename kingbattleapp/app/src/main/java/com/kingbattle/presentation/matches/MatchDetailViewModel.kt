@@ -36,41 +36,75 @@ class MatchDetailViewModel @Inject constructor(
     private val _errorMessage = MutableStateFlow<String?>(null)
     val errorMessage: StateFlow<String?> = _errorMessage.asStateFlow()
 
+    // Joined match IDs — read from TokenManager (EncryptedSharedPreferences)
+    private val _joinedMatches = MutableStateFlow<Set<String>>(emptySet())
+    val joinedMatches: StateFlow<Set<String>> = _joinedMatches.asStateFlow()
+
+    init {
+        // Load persisted joined matches at ViewModel creation
+        _joinedMatches.value = tokenManager.getJoinedMatches()
+    }
+
     fun loadData(matchId: String) {
         viewModelScope.launch {
             _isLoading.value = true
             _errorMessage.value = null
             try {
-                // 1. Load current user profile (for balance)
                 try {
                     val userRes = api.getCurrentUser()
                     if (userRes.isSuccessful && userRes.body() != null) {
                         _user.value = userRes.body()!!
                     }
-                } catch (e: Exception) {
-                    e.printStackTrace()
-                }
+                } catch (_: Exception) {}
 
-                // 2. Fetch match detail from backend API
                 try {
-                    val detailRes = api.getMatchDetail(matchId)
-                    if (detailRes.isSuccessful && detailRes.body() != null) {
+                    val detailRes = kotlinx.coroutines.withTimeoutOrNull(5000L) {
+                        api.getMatchDetail(matchId)
+                    }
+                    if (detailRes != null && detailRes.isSuccessful && detailRes.body() != null) {
                         _matchDetail.value = detailRes.body()!!
                     } else {
-                        _matchDetail.value = null
-                        _errorMessage.value = "Failed to fetch match details"
+                        _errorMessage.value = if (detailRes == null) "Match detail request timed out" else "Failed to fetch match details"
                     }
                 } catch (e: Exception) {
-                    e.printStackTrace()
-                    _matchDetail.value = null
                     _errorMessage.value = "Failed to load match: ${e.localizedMessage}"
                 }
-
             } catch (e: Exception) {
                 _errorMessage.value = "Failed to load match: ${e.localizedMessage}"
             } finally {
                 _isLoading.value = false
             }
+        }
+    }
+
+    /**
+     * Lightweight background fetch — only grabs user profile + participants
+     * and merges them into the existing preloaded match data.
+     * Never touches isLoading or errorMessage so the UI stays stable.
+     */
+    fun fetchExtras(matchId: String) {
+        viewModelScope.launch {
+            // 1. Fetch user profile silently (for coin balance)
+            try {
+                val userRes = api.getCurrentUser()
+                if (userRes.isSuccessful && userRes.body() != null) {
+                    _user.value = userRes.body()!!
+                }
+            } catch (_: Exception) {}
+
+            // 2. Fetch participants from dedicated endpoint
+            try {
+                val participantsRes = kotlinx.coroutines.withTimeoutOrNull(5000L) {
+                    api.getMatchParticipants(matchId)
+                }
+                if (participantsRes != null && participantsRes.isSuccessful && participantsRes.body() != null) {
+                    val participants = participantsRes.body()!!
+                    val current = _matchDetail.value
+                    if (current != null) {
+                        _matchDetail.value = current.copy(participants = participants)
+                    }
+                }
+            } catch (_: Exception) {}
         }
     }
 
@@ -92,8 +126,8 @@ class MatchDetailViewModel @Inject constructor(
                 )
                 if (response.isSuccessful) {
                     tokenManager.saveJoinedMatch(matchId)
-                    // Reload data to show updated state
-                    loadData(matchId)
+                    // Refresh participants silently
+                    fetchExtras(matchId)
                     onSuccess()
                 } else {
                     val errorBody = response.errorBody()?.string() ?: "Failed to join match"
@@ -104,4 +138,20 @@ class MatchDetailViewModel @Inject constructor(
             }
         }
     }
+    /**
+     * Preload basic match information without network call.
+     */
+    fun preloadMatch(match: Match) {
+        _matchDetail.value = MatchDetail(match, emptyList(), null)
+        _isLoading.value = false
+    }
+
+    /**
+     * Mark a match as joined — persists via TokenManager and updates reactive state.
+     */
+    fun markMatchJoined(matchId: String) {
+        tokenManager.saveJoinedMatch(matchId)
+        _joinedMatches.value = _joinedMatches.value + matchId
+    }
+
 }

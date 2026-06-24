@@ -38,6 +38,14 @@ class MatchesViewModel @Inject constructor(
     private val _errorMessage = MutableStateFlow<String?>(null)
     val errorMessage: StateFlow<String?> = _errorMessage.asStateFlow()
 
+    // Joined match IDs — read from TokenManager (EncryptedSharedPreferences)
+    private val _joinedMatches = MutableStateFlow<Set<String>>(emptySet())
+    val joinedMatches: StateFlow<Set<String>> = _joinedMatches.asStateFlow()
+
+    init {
+        _joinedMatches.value = tokenManager.getJoinedMatches()
+    }
+
     fun loadData(modeId: String) {
         viewModelScope.launch {
             _isLoading.value = true
@@ -176,6 +184,7 @@ class MatchesViewModel @Inject constructor(
                 )
                 if (response.isSuccessful) {
                     tokenManager.saveJoinedMatch(matchId)
+                    _joinedMatches.value = _joinedMatches.value + matchId
                     onSuccess()
                 } else {
                     val errorBody = response.errorBody()?.string() ?: "Failed to join match"

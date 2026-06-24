@@ -23,6 +23,8 @@ import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.foundation.text.KeyboardOptions
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.filled.ArrowBack
+import androidx.compose.material.icons.filled.KeyboardArrowDown
+import androidx.compose.material.icons.filled.KeyboardArrowUp
 import androidx.compose.material.icons.filled.Refresh
 import androidx.compose.material3.*
 import androidx.compose.runtime.*
@@ -122,12 +124,8 @@ fun WalletScreen(
         return false
     }
 
-    // Filter for withdrawal transactions
-    val withdrawals = remember(transactionsState.value) {
-        transactionsState.value.filter {
-            it.amount < 0 || it.type.contains("withdraw", ignoreCase = true)
-        }
-    }
+    // All transactions sorted newest first (already sorted by backend)
+    val allTransactions = transactionsState.value
 
     LaunchedEffect(Unit) {
         viewModel.loadData()
@@ -196,10 +194,10 @@ fun WalletScreen(
                             )
                         }
 
-                        // Withdrawal History Label
+                        // Transaction History Label
                         item {
                             Text(
-                                text = "WITHDRAWAL HISTORY",
+                                text = "TRANSACTION HISTORY",
                                 color = TextWhite,
                                 fontSize = 14.sp,
                                 fontWeight = FontWeight.Bold,
@@ -207,14 +205,14 @@ fun WalletScreen(
                             )
                         }
 
-                        // Withdrawal History List Items
-                        if (withdrawals.isEmpty()) {
+                        // Transaction History List Items
+                        if (allTransactions.isEmpty()) {
                             item {
-                                EmptyWithdrawalHistory()
+                                EmptyTransactionHistory()
                             }
                         } else {
-                            items(withdrawals) { tx ->
-                                WithdrawalHistoryItem(tx)
+                            items(allTransactions) { tx ->
+                                TransactionHistoryItem(tx)
                             }
                         }
                     }
@@ -536,8 +534,15 @@ fun BalanceCard(
 }
 
 @Composable
-fun WithdrawalHistoryItem(tx: Transaction) {
+fun TransactionHistoryItem(tx: Transaction) {
+    // Determine credit/debit by amount sign (backend type field can be unreliable for match winnings)
+    val isCredit = tx.amount > 0
     val amountAbs = kotlin.math.abs(tx.amount)
+
+    // Colors per type
+    val iconBgColor = if (isCredit) Color(0xFF10B981).copy(alpha = 0.15f) else Color(0xFFEF4444).copy(alpha = 0.15f)
+    val iconTint = if (isCredit) Color(0xFF10B981) else Color(0xFFEF4444)
+
     Card(
         modifier = Modifier
             .fillMaxWidth()
@@ -552,17 +557,22 @@ fun WithdrawalHistoryItem(tx: Transaction) {
             verticalAlignment = Alignment.CenterVertically,
             horizontalArrangement = Arrangement.spacedBy(16.dp)
         ) {
-            // Icon
+            // Arrow icon: green ↓ for credit, red ↑ for debit
             Box(
                 modifier = Modifier
                     .size(40.dp)
                     .clip(CircleShape)
-                    .background(Color(0xFFFFEAEE)),
+                    .background(iconBgColor),
                 contentAlignment = Alignment.Center
             ) {
-                Text(
-                    text = "💸",
-                    fontSize = 18.sp
+                Icon(
+                    imageVector = if (isCredit)
+                        Icons.Default.KeyboardArrowDown
+                    else
+                        Icons.Default.KeyboardArrowUp,
+                    contentDescription = if (isCredit) "Credit" else "Debit",
+                    tint = iconTint,
+                    modifier = Modifier.size(24.dp)
                 )
             }
 
@@ -571,49 +581,59 @@ fun WithdrawalHistoryItem(tx: Transaction) {
                 modifier = Modifier.weight(1f)
             ) {
                 Text(
-                    text = tx.description ?: "Withdrawal via UPI",
+                    text = tx.description ?: tx.type,
                     color = Color.White,
                     fontSize = 14.sp,
                     fontWeight = FontWeight.Bold,
                     maxLines = 1,
                     overflow = TextOverflow.Ellipsis
                 )
-                Spacer(modifier = Modifier.height(4.dp))
+                Spacer(modifier = Modifier.height(3.dp))
+                // Status + date row
                 Row(
                     verticalAlignment = Alignment.CenterVertically,
                     horizontalArrangement = Arrangement.spacedBy(8.dp)
                 ) {
-                    val statusText = when (tx.status) {
-                        "pending" -> "Pending"
-                        "successful", "accepted" -> "Successful"
-                        "failed", "rejected" -> "Rejected"
-                        "refunded" -> "Refunded"
-                        else -> tx.status ?: "Pending"
+                    if (tx.status != null) {
+                        val statusText = when (tx.status) {
+                            "pending" -> "Pending"
+                            "successful", "accepted" -> "Successful"
+                            "failed", "rejected" -> "Rejected"
+                            "refunded" -> "Refunded"
+                            else -> tx.status
+                        }
+                        val statusColor = when (tx.status) {
+                            "pending" -> AccentGold
+                            "successful", "accepted" -> Color(0xFF10B981)
+                            "failed", "rejected" -> Color(0xFFEF4444)
+                            "refunded" -> Color(0xFF8B5CF6)
+                            else -> AccentGold
+                        }
+                        Text(
+                            text = statusText,
+                            color = statusColor,
+                            fontSize = 11.sp,
+                            fontWeight = FontWeight.Bold
+                        )
+                        Text(
+                            text = "•",
+                            color = TextMuted,
+                            fontSize = 12.sp
+                        )
                     }
-                    val statusColor = when (tx.status) {
-                        "pending" -> AccentGold
-                        "successful", "accepted" -> Color(0xFF10B981)
-                        "failed", "rejected" -> Color(0xFFEF4444)
-                        "refunded" -> Color(0xFF8B5CF6)
-                        else -> AccentGold
-                    }
-                    Text(
-                        text = statusText,
-                        color = statusColor,
-                        fontSize = 11.sp,
-                        fontWeight = FontWeight.Bold
-                    )
-                    Text(
-                        text = "•",
-                        color = TextMuted,
-                        fontSize = 12.sp
-                    )
                     Text(
                         text = formatTxDate(tx.created_at),
                         color = TextMuted,
                         fontSize = 11.sp
                     )
                 }
+                // Transaction ID
+                Text(
+                    text = "ID: ${tx.id.take(12)}${if (tx.id.length > 12) "..." else ""}",
+                    color = TextMuted.copy(alpha = 0.6f),
+                    fontSize = 9.sp,
+                    maxLines = 1
+                )
             }
 
             // Amount
@@ -621,8 +641,8 @@ fun WithdrawalHistoryItem(tx: Transaction) {
                 horizontalAlignment = Alignment.End
             ) {
                 Text(
-                    text = "-$amountAbs",
-                    color = Color(0xFFEF4444),
+                    text = if (isCredit) "+$amountAbs" else "-$amountAbs",
+                    color = if (isCredit) Color(0xFF10B981) else Color(0xFFEF4444),
                     fontSize = 16.sp,
                     fontWeight = FontWeight.Bold
                 )
@@ -637,7 +657,7 @@ fun WithdrawalHistoryItem(tx: Transaction) {
 }
 
 @Composable
-fun EmptyWithdrawalHistory() {
+fun EmptyTransactionHistory() {
     Card(
         modifier = Modifier
             .fillMaxWidth()
@@ -658,14 +678,14 @@ fun EmptyWithdrawalHistory() {
             )
             Spacer(modifier = Modifier.height(12.dp))
             Text(
-                text = "No withdrawal requests yet",
+                text = "No transactions yet",
                 color = Color.White,
                 fontSize = 14.sp,
                 fontWeight = FontWeight.SemiBold
             )
             Spacer(modifier = Modifier.height(4.dp))
             Text(
-                text = "Your UPI withdrawal requests will be displayed here.",
+                text = "Your transaction history will be displayed here.",
                 color = TextMuted,
                 fontSize = 12.sp,
                 textAlign = TextAlign.Center

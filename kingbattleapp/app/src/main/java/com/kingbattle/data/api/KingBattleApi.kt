@@ -39,6 +39,9 @@ interface KingBattleApi {
         @Body request: JoinMatchRequest
     ): Response<Unit>
 
+    @GET("matches/{id}/participants")
+    suspend fun getMatchParticipants(@Path("id") matchId: String): Response<List<Participant>>
+
     // ===== User Profile =====
     @GET("users/me")
     suspend fun getCurrentUser(): Response<User>
@@ -140,7 +143,7 @@ data class CreateDepositRequest(
 
 data class CreateWithdrawalRequest(
     val amount: Int,
-    val upi_id: String
+    val upiId: String
 )
 
 data class CreateZapUpiOrderRequest(

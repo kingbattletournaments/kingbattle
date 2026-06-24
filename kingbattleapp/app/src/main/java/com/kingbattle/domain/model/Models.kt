@@ -141,7 +141,19 @@ data class Participant(
     @SerializedName("joined_at", alternate = ["joinedAt"])
     val joined_at: String,
     @SerializedName("team_members", alternate = ["teamMembers"])
-    val team_members: List<TeamMember>? = null
+    val team_members: List<TeamMemberModel>? = null,
+    val rank: Int? = null
+)
+
+/**
+ * Backend team member structure (different from the request TeamMember in KingBattleApi)
+ */
+data class TeamMemberModel(
+    @SerializedName("inGameName", alternate = ["in_game_name"])
+    val inGameName: String,
+    @SerializedName("inGameUid", alternate = ["in_game_uid"])
+    val inGameUid: String,
+    val kills: Int? = null
 )
 
 data class PrizePool(

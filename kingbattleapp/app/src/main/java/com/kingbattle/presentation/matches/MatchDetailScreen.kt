@@ -9,7 +9,7 @@ import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.*
 import androidx.compose.ui.draw.alpha
 import androidx.compose.foundation.lazy.LazyColumn
-import androidx.compose.foundation.lazy.itemsIndexed
+import androidx.compose.foundation.lazy.items
 import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.foundation.verticalScroll
@@ -26,14 +26,19 @@ import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.res.painterResource
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.style.TextAlign
+import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
+import android.content.Context
 import androidx.hilt.navigation.compose.hiltViewModel
+import coil.compose.AsyncImage
 import com.kingbattle.R
 import com.kingbattle.data.local.TokenManager
 import androidx.compose.material3.TabRowDefaults.tabIndicatorOffset
 import com.kingbattle.domain.model.Match
 import com.kingbattle.domain.model.Participant
+import com.kingbattle.domain.model.PrizePool
+import com.kingbattle.domain.model.RankReward
 import com.kingbattle.presentation.home.AccentOrange
 import com.kingbattle.presentation.home.ThemeBorderColor
 import com.kingbattle.presentation.home.ThemeCardBg
@@ -60,10 +65,19 @@ fun MatchDetailScreen(
 
     var showJoinDialog by remember { mutableStateOf(false) }
     var isJoining by remember { mutableStateOf(false) }
+    // Reactive set of joined match IDs — read from ViewModel which uses TokenManager
+    // (TokenManager writes to EncryptedSharedPreferences, so we must read from the same source)
+    val joinedMatches = viewModel.joinedMatches.collectAsState()
 
-    LaunchedEffect(matchId) {
-        viewModel.loadData(matchId)
+    // Preload match details if already selected (instant UI)
+    LaunchedEffect(Unit) {
+        com.kingbattle.presentation.matches.SelectedMatchHolder.selectedMatch?.let {
+            viewModel.preloadMatch(it)
+        }
     }
+    // Silently fetch participants + user data in background (won't show spinner or disrupt scroll)
+    LaunchedEffect(matchId) { viewModel.fetchExtras(matchId) }
+
 
     Scaffold(
         topBar = {
@@ -115,10 +129,7 @@ fun MatchDetailScreen(
         bottomBar = {
             // Determine join status safely
             matchDetailState.value?.match?.let { match ->
-                val prefs = context.getSharedPreferences("king_battle_prefs", android.content.Context.MODE_PRIVATE)
-                val localList = prefs.getStringSet("joined_matches", emptySet()) ?: emptySet()
-                val localJoined = localList.contains(match.id)
-                val isJoined = localJoined || (match.status?.equals("joined", ignoreCase = true) == true)
+                val isJoined = joinedMatches.value.contains(match.id) || (match.status?.equals("joined", ignoreCase = true) == true)
                 val status = match.status?.lowercase() ?: ""
                 Box(
                     modifier = Modifier
@@ -209,18 +220,26 @@ fun MatchDetailScreen(
             } else {
                 matchDetailState.value?.let { detail ->
                     val match = detail.match
-                    val bannerRes = remember(match.image, match.title) {
-                        val customResId = match.image?.let {
-                            context.resources.getIdentifier(it, "drawable", context.packageName)
-                        } ?: 0
-                        if (customResId != 0) {
-                            customResId
-                        } else {
-                            when {
-                                match.title.contains("duo", ignoreCase = true) -> R.drawable.duo
-                                match.title.contains("squad", ignoreCase = true) -> R.drawable.squad
-                                else -> R.drawable.solo
-                            }
+                    if (match == null) {
+                        // Show loading while match data is being fetched
+                        Box(
+                            modifier = Modifier.fillMaxSize(),
+                            contentAlignment = Alignment.Center
+                        ) {
+                            CircularProgressIndicator(color = AccentOrange)
+                        }
+                        return@let
+                    }
+                    // Determine if image is a URL or local resource
+                    val isImageUrl = remember(match.image) {
+                        match.image?.let { it.startsWith("http://") || it.startsWith("https://") } ?: false
+                    }
+                    // Fallback local drawable based on title
+                    val fallbackRes = remember(match.title) {
+                        when {
+                            match.title.contains("duo", ignoreCase = true) -> R.drawable.duo
+                            match.title.contains("squad", ignoreCase = true) -> R.drawable.squad
+                            else -> R.drawable.solo
                         }
                     }
 
@@ -231,23 +250,35 @@ fun MatchDetailScreen(
                                 .fillMaxWidth()
                                 .height(180.dp)
                         ) {
-                            if (bannerRes != 0) {
+                            if (isImageUrl) {
+                                AsyncImage(
+                                    model = match.image,
+                                    contentDescription = "Match Banner",
+                                    modifier = Modifier.fillMaxSize(),
+                                    contentScale = ContentScale.Crop,
+                                    error = painterResource(id = fallbackRes),
+                                    placeholder = painterResource(id = fallbackRes)
+                                )
+                            } else if (match.image != null) {
+                                // Try local resource name
+                                val localRes = remember(match.image) {
+                                    val customResId = context.resources.getIdentifier(match.image, "drawable", context.packageName)
+                                    if (customResId != 0) customResId else fallbackRes
+                                }
                                 Image(
-                                    painter = painterResource(id = bannerRes),
+                                    painter = painterResource(id = localRes),
                                     contentDescription = "Match Banner",
                                     modifier = Modifier.fillMaxSize(),
                                     contentScale = ContentScale.Crop
                                 )
                             } else {
-                                // Fallback placeholder with solid background
-                                Box(
-                                    modifier = Modifier
-                                        .fillMaxSize()
-                                        .background(Color(0xFF1E293B)),
-                                    contentAlignment = Alignment.Center
-                                ) {
-                                    Text("No Image", color = Color.White, fontSize = 14.sp)
-                                }
+                                // No image at all — show fallback drawable
+                                Image(
+                                    painter = painterResource(id = fallbackRes),
+                                    contentDescription = "Match Banner",
+                                    modifier = Modifier.fillMaxSize(),
+                                    contentScale = ContentScale.Crop
+                                )
                             }
                         }
 
@@ -288,11 +319,16 @@ fun MatchDetailScreen(
                                 .weight(1f)
                         ) {
                             if (selectedTabIndex == 0) {
-                                // Description Tab
-                                DescriptionTabContent(match = match)
+                                // Description Tab — pass isJoined to show room code
+                                val isJoined = joinedMatches.value.contains(match.id) || (match.status?.equals("joined", ignoreCase = true) == true)
+                                DescriptionTabContent(match = match, isJoined = isJoined)
                             } else {
                                 // Joined Member Tab
-                                JoinedMemberTabContent(participants = detail.participants)
+                                JoinedMemberTabContent(
+                                    participants = detail.participants,
+                                    matchStatus = match.status,
+                                    prizePool = match.prizePool
+                                )
                             }
                         }
                     }
@@ -302,36 +338,36 @@ fun MatchDetailScreen(
     }
 
     // Join Match Input Dialog
-    if (showJoinDialog && matchDetailState.value != null) {
-        val match = matchDetailState.value!!.match
-        JoinMatchDialog(
-            entryFee = match.entry_fee,
-            savedName = userState.value?.in_game_name ?: "",
-            savedUid = userState.value?.in_game_uid ?: "",
-            onDismiss = { showJoinDialog = false },
-            onSubmit = { ign, igid ->
-                showJoinDialog = false
-                isJoining = true
-                viewModel.joinMatch(
-                    matchId = match.id,
-                    inGameName = ign,
-                    inGameUid = igid,
-                    onSuccess = {
-                        // Save joined match locally
-                        val prefs = context.getSharedPreferences("king_battle_prefs", android.content.Context.MODE_PRIVATE)
-                        val set = prefs.getStringSet("joined_matches", mutableSetOf())?.toMutableSet() ?: mutableSetOf()
-                        set.add(match.id)
-                        prefs.edit().putStringSet("joined_matches", set).apply()
-                        isJoining = false
-                        Toast.makeText(context, "Successfully joined tournament!", Toast.LENGTH_LONG).show()
-                    },
-                    onError = { err ->
-                        isJoining = false
-                        Toast.makeText(context, "Failed: $err", Toast.LENGTH_LONG).show()
-                    }
-                )
-            }
-        )
+    if (showJoinDialog) {
+        matchDetailState.value?.match?.let { match ->
+            JoinMatchDialog(
+                entryFee = match.entry_fee,
+                savedName = userState.value?.in_game_name ?: "",
+                savedUid = userState.value?.in_game_uid ?: "",
+                onDismiss = { showJoinDialog = false },
+                onSubmit = { ign, igid ->
+                    showJoinDialog = false
+                    isJoining = true
+                    viewModel.joinMatch(
+                        matchId = match.id,
+                        inGameName = ign,
+                        inGameUid = igid,
+                        onSuccess = {
+                            // Save joined match locally
+                            // Update reactive state and persist
+                            // Mark as joined via ViewModel (uses TokenManager / EncryptedSharedPreferences)
+                            viewModel.markMatchJoined(match.id)
+                            isJoining = false
+                            Toast.makeText(context, "Successfully joined tournament!", Toast.LENGTH_LONG).show()
+                        },
+                        onError = { err ->
+                            isJoining = false
+                            Toast.makeText(context, "Failed: $err", Toast.LENGTH_LONG).show()
+                        }
+                    )
+                }
+            )
+        }
     }
     // Show a loading overlay while the join request is in progress
     if (isJoining) {
@@ -347,7 +383,7 @@ fun MatchDetailScreen(
 }
 
 @Composable
-fun DescriptionTabContent(match: Match) {
+fun DescriptionTabContent(match: Match, isJoined: Boolean = false) {
     Column(
         modifier = Modifier
             .fillMaxSize()
@@ -355,6 +391,72 @@ fun DescriptionTabContent(match: Match) {
             .padding(16.dp),
         verticalArrangement = Arrangement.spacedBy(16.dp)
     ) {
+        // Room ID & Password card — only visible to joined users when room data is set
+        val hasRoomData = !match.room_code.isNullOrBlank() || !match.room_password.isNullOrBlank()
+        if (isJoined && hasRoomData) {
+            Card(
+                modifier = Modifier.fillMaxWidth(),
+                shape = RoundedCornerShape(8.dp),
+                colors = CardDefaults.cardColors(containerColor = Color(0xFF1A2744)),
+                border = BorderStroke(1.dp, Color(0xFF38BDF8))
+            ) {
+                Column(
+                    modifier = Modifier
+                        .fillMaxWidth()
+                        .padding(14.dp),
+                    verticalArrangement = Arrangement.spacedBy(10.dp)
+                ) {
+                    Text(
+                        text = "🔑 ROOM DETAILS",
+                        color = Color(0xFF38BDF8),
+                        fontSize = 13.sp,
+                        fontWeight = FontWeight.Bold,
+                        letterSpacing = 1.sp
+                    )
+                    if (!match.room_code.isNullOrBlank()) {
+                        Row(
+                            modifier = Modifier.fillMaxWidth(),
+                            horizontalArrangement = Arrangement.SpaceBetween,
+                            verticalAlignment = Alignment.CenterVertically
+                        ) {
+                            Text(
+                                text = "Room ID",
+                                color = TextMuted,
+                                fontSize = 12.sp,
+                                fontWeight = FontWeight.SemiBold
+                            )
+                            Text(
+                                text = match.room_code,
+                                color = TextWhite,
+                                fontSize = 14.sp,
+                                fontWeight = FontWeight.Bold
+                            )
+                        }
+                    }
+                    if (!match.room_password.isNullOrBlank()) {
+                        Row(
+                            modifier = Modifier.fillMaxWidth(),
+                            horizontalArrangement = Arrangement.SpaceBetween,
+                            verticalAlignment = Alignment.CenterVertically
+                        ) {
+                            Text(
+                                text = "Password",
+                                color = TextMuted,
+                                fontSize = 12.sp,
+                                fontWeight = FontWeight.SemiBold
+                            )
+                            Text(
+                                text = match.room_password,
+                                color = TextWhite,
+                                fontSize = 14.sp,
+                                fontWeight = FontWeight.Bold
+                            )
+                        }
+                    }
+                }
+            }
+        }
+
         // Title block
         Text(
             text = match.title,
@@ -426,6 +528,87 @@ fun DescriptionTabContent(match: Match) {
                 value = "${match.prizePool?.coins_per_kill ?: 10}",
                 modifier = Modifier.weight(1f)
             )
+        }
+
+        // Rank Rewards Breakdown Section
+        Text(
+            text = "Rank Rewards",
+            color = Color(0xFF38BDF8),
+            fontSize = 14.sp,
+            fontWeight = FontWeight.Bold
+        )
+
+        Card(
+            modifier = Modifier.fillMaxWidth(),
+            shape = RoundedCornerShape(8.dp),
+            colors = CardDefaults.cardColors(containerColor = ThemeCardBg),
+            border = BorderStroke(1.dp, ThemeBorderColor)
+        ) {
+            Column(
+                modifier = Modifier
+                    .fillMaxWidth()
+                    .padding(12.dp),
+                verticalArrangement = Arrangement.spacedBy(6.dp)
+            ) {
+                val rewards = match.prizePool?.rank_rewards ?: emptyList()
+                if (rewards.isEmpty()) {
+                    Text(
+                        text = "All prizes distributed via per-kill earnings.",
+                        color = TextMuted,
+                        fontSize = 12.sp
+                    )
+                } else {
+                    // Header row
+                    Row(
+                        modifier = Modifier.fillMaxWidth(),
+                        horizontalArrangement = Arrangement.SpaceBetween
+                    ) {
+                        Text(
+                            text = "RANK",
+                            color = TextMuted,
+                            fontSize = 10.sp,
+                            fontWeight = FontWeight.Bold
+                        )
+                        Text(
+                            text = "REWARD",
+                            color = TextMuted,
+                            fontSize = 10.sp,
+                            fontWeight = FontWeight.Bold
+                        )
+                    }
+                    HorizontalDivider(
+                        modifier = Modifier.fillMaxWidth(),
+                        thickness = 0.5.dp,
+                        color = ThemeBorderColor
+                    )
+                    rewards.forEach { reward ->
+                        val rankText = if (reward.from_rank == reward.to_rank) {
+                            "#${reward.from_rank}"
+                        } else {
+                            "#${reward.from_rank} - #${reward.to_rank}"
+                        }
+                        Row(
+                            modifier = Modifier
+                                .fillMaxWidth()
+                                .padding(vertical = 4.dp),
+                            horizontalArrangement = Arrangement.SpaceBetween
+                        ) {
+                            Text(
+                                text = rankText,
+                                color = TextWhite,
+                                fontSize = 13.sp,
+                                fontWeight = FontWeight.SemiBold
+                            )
+                            Text(
+                                text = "💵 ${reward.coins} coins",
+                                color = Color(0xFF10B981),
+                                fontSize = 13.sp,
+                                fontWeight = FontWeight.Bold
+                            )
+                        }
+                    }
+                }
+            }
         }
 
         // About this Match Section
@@ -504,8 +687,24 @@ fun DetailGridCard(
 }
 
 @Composable
-fun JoinedMemberTabContent(participants: List<Participant>) {
-    if (participants.isEmpty()) {
+fun JoinedMemberTabContent(
+    participants: List<Participant>,
+    matchStatus: String? = null,
+    prizePool: PrizePool? = null
+) {
+    val isCompleted = matchStatus?.let {
+        val s = it.trim().lowercase()
+        s == "completed" || s == "finished" || s == "complete"
+    } ?: false
+
+    // Sort participants by rank when completed
+    val sortedParticipants = if (isCompleted) {
+        participants.sortedWith(compareBy { it.rank ?: Int.MAX_VALUE })
+    } else {
+        participants
+    }
+
+    if (sortedParticipants.isEmpty()) {
         Box(modifier = Modifier.fillMaxSize(), contentAlignment = Alignment.Center) {
             Text("No members have joined yet.", color = TextMuted, fontSize = 14.sp)
         }
@@ -513,35 +712,132 @@ fun JoinedMemberTabContent(participants: List<Participant>) {
         LazyColumn(
             modifier = Modifier.fillMaxSize(),
             contentPadding = PaddingValues(16.dp),
-            verticalArrangement = Arrangement.spacedBy(10.dp)
+            verticalArrangement = Arrangement.spacedBy(8.dp)
         ) {
-            itemsIndexed(participants) { index, participant ->
-                Column(modifier = Modifier.fillMaxWidth()) {
+            // Header row when completed
+            if (isCompleted) {
+                item {
+                    Card(
+                        modifier = Modifier.fillMaxWidth(),
+                        shape = RoundedCornerShape(8.dp),
+                        colors = CardDefaults.cardColors(containerColor = Color(0xFF1A2744)),
+                        border = BorderStroke(1.dp, Color(0xFF38BDF8))
+                    ) {
+                        Text(
+                            text = "🏆 MATCH RESULTS",
+                            color = Color(0xFF38BDF8),
+                            fontSize = 13.sp,
+                            fontWeight = FontWeight.Bold,
+                            letterSpacing = 1.sp,
+                            modifier = Modifier.padding(12.dp)
+                        )
+                    }
+                }
+            }
+
+            items(sortedParticipants) { participant ->
+                val playerName = participant.team_members?.firstOrNull()?.inGameName
+                    ?: participant.in_game_name
+                    ?: "Unknown Player"
+                val totalKills = participant.team_members?.sumOf { it.kills ?: 0 } ?: 0
+
+                // Calculate coins won based on rank and prizePool rank_rewards
+                val coinsWon = if (isCompleted && participant.rank != null && prizePool != null) {
+                    prizePool.rank_rewards.firstOrNull { reward ->
+                        participant.rank in reward.from_rank..reward.to_rank
+                    }?.coins?.let { rankCoins ->
+                        rankCoins + (totalKills * prizePool.coins_per_kill)
+                    } ?: (totalKills * prizePool.coins_per_kill)
+                } else 0
+
+                Card(
+                    modifier = Modifier.fillMaxWidth(),
+                    shape = RoundedCornerShape(8.dp),
+                    colors = CardDefaults.cardColors(containerColor = ThemeCardBg),
+                    border = BorderStroke(0.5.dp, ThemeBorderColor)
+                ) {
                     Row(
                         modifier = Modifier
                             .fillMaxWidth()
-                            .padding(vertical = 8.dp),
-                        verticalAlignment = Alignment.CenterVertically
+                            .padding(12.dp),
+                        verticalAlignment = Alignment.CenterVertically,
+                        horizontalArrangement = Arrangement.SpaceBetween
                     ) {
-                        Text(
-                            text = "${index + 1}. ",
-                            color = TextMuted,
-                            fontSize = 14.sp,
-                            fontWeight = FontWeight.Bold,
-                            modifier = Modifier.width(36.dp)
-                        )
-                        Text(
-                            text = participant.in_game_name ?: "Unknown Player",
-                            color = TextWhite,
-                            fontSize = 14.sp,
-                            fontWeight = FontWeight.SemiBold
-                        )
+                        // Left: Rank badge + name
+                        Row(
+                            verticalAlignment = Alignment.CenterVertically,
+                            horizontalArrangement = Arrangement.spacedBy(10.dp),
+                            modifier = Modifier.weight(1f)
+                        ) {
+                            if (isCompleted && participant.rank != null) {
+                                // Rank badge
+                                val rankColor = when (participant.rank) {
+                                    1 -> Color(0xFFFFD700) // Gold
+                                    2 -> Color(0xFFC0C0C0) // Silver
+                                    3 -> Color(0xFFCD7F32) // Bronze
+                                    else -> TextMuted
+                                }
+                                Box(
+                                    modifier = Modifier
+                                        .size(32.dp)
+                                        .background(rankColor.copy(alpha = 0.2f), RoundedCornerShape(6.dp))
+                                        .border(1.dp, rankColor, RoundedCornerShape(6.dp)),
+                                    contentAlignment = Alignment.Center
+                                ) {
+                                    Text(
+                                        text = "#${participant.rank}",
+                                        color = rankColor,
+                                        fontSize = 11.sp,
+                                        fontWeight = FontWeight.Bold
+                                    )
+                                }
+                            } else {
+                                // Serial number for non-completed matches
+                                val index = sortedParticipants.indexOf(participant) + 1
+                                Box(
+                                    modifier = Modifier
+                                        .size(32.dp)
+                                        .background(ThemeBorderColor, RoundedCornerShape(6.dp)),
+                                    contentAlignment = Alignment.Center
+                                ) {
+                                    Text(
+                                        text = "$index",
+                                        color = TextMuted,
+                                        fontSize = 12.sp,
+                                        fontWeight = FontWeight.Bold
+                                    )
+                                }
+                            }
+
+                            Column {
+                                Text(
+                                    text = playerName,
+                                    color = TextWhite,
+                                    fontSize = 13.sp,
+                                    fontWeight = FontWeight.SemiBold,
+                                    maxLines = 1,
+                                    overflow = TextOverflow.Ellipsis
+                                )
+                                if (isCompleted && totalKills > 0) {
+                                    Text(
+                                        text = "$totalKills kills",
+                                        color = TextMuted,
+                                        fontSize = 11.sp
+                                    )
+                                }
+                            }
+                        }
+
+                        // Right: Coins won (only when completed)
+                        if (isCompleted && coinsWon > 0) {
+                            Text(
+                                text = "💵 $coinsWon",
+                                color = Color(0xFF10B981),
+                                fontSize = 13.sp,
+                                fontWeight = FontWeight.Bold
+                            )
+                        }
                     }
-                    HorizontalDivider(
-                        modifier = Modifier.fillMaxWidth(),
-                        thickness = 0.5.dp,
-                        color = ThemeBorderColor
-                    )
                 }
             }
         }
