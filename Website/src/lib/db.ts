@@ -1566,12 +1566,17 @@ export const db = {
   async updateFcmToken(userId: string, token: string): Promise<boolean> {
     const supabase = getSupabase();
     if (!supabase) return false;
-    const { error } = await supabase
+    const { data, error } = await supabase
       .from("app_users")
       .update({ fcm_token: token })
-      .eq("username", userId);
+      .eq("username", userId)
+      .select("username");
     if (error) {
       console.error("updateFcmToken failed:", error.message);
+      return false;
+    }
+    if (!data?.length) {
+      console.error("updateFcmToken: no user matched username", userId);
       return false;
     }
     return true;
@@ -1624,6 +1629,28 @@ export const db = {
     return data
       .filter((row) => row.fcm_token)
       .map((row) => ({ userId: row.username, token: row.fcm_token as string }));
+  },
+
+  async listFcmDeviceRegistrations(): Promise<
+    { userId: string; tokenSuffix: string; isBlocked: boolean }[]
+  > {
+    const supabase = getSupabase();
+    if (!supabase) return [];
+    const { data, error } = await supabase
+      .from("app_users")
+      .select("username, fcm_token, is_blocked")
+      .not("fcm_token", "is", null);
+    if (error) {
+      console.error("listFcmDeviceRegistrations failed:", error.message);
+      return [];
+    }
+    return (data ?? [])
+      .filter((row) => row.fcm_token)
+      .map((row) => ({
+        userId: row.username as string,
+        tokenSuffix: String(row.fcm_token).slice(-8),
+        isBlocked: Boolean(row.is_blocked),
+      }));
   },
 
   async matchPresets(modeId?: string): Promise<DbMatchPreset[]> {

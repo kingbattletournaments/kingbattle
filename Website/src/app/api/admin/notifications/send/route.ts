@@ -38,6 +38,10 @@ export async function POST(request: Request) {
   const store = getStore();
   const tokenRows = await store.getFcmTokensForTarget(target);
   const tokens = tokenRows.map((row) => row.token);
+  const targetedUsers = tokenRows.map((row) => ({
+    userId: row.userId,
+    tokenSuffix: row.token.slice(-8),
+  }));
 
   if (tokens.length === 0) {
     return NextResponse.json(
@@ -47,7 +51,7 @@ export async function POST(request: Request) {
   }
 
   try {
-    const result = await sendPushToTokens(tokens, title, messageBody, link || null);
+    const result = await sendPushToTokens(tokens, title, messageBody, link || null, targetedUsers);
 
     if (result.invalidTokens?.length) {
       await Promise.all(result.invalidTokens.map((token) => store.clearFcmTokenByValue(token)));

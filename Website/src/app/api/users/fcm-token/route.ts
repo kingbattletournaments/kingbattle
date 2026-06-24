@@ -21,7 +21,7 @@ export async function POST(request: Request) {
       return NextResponse.json({ error: "Failed to update FCM token" }, { status: 500 });
     }
 
-    return NextResponse.json({ success: true });
+    return NextResponse.json({ success: true, userId });
   } catch (error) {
     return NextResponse.json({ error: "Invalid request" }, { status: 400 });
   }

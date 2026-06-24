@@ -6,12 +6,14 @@ export type SendPushResult = {
   successCount: number;
   failureCount: number;
   totalTokens: number;
+  messageIds?: string[];
+  targetedUsers?: { userId: string; tokenSuffix: string }[];
   errors?: string[];
   invalidTokens?: string[];
 };
 
 const BATCH_SIZE = 500;
-export const FCM_CHANNEL_ID = "king_battle_alerts_v3";
+export const FCM_CHANNEL_ID = "king_battle_alerts_v4";
 
 const INVALID_TOKEN_CODES = new Set([
   "messaging/registration-token-not-registered",
@@ -31,6 +33,7 @@ export async function sendPushToTokens(
   title: string,
   body: string,
   link?: string | null,
+  targetedUsers?: { userId: string; tokenSuffix: string }[],
 ): Promise<SendPushResult> {
   const messaging = getFirebaseMessaging();
   if (!messaging) {
@@ -39,53 +42,65 @@ export async function sendPushToTokens(
 
   const uniqueTokens = Array.from(new Set(tokens.filter(Boolean)));
   if (uniqueTokens.length === 0) {
-    return { successCount: 0, failureCount: 0, totalTokens: 0 };
+    return { successCount: 0, failureCount: 0, totalTokens: 0, targetedUsers };
   }
 
   let successCount = 0;
   let failureCount = 0;
   const errors: string[] = [];
   const invalidTokens: string[] = [];
-
-  const dataPayload: Record<string, string> = {
-    title,
-    body,
-    ...(link ? { link } : {}),
-  };
+  const messageIds: string[] = [];
 
   for (let i = 0; i < uniqueTokens.length; i += BATCH_SIZE) {
     const batch = uniqueTokens.slice(i, i + BATCH_SIZE);
-    // Notification + data: system shows in background; onMessageReceived handles foreground.
     const response = await messaging.sendEachForMulticast({
       tokens: batch,
       notification: { title, body },
-      data: dataPayload,
+      data: {
+        title,
+        body,
+        ...(link ? { link } : {}),
+      },
       android: {
         priority: "high",
         ttl: 86_400_000,
         notification: {
           channelId: FCM_CHANNEL_ID,
-          priority: "high",
+          title,
+          body,
+          priority: "high" as const,
           defaultSound: true,
           defaultVibrateTimings: true,
-          visibility: "public",
+          visibility: "public" as const,
+          clickAction: "OPEN_MAIN",
         },
       },
     });
     successCount += response.successCount;
     failureCount += response.failureCount;
     response.responses.forEach((resp, index) => {
-      if (!resp.success && resp.error) {
-        const token = batch[index];
-        const msg = `${resp.error.code}: ${resp.error.message} (token …${token?.slice(-8) ?? "?"})`;
-        errors.push(msg);
-        console.error("FCM delivery error:", msg);
-        if (token && INVALID_TOKEN_CODES.has(resp.error.code)) {
-          invalidTokens.push(token);
-        }
+      if (resp.success) {
+        if (resp.messageId) messageIds.push(resp.messageId);
+        return;
+      }
+      if (!resp.error) return;
+      const token = batch[index];
+      const msg = `${resp.error.code}: ${resp.error.message} (token …${token?.slice(-8) ?? "?"})`;
+      errors.push(msg);
+      console.error("FCM delivery error:", msg);
+      if (token && INVALID_TOKEN_CODES.has(resp.error.code)) {
+        invalidTokens.push(token);
       }
     });
   }
 
-  return { successCount, failureCount, totalTokens: uniqueTokens.length, errors, invalidTokens };
+  return {
+    successCount,
+    failureCount,
+    totalTokens: uniqueTokens.length,
+    messageIds,
+    targetedUsers,
+    errors,
+    invalidTokens,
+  };
 }

@@ -58,7 +58,7 @@ interface KingBattleApi {
     @POST("users/fcm-token")
     suspend fun updateFcmToken(
         @Body request: UpdateFcmTokenRequest
-    ): Response<Unit>
+    ): Response<UpdateFcmTokenResponse>
 
     @GET("users/{id}/transactions")
     suspend fun getUserTransactions(@Path("id") userId: String): Response<List<Transaction>>
@@ -158,4 +158,9 @@ data class ZapUpiOrderResponse(
 
 data class UpdateFcmTokenRequest(
     val fcmToken: String
+)
+
+data class UpdateFcmTokenResponse(
+    val success: Boolean,
+    val userId: String? = null,
 )

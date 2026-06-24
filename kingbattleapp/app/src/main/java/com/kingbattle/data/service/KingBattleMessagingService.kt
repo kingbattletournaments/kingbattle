@@ -46,7 +46,9 @@ class KingBattleMessagingService : FirebaseMessagingService() {
 
     override fun onMessageReceived(remoteMessage: RemoteMessage) {
         super.onMessageReceived(remoteMessage)
-        Log.d(TAG, "Message received. from=${remoteMessage.from} data=${remoteMessage.data}")
+        Log.d(TAG, "Message received. from=${remoteMessage.from} data=${remoteMessage.data} notification=${remoteMessage.notification?.title}")
+
+        NotificationHelper.logNotificationState(applicationContext, "FCM_SERVICE")
 
         val wakeLock = (getSystemService(POWER_SERVICE) as PowerManager)
             .newWakeLock(PowerManager.PARTIAL_WAKE_LOCK, "KingBattle:FCM")

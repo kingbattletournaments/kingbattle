@@ -3691,10 +3691,26 @@ function PushNotificationsSection() {
   const [target, setTarget] = useState<"all" | "active" | "blocked">("all");
   const [sending, setSending] = useState(false);
   const [history, setHistory] = useState<any[]>([]);
+  const [devices, setDevices] = useState<{ userId: string; tokenSuffix: string; isBlocked: boolean }[]>([]);
+  const [devicesLoading, setDevicesLoading] = useState(true);
+
+  const loadDevices = async () => {
+    setDevicesLoading(true);
+    try {
+      const res = await fetch("/api/admin/notifications/devices");
+      const data = await res.json().catch(() => ({}));
+      if (res.ok && Array.isArray(data.devices)) {
+        setDevices(data.devices);
+      }
+    } finally {
+      setDevicesLoading(false);
+    }
+  };
 
   useEffect(() => {
     const h = localStorage.getItem("admin_push_history");
     if (h) setHistory(JSON.parse(h));
+    loadDevices();
   }, []);
 
   const handleSend = async (e: React.FormEvent) => {
@@ -3739,11 +3755,21 @@ function PushNotificationsSection() {
       setTitle("");
       setBody("");
       setLink("");
+      await loadDevices();
+
+      const targeted = Array.isArray(data.targetedUsers)
+        ? data.targetedUsers.map((d: { userId: string; tokenSuffix: string }) => `${d.userId} (…${d.tokenSuffix})`).join(", ")
+        : "";
+
       alert(
         `Sent to ${data.successCount ?? 0} device${data.successCount === 1 ? "" : "s"}` +
           (data.failureCount ? ` (${data.failureCount} failed)` : "") +
           (data.invalidTokens?.length ? ` — ${data.invalidTokens.length} stale token(s) cleared` : "") +
           `.` +
+          (targeted ? `\n\nTargeted: ${targeted}` : "") +
+          (data.successCount && !data.failureCount
+            ? "\n\nIf nothing appears on the phone: open the app, allow notifications, then background it and try again."
+            : "") +
           (Array.isArray(data.errors) && data.errors.length
             ? `\n\nErrors:\n${data.errors.slice(0, 3).join("\n")}`
             : ""),
@@ -3767,6 +3793,37 @@ function PushNotificationsSection() {
       <div>
         <h1 className="text-2xl font-bold text-white mb-1">Push Notifications</h1>
         <p className="text-slate-400 text-sm">Send dynamic Firebase notifications directly to users' Android applications.</p>
+      </div>
+
+      <div className="admin-panel w-full">
+        <div className="flex items-center justify-between mb-3">
+          <h3 className="text-md font-bold text-white">Registered Devices</h3>
+          <button type="button" onClick={loadDevices} className="text-xs text-green-400 hover:text-green-300">
+            Refresh
+          </button>
+        </div>
+        {devicesLoading ? (
+          <p className="text-sm text-slate-500">Loading devices…</p>
+        ) : devices.length === 0 ? (
+          <p className="text-sm text-slate-500">
+            No devices registered. Users must open the app while logged in and allow notifications.
+          </p>
+        ) : (
+          <div className="space-y-2">
+            {devices.map((d) => (
+              <div key={`${d.userId}-${d.tokenSuffix}`} className="flex justify-between text-sm bg-slate-800/40 rounded-lg px-3 py-2">
+                <span className="text-slate-200 font-medium">{d.userId}</span>
+                <span className="text-slate-400 font-mono text-xs">
+                  …{d.tokenSuffix}
+                  {d.isBlocked ? " · blocked" : ""}
+                </span>
+              </div>
+            ))}
+            <p className="text-xs text-slate-500 pt-1">
+              Compare token suffix with Logcat: <code className="text-slate-400">MainActivity: FCM token suffix</code>
+            </p>
+          </div>
+        )}
       </div>
 
       <div className="grid grid-cols-1 lg:grid-cols-3 gap-6">
