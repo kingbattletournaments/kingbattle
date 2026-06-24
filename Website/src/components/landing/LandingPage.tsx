@@ -89,13 +89,19 @@ export default function LandingPage({ data }: { data: LandingPageData }) {
               {brand.download.buttonLabel}
             </a>
           </div>
-          <div className="landing-phone-mock" aria-hidden>
-            {/* eslint-disable-next-line @next/next/no-img-element */}
-            <img
-              src={brand.images.welcomeScreen}
-              alt={`${brand.appName} welcome screen`}
-              className="landing-phone-screen-img"
-            />
+          <div className="landing-hero-phone-wrap">
+            <div className="landing-phone-mock" aria-hidden>
+              <div className="landing-phone-screen">
+                {/* eslint-disable-next-line @next/next/no-img-element */}
+                <img
+                  src={brand.images.welcomeScreen}
+                  alt={`${brand.appName} welcome screen`}
+                  className="landing-phone-screen-img"
+                  width={910}
+                  height={1920}
+                />
+              </div>
+            </div>
           </div>
         </div>
       </header>
