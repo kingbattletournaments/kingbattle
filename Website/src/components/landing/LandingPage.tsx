@@ -90,13 +90,12 @@ export default function LandingPage({ data }: { data: LandingPageData }) {
             </a>
           </div>
           <div className="landing-phone-mock" aria-hidden>
-            <div className="landing-phone-bar" />
-            <div className="landing-phone-card">
-              <strong>{brand.appName}</strong>
-              <p style={{ marginTop: "0.75rem", fontSize: "0.85rem", color: "#d1d5db" }}>
-                Daily Free Fire tournaments · Real coin prizes · Instant withdrawals
-              </p>
-            </div>
+            {/* eslint-disable-next-line @next/next/no-img-element */}
+            <img
+              src={brand.images.welcomeScreen}
+              alt={`${brand.appName} welcome screen`}
+              className="landing-phone-screen-img"
+            />
           </div>
         </div>
       </header>

@@ -166,41 +166,27 @@
 
 .landing-phone-mock {
   justify-self: center;
-  width: min(100%, 320px);
-  aspect-ratio: 9/16;
+  width: clamp(300px, 38vw, 420px);
+  aspect-ratio: 910 / 1920;
+  max-height: min(78vh, 860px);
+  border-radius: 36px;
+  border: 4px solid rgba(255, 255, 255, 0.18);
+  background: #0a0a0a;
+  box-shadow:
+    0 28px 70px rgba(0, 0, 0, 0.55),
+    inset 0 0 0 1px rgba(255, 255, 255, 0.06);
+  padding: 10px;
+  overflow: hidden;
+  position: relative;
+}
+
+.landing-phone-screen-img {
+  width: 100%;
+  height: 100%;
+  display: block;
+  object-fit: cover;
+  object-position: center top;
   border-radius: 28px;
-  border: 3px solid rgba(255, 255, 255, 0.15);
-  background: linear-gradient(160deg, #1f2937, #111827);
-  box-shadow: 0 24px 60px rgba(0, 0, 0, 0.45);
-  padding: 1rem;
-  display: flex;
-  flex-direction: column;
-  gap: 0.75rem;
-}
-
-.landing-phone-bar {
-  height: 10px;
-  width: 40%;
-  border-radius: 999px;
-  background: rgba(255, 255, 255, 0.15);
-  margin: 0 auto 0.5rem;
-}
-
-.landing-phone-card {
-  flex: 1;
-  border-radius: 16px;
-  background: linear-gradient(180deg, rgba(34, 197, 94, 0.25), rgba(17, 24, 39, 0.9));
-  border: 1px solid rgba(34, 197, 94, 0.25);
-  padding: 1rem;
-  display: flex;
-  flex-direction: column;
-  justify-content: center;
-  text-align: center;
-}
-
-.landing-phone-card strong {
-  font-size: 1.25rem;
-  color: var(--cw-accent);
 }
 
 .landing-section {
@@ -609,7 +595,13 @@
   }
 
   .landing-hero-grid {
-    grid-template-columns: 1.1fr 0.9fr;
+    grid-template-columns: 1.05fr 0.95fr;
+    gap: 2rem;
+  }
+
+  .landing-phone-mock {
+    width: clamp(320px, 34vw, 440px);
+    max-height: min(82vh, 900px);
   }
 
   .landing-tournament-grid {

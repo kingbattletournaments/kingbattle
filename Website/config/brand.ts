@@ -13,7 +13,10 @@ export const brand = {
       "King Battle is a secure tournament platform built for fair, skill-based Free Fire competitions. Download the app and start winning today.",
   },
 
-  /** Direct APK download URL. Set via NEXT_PUBLIC_APK_DOWNLOAD_URL when hosting the APK. */
+  /** Image paths — files in Website/public/ */
+  images: {
+    welcomeScreen: "/images/welcome-screen.jpg",
+  },
   download: {
     apkUrl: process.env.NEXT_PUBLIC_APK_DOWNLOAD_URL ?? "",
     buttonLabel: "Download Now !!",
