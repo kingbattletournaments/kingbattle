@@ -1,6 +1,6 @@
 "use client";
 
-import { useState, useEffect, useRef, useCallback } from "react";
+import { useState, useEffect, useRef, useCallback, useMemo } from "react";
 import { useRouter } from "next/navigation";
 import Image from "next/image";
 import { LoadingSpinner } from "@/components/ui";
@@ -54,6 +54,13 @@ type AdminSession = {
   allowedGameIds: string[];
 };
 
+type MatchBulkSelectControls = {
+  selectedCount: number;
+  totalSelectable: number;
+  selectAll: () => void;
+  exitSelection: () => void;
+};
+
 export default function AdminPage() {
   const router = useRouter();
   const [session, setSession] = useState<AdminSession | null>(null);
@@ -70,6 +77,7 @@ export default function AdminPage() {
   const [loading, setLoading] = useState(true);
   const [message, setMessage] = useState<{ type: "ok" | "err"; text: string } | null>(null);
   const [sidebarOpen, setSidebarOpen] = useState(false);
+  const [matchBulkSelect, setMatchBulkSelect] = useState<MatchBulkSelectControls | null>(null);
 
   const hasSpecificGameAccess = session?.gamesAccessType === "specific" && !session?.isMasterAdmin;
   const hasSingleGameAccess = hasSpecificGameAccess && session && session.allowedGameIds.length === 1;
@@ -186,47 +194,76 @@ export default function AdminPage() {
     <div className="admin-page">
       <header className="admin-header">
         <div className="flex items-center gap-3">
-          {/* Hamburger for mobile */}
-          <button
-            type="button"
-            onClick={() => setSidebarOpen(!sidebarOpen)}
-            className="lg:hidden flex h-10 w-10 items-center justify-center rounded-xl bg-white/5 text-slate-300 hover:bg-white/10 hover:text-white"
-          >
-            <svg className="h-6 w-6" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2}>
-              <path strokeLinecap="round" strokeLinejoin="round" d="M4 6h16M4 12h16M4 18h16" />
-            </svg>
-          </button>
-          <div className="flex items-center gap-2">
-            <Image
-              src="/app-logo.jpg"
-              alt="King Battle"
-              width={36}
-              height={36}
-              className="h-9 w-9 rounded-full object-cover border border-green-500/25"
-              priority
-            />
-            <span className="text-xs font-semibold px-2 py-0.5 rounded bg-green-500/10 text-green-400 border border-green-500/25 normal-case hidden sm:inline-block">
-              Admin
-            </span>
-          </div>
+          {matchBulkSelect ? (
+            <>
+              <button
+                type="button"
+                onClick={matchBulkSelect.selectAll}
+                className="rounded-xl bg-green-600/20 hover:bg-green-600/30 text-green-300 border border-green-500/30 px-4 py-2 text-sm font-semibold transition"
+              >
+                Select All
+              </button>
+              <span className="text-sm text-slate-400">
+                {matchBulkSelect.selectedCount} of {matchBulkSelect.totalSelectable} selected
+              </span>
+            </>
+          ) : (
+            <>
+              {/* Hamburger for mobile */}
+              <button
+                type="button"
+                onClick={() => setSidebarOpen(!sidebarOpen)}
+                className="lg:hidden flex h-10 w-10 items-center justify-center rounded-xl bg-white/5 text-slate-300 hover:bg-white/10 hover:text-white"
+              >
+                <svg className="h-6 w-6" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2}>
+                  <path strokeLinecap="round" strokeLinejoin="round" d="M4 6h16M4 12h16M4 18h16" />
+                </svg>
+              </button>
+              <div className="flex items-center gap-2">
+                <Image
+                  src="/app-logo.jpg"
+                  alt="King Battle"
+                  width={36}
+                  height={36}
+                  className="h-9 w-9 rounded-full object-cover border border-green-500/25"
+                  priority
+                />
+                <span className="text-xs font-semibold px-2 py-0.5 rounded bg-green-500/10 text-green-400 border border-green-500/25 normal-case hidden sm:inline-block">
+                  Admin
+                </span>
+              </div>
+            </>
+          )}
         </div>
         
         {session && (
           <div className="flex items-center gap-3">
-            <div className="hidden sm:flex flex-col text-right">
-              <span className="text-xs text-slate-400 font-semibold">Logged in as</span>
-              <span className="text-sm text-slate-200 font-bold font-mono">{session.adminname}</span>
-            </div>
-            <button
-              type="button"
-              onClick={handleLogout}
-              className="flex h-10 items-center gap-2 rounded-xl bg-red-600/10 hover:bg-red-600/20 text-red-400 border border-red-500/20 px-4 text-sm font-semibold transition"
-            >
-              <svg className="h-4 w-4" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2}>
-                <path strokeLinecap="round" strokeLinejoin="round" d="M17 16l4-4m0 0l-4-4m4 4H7m6 4v1a3 3 0 01-3 3H6a3 3 0 01-3-3V7a3 3 0 013-3h4a3 3 0 013 3v1" />
-              </svg>
-              Logout
-            </button>
+            {matchBulkSelect ? (
+              <button
+                type="button"
+                onClick={matchBulkSelect.exitSelection}
+                className="flex h-10 items-center gap-2 rounded-xl bg-slate-800 hover:bg-slate-700 text-slate-200 border border-slate-600 px-4 text-sm font-semibold transition"
+              >
+                Cancel
+              </button>
+            ) : (
+              <>
+                <div className="hidden sm:flex flex-col text-right">
+                  <span className="text-xs text-slate-400 font-semibold">Logged in as</span>
+                  <span className="text-sm text-slate-200 font-bold font-mono">{session.adminname}</span>
+                </div>
+                <button
+                  type="button"
+                  onClick={handleLogout}
+                  className="flex h-10 items-center gap-2 rounded-xl bg-red-600/10 hover:bg-red-600/20 text-red-400 border border-red-500/20 px-4 text-sm font-semibold transition"
+                >
+                  <svg className="h-4 w-4" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2}>
+                    <path strokeLinecap="round" strokeLinejoin="round" d="M17 16l4-4m0 0l-4-4m4 4H7m6 4v1a3 3 0 01-3 3H6a3 3 0 01-3-3V7a3 3 0 013-3h4a3 3 0 013 3v1" />
+                  </svg>
+                  Logout
+                </button>
+              </>
+            )}
           </div>
         )}
       </header>
@@ -304,8 +341,12 @@ export default function AdminPage() {
                     matchPresets={matchPresets.filter((p) => p.gameModeId === selectedModeId)}
                     modeId={selectedModeId}
                     users={users}
-                    onBack={() => setSelectedModeId(null)}
+                    onBack={() => {
+                      setMatchBulkSelect(null);
+                      setSelectedModeId(null);
+                    }}
                     onSuccess={(opts?: { silent?: boolean }) => { fetchData(!opts?.silent); showMsg("ok", "Updated"); }}
+                    onBulkSelectChange={setMatchBulkSelect}
                   />
                 ) : selectedGameId ? (
                   <ModesSection
@@ -1121,6 +1162,7 @@ function MatchesSection({
   users,
   onBack,
   onSuccess,
+  onBulkSelectChange,
 }: {
   games: Game[];
   modes: GameMode[];
@@ -1130,7 +1172,10 @@ function MatchesSection({
   users: User[];
   onBack: () => void;
   onSuccess: (opts?: { silent?: boolean }) => void;
+  onBulkSelectChange?: (controls: MatchBulkSelectControls | null) => void;
 }) {
+  const longPressTimerRef = useRef<number | null>(null);
+  const longPressTriggeredRef = useRef(false);
   const [view, setView] = useState<"list" | "create" | "createFromPreset">("list");
   const [title, setTitle] = useState("");
   const [entryFee, setEntryFee] = useState("");
@@ -1152,6 +1197,9 @@ function MatchesSection({
   const [presetGapMinutes, setPresetGapMinutes] = useState("60");
   const [presetEndingTime, setPresetEndingTime] = useState("18:00");
   const [presetSubmitting, setPresetSubmitting] = useState(false);
+  const [selectionMode, setSelectionMode] = useState(false);
+  const [selectedMatchIds, setSelectedMatchIds] = useState<Set<string>>(new Set());
+  const [bulkCancelling, setBulkCancelling] = useState(false);
 
   const presetSchedulePreview =
     selectedPresetId && presetMatchDate && presetStartingTime && presetEndingTime && Number(presetGapMinutes) > 0
@@ -1182,6 +1230,114 @@ function MatchesSection({
   const ongoing = matches.filter((m) => m.status === "ongoing");
   const finished = matches.filter((m) => m.status === "ended" || m.status === "completed" || m.status === "cancelled");
   const tabMatches = matchTab === "upcoming" ? upcoming : matchTab === "ongoing" ? ongoing : finished;
+  const selectableMatches = matchTab === "upcoming" ? upcoming : [];
+  const selectableMatchIds = useMemo(() => selectableMatches.map((m) => m.id), [selectableMatches]);
+
+  const exitSelectionMode = useCallback(() => {
+    setSelectionMode(false);
+    setSelectedMatchIds(new Set());
+  }, []);
+
+  const toggleMatchSelection = useCallback((matchId: string) => {
+    setSelectedMatchIds((prev) => {
+      const next = new Set(prev);
+      if (next.has(matchId)) next.delete(matchId);
+      else next.add(matchId);
+      return next;
+    });
+  }, []);
+
+  const enterSelectionMode = useCallback((matchId: string) => {
+    setSelectionMode(true);
+    setSelectedMatchIds(new Set([matchId]));
+    setSelectedMatchId(null);
+    setExpandedMatchId(null);
+  }, []);
+
+  useEffect(() => {
+    if (!selectionMode) {
+      onBulkSelectChange?.(null);
+      return;
+    }
+    onBulkSelectChange?.({
+      selectedCount: selectedMatchIds.size,
+      totalSelectable: selectableMatchIds.length,
+      selectAll: () => setSelectedMatchIds(new Set(selectableMatchIds)),
+      exitSelection: exitSelectionMode,
+    });
+  }, [selectionMode, selectedMatchIds.size, selectableMatchIds, onBulkSelectChange, exitSelectionMode]);
+
+  useEffect(() => {
+    return () => onBulkSelectChange?.(null);
+  }, [onBulkSelectChange]);
+
+  useEffect(() => {
+    if (matchTab !== "upcoming" && selectionMode) {
+      exitSelectionMode();
+    }
+  }, [matchTab, selectionMode, exitSelectionMode]);
+
+  const clearLongPressTimer = () => {
+    if (longPressTimerRef.current !== null) {
+      window.clearTimeout(longPressTimerRef.current);
+      longPressTimerRef.current = null;
+    }
+  };
+
+  const startLongPress = (matchId: string) => {
+    if (matchTab !== "upcoming" || selectedMatchId) return;
+    longPressTriggeredRef.current = false;
+    clearLongPressTimer();
+    longPressTimerRef.current = window.setTimeout(() => {
+      longPressTriggeredRef.current = true;
+      enterSelectionMode(matchId);
+    }, 500);
+  };
+
+  const handleBulkCancel = async () => {
+    if (selectedMatchIds.size === 0) return;
+    if (
+      !confirm(
+        `Cancel ${selectedMatchIds.size} match${selectedMatchIds.size === 1 ? "" : "es"}? All registered players will receive a refund.`,
+      )
+    ) {
+      return;
+    }
+    setBulkCancelling(true);
+    let successCount = 0;
+    let failureCount = 0;
+    for (const id of Array.from(selectedMatchIds)) {
+      try {
+        const res = await fetch(`/api/admin/matches/${id}/cancel`, { method: "POST" });
+        if (res.ok) successCount += 1;
+        else failureCount += 1;
+      } catch {
+        failureCount += 1;
+      }
+    }
+    setBulkCancelling(false);
+    exitSelectionMode();
+    onSuccess({ silent: true });
+    alert(
+      `Cancelled ${successCount} match${successCount === 1 ? "" : "es"}` +
+        (failureCount ? ` (${failureCount} failed)` : "") +
+        ".",
+    );
+  };
+
+  const handleMatchCardClick = (matchId: string, canSelect: boolean) => {
+    if (longPressTriggeredRef.current) {
+      longPressTriggeredRef.current = false;
+      return;
+    }
+    if (selectionMode && canSelect) {
+      toggleMatchSelection(matchId);
+      return;
+    }
+    if (!selectionMode) {
+      setSelectedMatchId(matchId);
+    }
+  };
 
   const getMatchBanner = (m: Match) => {
     if (m.image) {
@@ -1311,7 +1467,7 @@ function MatchesSection({
                 <p className="text-slate-400 text-sm">Review players registration, details and map parameters.</p>
               </div>
             </div>
-            {!selectedMatchId && (
+            {!selectedMatchId && !selectionMode && (
               <div className="flex flex-col gap-2 shrink-0">
                 <button
                   type="button"
@@ -1352,7 +1508,11 @@ function MatchesSection({
                     <button
                       key={t}
                       type="button"
-                      onClick={() => { setMatchTab(t); setSelectedMatchId(null); }}
+                      onClick={() => {
+                        setMatchTab(t);
+                        setSelectedMatchId(null);
+                        exitSelectionMode();
+                      }}
                       className={`rounded-full px-3.5 py-2 text-xs font-semibold sm:px-5 sm:text-sm ${
                         matchTab === t
                           ? "bg-green-600 text-white"
@@ -1369,13 +1529,57 @@ function MatchesSection({
                     No {matchTab} matches recorded under this mode.
                   </div>
                 ) : (
-                  <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-6">
+                  <>
+                    {selectionMode && (
+                      <div className="flex justify-end">
+                        <button
+                          type="button"
+                          onClick={handleBulkCancel}
+                          disabled={bulkCancelling || selectedMatchIds.size === 0}
+                          className="rounded-xl bg-red-600 hover:bg-red-500 disabled:opacity-50 disabled:cursor-not-allowed px-5 py-2.5 text-sm font-semibold text-white transition"
+                        >
+                          {bulkCancelling
+                            ? "Cancelling..."
+                            : selectedMatchIds.size > 0
+                              ? `Cancel ${selectedMatchIds.size} Match${selectedMatchIds.size === 1 ? "" : "es"}`
+                              : "Cancel Selected"}
+                        </button>
+                      </div>
+                    )}
+
+                    <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-6">
                     {tabMatches.map((m) => {
                       const spotsTaken = m.participantCount ?? 0;
                       const maxParticipants = m.maxParticipants ?? 100;
                       const spotsLeft = Math.max(0, maxParticipants - spotsTaken);
+                      const isSelected = selectedMatchIds.has(m.id);
+                      const canSelect = matchTab === "upcoming" && m.status === "upcoming";
                       return (
-                        <div key={m.id} className="admin-content-card rounded-2xl overflow-hidden hover:border-green-500/30 transition flex flex-col">
+                        <div
+                          key={m.id}
+                          className={`admin-content-card relative rounded-2xl overflow-hidden transition flex flex-col cursor-pointer ${
+                            isSelected
+                              ? "ring-2 ring-green-500 border-green-500/50"
+                              : "hover:border-green-500/30"
+                          }`}
+                          onClick={() => handleMatchCardClick(m.id, canSelect)}
+                          onContextMenu={(e) => {
+                            if (!canSelect) return;
+                            e.preventDefault();
+                            enterSelectionMode(m.id);
+                          }}
+                          onMouseDown={() => canSelect && !selectionMode && startLongPress(m.id)}
+                          onMouseUp={clearLongPressTimer}
+                          onMouseLeave={clearLongPressTimer}
+                          onTouchStart={() => canSelect && !selectionMode && startLongPress(m.id)}
+                          onTouchEnd={clearLongPressTimer}
+                          onTouchCancel={clearLongPressTimer}
+                        >
+                          {isSelected && (
+                            <div className="absolute top-3 right-3 z-10 flex h-7 w-7 items-center justify-center rounded-full bg-green-500 text-white text-sm font-bold shadow-lg">
+                              ✓
+                            </div>
+                          )}
                           {/* 1. Banner image */}
                           <div className="relative aspect-[16/9] w-full bg-slate-950 overflow-hidden">
                             <img
@@ -1403,7 +1607,7 @@ function MatchesSection({
                           {/* 3. Stats Grid */}
                           <div className="p-4 grid grid-cols-3 gap-y-4 gap-x-2 text-center border-b border-slate-800/60 bg-slate-900/10">
                             {/* Prize Pool */}
-                            <div className="cursor-pointer select-none" onClick={() => setExpandedMatchId(expandedMatchId === m.id ? null : m.id)}>
+                            <div className="cursor-pointer select-none" onClick={(e) => { e.stopPropagation(); setExpandedMatchId(expandedMatchId === m.id ? null : m.id); }}>
                               <p className="text-[10px] text-slate-500 font-bold uppercase tracking-wider">Prize Pool</p>
                               <div className="flex items-center justify-center gap-1 mt-1">
                                 <span className="text-xs">💵</span>
@@ -1485,18 +1689,39 @@ function MatchesSection({
                             </div>
 
                             {/* Button */}
-                            <button
-                              type="button"
-                              onClick={() => setSelectedMatchId(m.id)}
-                              className="w-full bg-green-600 hover:bg-green-500 text-white rounded-xl py-2.5 text-xs font-semibold transition"
-                            >
-                              Manage Match
-                            </button>
+                            {!selectionMode ? (
+                              <button
+                                type="button"
+                                onClick={(e) => {
+                                  e.stopPropagation();
+                                  setSelectedMatchId(m.id);
+                                }}
+                                className="w-full bg-green-600 hover:bg-green-500 text-white rounded-xl py-2.5 text-xs font-semibold transition"
+                              >
+                                Manage Match
+                              </button>
+                            ) : canSelect ? (
+                              <button
+                                type="button"
+                                onClick={(e) => {
+                                  e.stopPropagation();
+                                  toggleMatchSelection(m.id);
+                                }}
+                                className={`w-full rounded-xl py-2.5 text-xs font-semibold transition ${
+                                  isSelected
+                                    ? "bg-green-600/20 text-green-300 border border-green-500/40"
+                                    : "bg-slate-800 text-slate-300 border border-slate-700"
+                                }`}
+                              >
+                                {isSelected ? "Selected" : "Select"}
+                              </button>
+                            ) : null}
                           </div>
                         </div>
                       );
                     })}
-                  </div>
+                    </div>
+                  </>
                 )}
               </>
             )}
