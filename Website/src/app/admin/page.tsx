@@ -2,6 +2,7 @@
 
 import { useState, useEffect, useRef, useCallback } from "react";
 import { useRouter } from "next/navigation";
+import Image from "next/image";
 import { LoadingSpinner } from "@/components/ui";
 
 type Tab = "dashboard" | "modes" | "moneyorders" | "withdrawals" | "admins" | "notifications" | "appsettings" | "banners" | "referrals" | "users";
@@ -174,10 +175,19 @@ export default function AdminPage() {
               <path strokeLinecap="round" strokeLinejoin="round" d="M4 6h16M4 12h16M4 18h16" />
             </svg>
           </button>
-          <span className="text-lg font-black tracking-wider text-green-500 uppercase flex items-center gap-2">
-            👑 KiNG BATTLE
-            <span className="text-xs font-semibold px-2 py-0.5 rounded bg-green-500/10 text-green-400 border border-green-500/25 normal-case hidden sm:inline-block">Admin</span>
-          </span>
+          <div className="flex items-center gap-2">
+            <Image
+              src="/app-logo.jpg"
+              alt="King Battle"
+              width={36}
+              height={36}
+              className="h-9 w-9 rounded-full object-cover border border-green-500/25"
+              priority
+            />
+            <span className="text-xs font-semibold px-2 py-0.5 rounded bg-green-500/10 text-green-400 border border-green-500/25 normal-case hidden sm:inline-block">
+              Admin
+            </span>
+          </div>
         </div>
         
         {session && (
