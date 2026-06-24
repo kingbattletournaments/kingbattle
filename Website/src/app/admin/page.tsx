@@ -90,8 +90,8 @@ export default function AdminPage() {
       visibleTabs.push({ id: "presets", label: "Match Presets", icon: "📋" });
     }
     if (session.coinsAccess) {
-      visibleTabs.push({ id: "moneyorders", label: "Money Orders", icon: "💎" });
-      visibleTabs.push({ id: "withdrawals", label: "Withdrawal Requests", icon: "💸" });
+      visibleTabs.push({ id: "moneyorders", label: "Deposits", icon: "💎" });
+      visibleTabs.push({ id: "withdrawals", label: "Withdrawals", icon: "💸" });
     }
     if (session.isMasterAdmin) {
       visibleTabs.push({ id: "admins", label: "Admin", icon: "👥" });
@@ -2029,6 +2029,7 @@ function MatchPresetsSection({
   const [imageFile, setImageFile] = useState<File | null>(null);
   const [imagePreview, setImagePreview] = useState<string | null>(null);
   const [submitting, setSubmitting] = useState(false);
+  const [searchQuery, setSearchQuery] = useState("");
 
   const filteredModes = modes.filter((m) => !filterGameId || m.gameId === filterGameId);
   const visiblePresets = presets.filter((p) => {
@@ -2038,6 +2039,23 @@ function MatchPresetsSection({
       return modeIds.includes(p.gameModeId);
     }
     return true;
+  });
+
+  const modeLabel = (modeId: string) => {
+    const mode = modes.find((m) => m.id === modeId);
+    if (!mode) return modeId;
+    const game = games.find((g) => g.id === mode.gameId);
+    return `${game?.name ?? "?"} / ${mode.name}`;
+  };
+
+  const searchTrimmed = searchQuery.trim().toLowerCase();
+  const filteredPresets = visiblePresets.filter((p) => {
+    if (!searchTrimmed) return true;
+    return (
+      p.name.toLowerCase().includes(searchTrimmed) ||
+      p.title.toLowerCase().includes(searchTrimmed) ||
+      modeLabel(p.gameModeId).toLowerCase().includes(searchTrimmed)
+    );
   });
 
   const resetForm = () => {
@@ -2120,13 +2138,6 @@ function MatchPresetsSection({
     onSuccess();
   };
 
-  const modeLabel = (modeId: string) => {
-    const mode = modes.find((m) => m.id === modeId);
-    if (!mode) return modeId;
-    const game = games.find((g) => g.id === mode.gameId);
-    return `${game?.name ?? "?"} / ${mode.name}`;
-  };
-
   return (
     <div className="space-y-6">
       <div className="flex flex-col gap-4 sm:flex-row sm:items-center sm:justify-between">
@@ -2151,72 +2162,95 @@ function MatchPresetsSection({
 
       {view === "list" ? (
         <>
-          <div className="flex flex-wrap gap-3">
-            <select
-              value={filterGameId}
-              onChange={(e) => {
-                setFilterGameId(e.target.value);
-                setFilterModeId("");
-              }}
-              className="admin-input rounded-xl px-4 py-2.5 text-sm text-white outline-none"
-            >
-              <option value="">All games</option>
-              {games.map((g) => (
-                <option key={g.id} value={g.id}>{g.name}</option>
-              ))}
-            </select>
-            <select
-              value={filterModeId}
-              onChange={(e) => setFilterModeId(e.target.value)}
-              className="admin-input rounded-xl px-4 py-2.5 text-sm text-white outline-none"
-            >
-              <option value="">All modes</option>
-              {filteredModes.map((m) => (
-                <option key={m.id} value={m.id}>{m.name}</option>
-              ))}
-            </select>
+          <div className="flex flex-col gap-4 lg:flex-row lg:items-center lg:justify-between">
+            <div className="flex flex-wrap gap-3">
+              <select
+                value={filterGameId}
+                onChange={(e) => {
+                  setFilterGameId(e.target.value);
+                  setFilterModeId("");
+                }}
+                className="admin-input rounded-xl px-4 py-2.5 text-sm text-white outline-none"
+              >
+                <option value="">All games</option>
+                {games.map((g) => (
+                  <option key={g.id} value={g.id}>{g.name}</option>
+                ))}
+              </select>
+              <select
+                value={filterModeId}
+                onChange={(e) => setFilterModeId(e.target.value)}
+                className="admin-input rounded-xl px-4 py-2.5 text-sm text-white outline-none"
+              >
+                <option value="">All modes</option>
+                {filteredModes.map((m) => (
+                  <option key={m.id} value={m.id}>{m.name}</option>
+                ))}
+              </select>
+            </div>
+
+            <input
+              type="text"
+              placeholder="Search by preset, title, or mode..."
+              value={searchQuery}
+              onChange={(e) => setSearchQuery(e.target.value)}
+              className="admin-input rounded-xl px-4 py-2.5 text-sm w-full lg:w-72 outline-none"
+            />
           </div>
 
-          {visiblePresets.length === 0 ? (
-            <div className="rounded-xl border border-dashed border-slate-700 p-12 text-center text-slate-400 bg-slate-950/20">
-              No presets yet. Create one to schedule matches faster.
-            </div>
-          ) : (
-            <div className="admin-table-panel overflow-x-auto">
-              <table className="admin-table w-full min-w-[640px]">
-                <thead>
-                  <tr>
-                    <th>Preset name</th>
-                    <th>Mode</th>
-                    <th>Title</th>
-                    <th>Entry</th>
-                    <th>Type</th>
-                    <th></th>
-                  </tr>
-                </thead>
-                <tbody>
-                  {visiblePresets.map((p) => (
-                    <tr key={p.id}>
-                      <td className="font-medium text-white">{p.name}</td>
-                      <td>{modeLabel(p.gameModeId)}</td>
-                      <td>{p.title}</td>
-                      <td>{p.entryFee} coins</td>
-                      <td className="capitalize">{p.matchType ?? "solo"}</td>
-                      <td>
-                        <button
-                          type="button"
-                          onClick={() => handleDelete(p.id)}
-                          className="text-rose-400 hover:text-rose-300 text-sm"
-                        >
-                          Delete
-                        </button>
-                      </td>
+          <section className="admin-table-panel w-full">
+            {filteredPresets.length === 0 ? (
+              <p className="py-12 text-center text-sm text-slate-400">
+                {visiblePresets.length === 0
+                  ? "No presets yet. Create one to schedule matches faster."
+                  : "No presets match your search."}
+              </p>
+            ) : (
+              <div className="excel-table-container">
+                <table className="excel-table">
+                  <thead>
+                    <tr>
+                      <th className="text-left">Preset Name</th>
+                      <th className="text-left">Game / Mode</th>
+                      <th className="text-left">Match Title</th>
+                      <th className="text-right">Entry Fee</th>
+                      <th className="text-right">Max Players</th>
+                      <th className="text-center">Type</th>
+                      <th className="text-right">Action</th>
                     </tr>
-                  ))}
-                </tbody>
-              </table>
-            </div>
-          )}
+                  </thead>
+                  <tbody>
+                    {filteredPresets.map((p) => (
+                      <tr key={p.id}>
+                        <td className="font-semibold text-white">{p.name}</td>
+                        <td>
+                          <p className="font-medium text-slate-300">{modeLabel(p.gameModeId)}</p>
+                          <p className="text-xs text-slate-500 font-mono mt-0.5">{p.gameModeId}</p>
+                        </td>
+                        <td className="text-slate-300">{p.title}</td>
+                        <td className="text-right font-medium text-amber-300">💵 {p.entryFee}</td>
+                        <td className="text-right font-medium text-white">{p.maxParticipants}</td>
+                        <td className="text-center">
+                          <span className="inline-block px-2.5 py-1 text-xs font-semibold rounded-full bg-slate-700/50 text-slate-200 border border-slate-600/50 capitalize">
+                            {p.matchType ?? "solo"}
+                          </span>
+                        </td>
+                        <td className="text-right">
+                          <button
+                            type="button"
+                            onClick={() => handleDelete(p.id)}
+                            className="bg-rose-600/90 hover:bg-rose-500 text-white rounded-lg px-3 py-1.5 text-xs font-medium transition"
+                          >
+                            Delete
+                          </button>
+                        </td>
+                      </tr>
+                    ))}
+                  </tbody>
+                </table>
+              </div>
+            )}
+          </section>
         </>
       ) : (
         <>
@@ -3644,7 +3678,7 @@ function MoneyOrdersSection({
     <div className="space-y-6">
       <div className="flex flex-col gap-4 sm:flex-row sm:items-center sm:justify-between">
         <div>
-          <h1 className="text-2xl font-bold text-white mb-1">Money Orders</h1>
+          <h1 className="text-2xl font-bold text-white mb-1">Deposits</h1>
           <p className="text-slate-400 text-sm">View successful deposits processed automatically via ZapUPI Payment Gateway.</p>
         </div>
 
@@ -3659,7 +3693,7 @@ function MoneyOrdersSection({
 
       <div className="admin-table-panel w-full">
         {filtered.length === 0 ? (
-          <p className="py-12 text-center text-sm text-slate-400">No successful money orders found</p>
+          <p className="py-12 text-center text-sm text-slate-400">No successful deposits found</p>
         ) : (
           <div className="excel-table-container">
             <table className="excel-table">
@@ -3806,7 +3840,7 @@ function WithdrawalsSection({
   return (
     <div className="space-y-6">
       <div>
-        <h1 className="text-2xl font-bold text-white mb-1">Withdrawal Requests</h1>
+        <h1 className="text-2xl font-bold text-white mb-1">Withdrawals</h1>
         <p className="text-slate-400 text-sm">Review players' payouts, verify their UPI IDs, and handle payouts.</p>
       </div>
 
@@ -3866,7 +3900,7 @@ function WithdrawalsSection({
 
       <div className="admin-table-panel w-full">
         {filtered.length === 0 ? (
-          <p className="py-12 text-center text-sm text-slate-400">No withdrawal requests found</p>
+          <p className="py-12 text-center text-sm text-slate-400">No withdrawals found</p>
         ) : (
           <div className="excel-table-container">
             <table className="excel-table">
