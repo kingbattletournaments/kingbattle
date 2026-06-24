@@ -30,6 +30,8 @@ export function buildMatchScheduleTimes(
   return times;
 }
 
+import { formatMatchDateTime } from "./format-match-datetime";
+
 export function formatSchedulePreviewTime(d: Date): string {
-  return d.toLocaleTimeString([], { hour: "2-digit", minute: "2-digit", hour12: false });
+  return formatMatchDateTime(d);
 }

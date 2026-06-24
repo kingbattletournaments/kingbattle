@@ -40,6 +40,7 @@ import androidx.compose.foundation.pager.HorizontalPager
 import androidx.compose.foundation.pager.rememberPagerState
 import kotlinx.coroutines.launch
 import com.kingbattle.R
+import com.kingbattle.util.MatchDateTimeFormatter
 import com.kingbattle.domain.model.Match
 import com.kingbattle.presentation.home.ThemeDarkBg
 import com.kingbattle.presentation.home.ThemeCardBg
@@ -409,7 +410,7 @@ fun MatchCard(
                     )
                     Spacer(modifier = Modifier.height(2.dp))
                     Text(
-                        text = match.starts_at,
+                        text = MatchDateTimeFormatter.format(match.starts_at),
                         color = Color(0xFF64748B),
                         fontSize = 11.sp,
                         fontWeight = FontWeight.Medium

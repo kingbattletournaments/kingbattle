@@ -33,7 +33,7 @@ import android.content.Context
 import androidx.hilt.navigation.compose.hiltViewModel
 import coil.compose.AsyncImage
 import com.kingbattle.R
-import com.kingbattle.data.local.TokenManager
+import com.kingbattle.util.MatchDateTimeFormatter
 import androidx.compose.material3.TabRowDefaults.tabIndicatorOffset
 import com.kingbattle.domain.model.Match
 import com.kingbattle.domain.model.Participant
@@ -502,7 +502,7 @@ fun DescriptionTabContent(match: Match, isJoined: Boolean = false) {
         // Details Grid Row 3
         DetailGridCard(
             label = "Match Schedule",
-            value = match.starts_at,
+            value = MatchDateTimeFormatter.format(match.starts_at),
             modifier = Modifier.fillMaxWidth()
         )
 

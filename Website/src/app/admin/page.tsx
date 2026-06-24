@@ -4,7 +4,8 @@ import { useState, useEffect, useRef, useCallback } from "react";
 import { useRouter } from "next/navigation";
 import Image from "next/image";
 import { LoadingSpinner } from "@/components/ui";
-import { buildMatchScheduleTimes, formatSchedulePreviewTime } from "@/lib/match-preset-schedule";
+import { buildMatchScheduleTimes } from "@/lib/match-preset-schedule";
+import { formatMatchDateTime } from "@/lib/format-match-datetime";
 
 type Tab = "dashboard" | "modes" | "presets" | "moneyorders" | "withdrawals" | "admins" | "notifications" | "appsettings" | "banners" | "referrals" | "users";
 type Game = { id: string; name: string; imageUrl: string | null };
@@ -1394,7 +1395,7 @@ function MatchesSection({
                             <div className="min-w-0 flex-1">
                               <h4 className="font-bold text-white text-sm truncate" title={m.title}>{m.title}</h4>
                               <p className="text-xs text-slate-500 font-medium mt-0.5">
-                                Starts: {m.scheduledAt ? new Date(m.scheduledAt).toLocaleString() : "TBD"}
+                                Starts: {formatMatchDateTime(m.scheduledAt)}
                               </p>
                             </div>
                           </div>
@@ -1588,7 +1589,7 @@ function MatchesSection({
                       {presetSchedulePreview.length} match{presetSchedulePreview.length === 1 ? "" : "es"} will be created at:
                     </p>
                     <p className="text-sm text-slate-400">
-                      {presetSchedulePreview.map(formatSchedulePreviewTime).join(", ")}
+                      {presetSchedulePreview.map(formatMatchDateTime).join(", ")}
                     </p>
                   </div>
                 )}
@@ -2312,7 +2313,7 @@ function MatchDetailView({
           <span className="rounded bg-slate-600/50 px-3 py-1 text-xs text-amber-400">{match.entryFee} coins</span>
         </div>
         <p className="mt-2 text-sm text-slate-400">
-          {gameName} • Scheduled: {match.scheduledAt ? new Date(match.scheduledAt).toLocaleString() : "TBD"}
+          {gameName} • Scheduled: {formatMatchDateTime(match.scheduledAt)}
         </p>
       </div>
 
