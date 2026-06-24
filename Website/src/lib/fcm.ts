@@ -22,7 +22,7 @@ export async function sendPushToTokens(
   title: string,
   body: string,
   link?: string | null,
-): Promise<SendPushResult> {
+): Promise<SendPushResult & { errors?: string[] }> {
   const messaging = getFirebaseMessaging();
   if (!messaging) {
     throw new Error(getFirebaseConfigError() ?? "Firebase messaging unavailable");
@@ -35,24 +35,35 @@ export async function sendPushToTokens(
 
   let successCount = 0;
   let failureCount = 0;
+  const errors: string[] = [];
+
+  const dataPayload: Record<string, string> = {
+    title,
+    body,
+    ...(link ? { link } : {}),
+  };
 
   for (let i = 0; i < uniqueTokens.length; i += BATCH_SIZE) {
     const batch = uniqueTokens.slice(i, i + BATCH_SIZE);
+    // Data-only + high priority so Android always calls onMessageReceived and our app shows the notification.
     const response = await messaging.sendEachForMulticast({
       tokens: batch,
-      notification: { title, body },
-      data: link ? { title, body, link } : { title, body },
+      data: dataPayload,
       android: {
         priority: "high",
-        notification: {
-          channelId: "king_battle_notifications",
-          priority: "high",
-        },
+        ttl: 86_400_000,
       },
     });
     successCount += response.successCount;
     failureCount += response.failureCount;
+    response.responses.forEach((resp, index) => {
+      if (!resp.success && resp.error) {
+        const msg = `${resp.error.code}: ${resp.error.message} (token …${batch[index]?.slice(-8) ?? "?"})`;
+        errors.push(msg);
+        console.error("FCM delivery error:", msg);
+      }
+    });
   }
 
-  return { successCount, failureCount, totalTokens: uniqueTokens.length };
+  return { successCount, failureCount, totalTokens: uniqueTokens.length, errors };
 }

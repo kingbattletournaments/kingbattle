@@ -47,6 +47,7 @@ class MainActivity : ComponentActivity() {
         super.onCreate(savedInstanceState)
         enableEdgeToEdge()
 
+        com.kingbattle.util.NotificationHelper.createNotificationChannel(this)
         fetchAndSyncFcmToken()
         askNotificationPermission()
 
@@ -56,6 +57,13 @@ class MainActivity : ComponentActivity() {
                     RootNavigation()
                 }
             }
+        }
+    }
+
+    override fun onResume() {
+        super.onResume()
+        if (tokenManager.isLoggedIn()) {
+            fetchAndSyncFcmToken()
         }
     }
 
