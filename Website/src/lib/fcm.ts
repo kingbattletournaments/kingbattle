@@ -34,6 +34,7 @@ export async function sendPushToTokens(
   body: string,
   link?: string | null,
   targetedUsers?: { userId: string; tokenSuffix: string }[],
+  extraData?: Record<string, string>,
 ): Promise<SendPushResult> {
   const messaging = getFirebaseMessaging();
   if (!messaging) {
@@ -60,6 +61,7 @@ export async function sendPushToTokens(
         title,
         body,
         ...(link ? { link } : {}),
+        ...(extraData ?? {}),
       },
       android: {
         priority: "high",

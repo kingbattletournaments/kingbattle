@@ -1453,6 +1453,12 @@ export const adminStore = {
       })
       .map((u) => ({ userId: u.id, token: (u as { fcmToken: string }).fcmToken }));
   },
+  getFcmTokensForUserIds: (userIds: string[]) => {
+    const idSet = new Set(userIds.filter(Boolean));
+    return users
+      .filter((u) => idSet.has(u.id) && !u.isBlocked && (u as { fcmToken?: string }).fcmToken)
+      .map((u) => ({ userId: u.id, token: (u as { fcmToken: string }).fcmToken }));
+  },
   listFcmDeviceRegistrations: () => {
     return users
       .filter((u) => (u as { fcmToken?: string }).fcmToken)

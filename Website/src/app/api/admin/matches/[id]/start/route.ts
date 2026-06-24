@@ -1,6 +1,7 @@
 import { NextResponse } from "next/server";
 import { getStore } from "@/lib/store";
 import { getAdminSession } from "@/lib/admin-auth";
+import { notifyMatchParticipantsRoomInfo } from "@/lib/match-notifications";
 
 async function checkMatchAccess(adminId: string, matchId: string): Promise<boolean> {
   const store = getStore();
@@ -40,10 +41,29 @@ export async function POST(
       { status: 400 }
     );
   }
+
+  const participantUserIds = (match.participants ?? []).map((p) => p.userId);
+
   const updated = await store.startMatch(id, roomCode, roomPassword);
   if (!updated) {
     return NextResponse.json({ error: "Match not found or not upcoming" }, { status: 404 });
   }
   const full = await store.getMatch(id);
-  return NextResponse.json(full ?? updated);
+
+  let notifications = { attempted: 0, successCount: 0, failureCount: 0, skippedNoToken: 0 };
+  try {
+    notifications = await notifyMatchParticipantsRoomInfo({
+      matchId: id,
+      matchTitle: full?.title ?? updated.title,
+      roomCode,
+      roomPassword,
+      participantUserIds,
+      getTokensForUsers: (userIds) => store.getFcmTokensForUserIds(userIds),
+      clearInvalidToken: (token) => store.clearFcmTokenByValue(token),
+    });
+  } catch (error) {
+    console.error("Match start push notification failed:", error);
+  }
+
+  return NextResponse.json({ ...(full ?? updated), notifications });
 }

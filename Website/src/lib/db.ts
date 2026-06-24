@@ -1631,6 +1631,26 @@ export const db = {
       .map((row) => ({ userId: row.username, token: row.fcm_token as string }));
   },
 
+  async getFcmTokensForUserIds(userIds: string[]): Promise<{ userId: string; token: string }[]> {
+    const supabase = getSupabase();
+    if (!supabase) return [];
+    const uniqueUserIds = Array.from(new Set(userIds.filter(Boolean)));
+    if (uniqueUserIds.length === 0) return [];
+    const { data, error } = await supabase
+      .from("app_users")
+      .select("username, fcm_token, is_blocked")
+      .in("username", uniqueUserIds)
+      .not("fcm_token", "is", null)
+      .eq("is_blocked", false);
+    if (error || !data) {
+      console.error("getFcmTokensForUserIds failed:", error?.message ?? "no data");
+      return [];
+    }
+    return data
+      .filter((row) => row.fcm_token)
+      .map((row) => ({ userId: row.username as string, token: row.fcm_token as string }));
+  },
+
   async listFcmDeviceRegistrations(): Promise<
     { userId: string; tokenSuffix: string; isBlocked: boolean }[]
   > {

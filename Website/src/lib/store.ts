@@ -106,6 +106,7 @@ export function getStore() {
       clearFcmToken: (userId: string) => db.clearFcmToken(userId),
       clearFcmTokenByValue: (token: string) => db.clearFcmTokenByValue(token),
       getFcmTokensForTarget: (target: "all" | "active" | "blocked") => db.getFcmTokensForTarget(target),
+      getFcmTokensForUserIds: (userIds: string[]) => db.getFcmTokensForUserIds(userIds),
       listFcmDeviceRegistrations: () => db.listFcmDeviceRegistrations(),
       matchPresets: (modeId?: string) => db.matchPresets(modeId),
       getMatchPreset: (id: string) => db.getMatchPreset(id),
@@ -258,6 +259,8 @@ export function getStore() {
     clearFcmTokenByValue: (token: string) => Promise.resolve(adminStore.clearFcmTokenByValue(token)),
     getFcmTokensForTarget: (target: "all" | "active" | "blocked") =>
       Promise.resolve(adminStore.getFcmTokensForTarget(target)),
+    getFcmTokensForUserIds: (userIds: string[]) =>
+      Promise.resolve(adminStore.getFcmTokensForUserIds(userIds)),
     listFcmDeviceRegistrations: () => Promise.resolve(adminStore.listFcmDeviceRegistrations()),
     matchPresets: (modeId?: string) => Promise.resolve(adminStore.matchPresets(modeId)),
     getMatchPreset: (id: string) => Promise.resolve(adminStore.getMatchPreset(id)),
