@@ -5,6 +5,7 @@
 
 import { adminStore } from "./admin-store";
 import { db, isDbConfigured } from "./db";
+import type { AdminTabAccess } from "./admin-tabs";
 
 export function getStore() {
   if (isDbConfigured()) {
@@ -94,7 +95,7 @@ export function getStore() {
       getCustomerSupportUrl: () => db.getCustomerSupportUrl(),
       setCustomerSupportUrl: (url: string | null) => db.setCustomerSupportUrl(url),
       getAllAdmins: () => db.getAllAdmins(),
-      createAdmin: (adminname: string, password: string, opts: { usersAccess: boolean; coinsAccess: boolean; gamesAccessType: "all" | "specific"; allowedGameIds: string[] }) =>
+      createAdmin: (adminname: string, password: string, opts: { tabAccess: Partial<AdminTabAccess> }) =>
         db.createAdmin(adminname, password, opts),
       deleteAdmin: (id: string) => db.deleteAdmin(id),
       updateAdminPassword: (id: string, newPassword: string) => db.updateAdminPassword(id, newPassword),
@@ -192,7 +193,7 @@ export function getStore() {
     updateParticipantRank: (matchId: string, participantId: string, rank: number) =>
       Promise.resolve(adminStore.updateParticipantRank(matchId, participantId, rank)),
     getAllAdmins: () => Promise.resolve(adminStore.getAllAdmins()),
-    createAdmin: (adminname: string, password: string, opts: { usersAccess: boolean; coinsAccess: boolean; gamesAccessType: "all" | "specific"; allowedGameIds: string[] }) =>
+    createAdmin: (adminname: string, password: string, opts: { tabAccess: Partial<AdminTabAccess> }) =>
       Promise.resolve(adminStore.createAdmin(adminname, password, opts)),
     deleteAdmin: (id: string) => Promise.resolve(adminStore.deleteAdmin(id)),
     updateAdminPassword: (id: string, newPassword: string) => Promise.resolve(adminStore.updateAdminPassword(id, newPassword)),

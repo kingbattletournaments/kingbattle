@@ -109,7 +109,25 @@ fun RootNavigation() {
             com.kingbattle.presentation.wallet.WalletScreen(
                 onNavigateBack = {
                     navController.popBackStack()
+                },
+                onNavigateToDeposit = {
+                    navController.navigate(Screen.WalletDeposit.route)
+                },
+                onNavigateToWithdraw = {
+                    navController.navigate(Screen.WalletWithdraw.route)
                 }
+            )
+        }
+
+        composable(Screen.WalletDeposit.route) {
+            com.kingbattle.presentation.wallet.WalletDepositScreen(
+                onNavigateBack = { navController.popBackStack() }
+            )
+        }
+
+        composable(Screen.WalletWithdraw.route) {
+            com.kingbattle.presentation.wallet.WalletWithdrawScreen(
+                onNavigateBack = { navController.popBackStack() }
             )
         }
 
@@ -173,5 +191,7 @@ sealed class Screen(val route: String) {
     }
     object Profile : Screen("profile")
     object Wallet : Screen("wallet")
+    object WalletDeposit : Screen("wallet/deposit")
+    object WalletWithdraw : Screen("wallet/withdraw")
     object Transactions : Screen("transactions")
 }

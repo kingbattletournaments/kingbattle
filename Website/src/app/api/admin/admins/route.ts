@@ -1,46 +1,50 @@
 import { NextResponse } from "next/server";
 import { getStore } from "@/lib/store";
 import { getAdminSession } from "@/lib/admin-auth";
+import { adminClientPayload, canAccessAdminTab, emptyTabAccess, type AdminTabAccess } from "@/lib/admin-tabs";
 
 export async function GET() {
   const admin = await getAdminSession();
   if (!admin) {
     return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
   }
-  if (!admin.isMasterAdmin) {
-    return NextResponse.json({ error: "Master admin only" }, { status: 403 });
+  if (!canAccessAdminTab(admin, "admins")) {
+    return NextResponse.json({ error: "Admin tab access required" }, { status: 403 });
   }
   const admins = await getStore().getAllAdmins();
-  return NextResponse.json(admins);
+  return NextResponse.json(
+    admins.map((a) => ({
+      ...adminClientPayload(a),
+      createdAt: a.createdAt,
+    }))
+  );
 }
 
 export async function POST(request: Request) {
   const admin = await getAdminSession();
-  if (!admin || !admin.isMasterAdmin) {
-    return NextResponse.json({ error: "Master admin only" }, { status: 403 });
+  if (!admin || !canAccessAdminTab(admin, "admins")) {
+    return NextResponse.json({ error: "Admin tab access required" }, { status: 403 });
   }
   const body = await request.json();
-  const { adminname, password, usersAccess, coinsAccess, gamesAccessType, allowedGameIds } = body;
+  const { adminname, password, tabAccess } = body as {
+    adminname?: string;
+    password?: string;
+    tabAccess?: Partial<AdminTabAccess>;
+  };
   if (!adminname || !password) {
     return NextResponse.json({ error: "Admin name and password required" }, { status: 400 });
   }
-  const newAdmin = await getStore().createAdmin(adminname, password, {
-    usersAccess: !!usersAccess,
-    coinsAccess: !!coinsAccess,
-    gamesAccessType: gamesAccessType === "specific" ? "specific" : "all",
-    allowedGameIds: Array.isArray(allowedGameIds) ? allowedGameIds : [],
-  });
+  const mergedTabAccess = { ...emptyTabAccess(), ...(tabAccess ?? {}) };
+  const hasAnyTab = Object.values(mergedTabAccess).some(Boolean);
+  if (!hasAnyTab) {
+    return NextResponse.json({ error: "Select at least one tab permission" }, { status: 400 });
+  }
+  const newAdmin = await getStore().createAdmin(adminname, password, { tabAccess: mergedTabAccess });
   if (!newAdmin) {
     return NextResponse.json({ error: "Admin name already exists" }, { status: 400 });
   }
   return NextResponse.json({
-    id: newAdmin.id,
-    adminname: newAdmin.adminname,
-    isMasterAdmin: newAdmin.isMasterAdmin,
-    usersAccess: newAdmin.usersAccess,
-    coinsAccess: newAdmin.coinsAccess,
-    gamesAccessType: newAdmin.gamesAccessType,
-    allowedGameIds: newAdmin.allowedGameIds,
+    ...adminClientPayload(newAdmin),
     createdAt: newAdmin.createdAt,
   });
 }

@@ -1,6 +1,7 @@
 import { NextResponse } from "next/server";
 import { getStore } from "@/lib/store";
 import { getAdminSession } from "@/lib/admin-auth";
+import { canAccessAdminTab } from "@/lib/admin-tabs";
 
 export async function POST(
   request: Request,
@@ -8,7 +9,7 @@ export async function POST(
 ) {
   const admin = await getAdminSession();
   if (!admin) return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
-  if (!admin.isMasterAdmin) return NextResponse.json({ error: "Master admin only" }, { status: 403 });
+  if (!canAccessAdminTab(admin, "admins")) return NextResponse.json({ error: "Admin tab access required" }, { status: 403 });
   const { id } = await params;
   const body = await request.json();
   const { newPassword } = body;

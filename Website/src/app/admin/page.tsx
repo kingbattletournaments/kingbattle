@@ -6,6 +6,15 @@ import Image from "next/image";
 import { LoadingSpinner } from "@/components/ui";
 import { buildMatchScheduleTimes } from "@/lib/match-preset-schedule";
 import { formatMatchDateTime } from "@/lib/format-match-datetime";
+import {
+  ADMIN_TAB_DEFINITIONS,
+  ALL_ADMIN_TAB_IDS,
+  canAccessAdminTab,
+  emptyTabAccess,
+  tabAccessLabel,
+  type AdminTabAccess,
+  type AdminTabId,
+} from "@/lib/admin-tabs";
 
 type Tab = "dashboard" | "modes" | "presets" | "moneyorders" | "withdrawals" | "admins" | "notifications" | "appsettings" | "banners" | "referrals" | "users";
 type Game = { id: string; name: string; imageUrl: string | null };
@@ -52,6 +61,7 @@ type AdminSession = {
   coinsAccess: boolean;
   gamesAccessType: "all" | "specific";
   allowedGameIds: string[];
+  tabAccess: AdminTabAccess;
 };
 
 type MatchBulkSelectControls = {
@@ -82,57 +92,20 @@ export default function AdminPage() {
   const hasSpecificGameAccess = session?.gamesAccessType === "specific" && !session?.isMasterAdmin;
   const hasSingleGameAccess = hasSpecificGameAccess && session && session.allowedGameIds.length === 1;
 
-  const visibleTabs: { id: Tab; label: string; icon: string }[] = [];
-  if (session) {
-    visibleTabs.push({ id: "dashboard", label: "Dashboard", icon: "📊" });
-    if (session.isMasterAdmin || session.gamesAccessType === "all" || session.allowedGameIds.length > 0) {
-      visibleTabs.push({ id: "modes", label: "Modes", icon: "🎮" });
-      visibleTabs.push({ id: "presets", label: "Match Presets", icon: "📋" });
-    }
-    if (session.coinsAccess) {
-      visibleTabs.push({ id: "moneyorders", label: "Deposits", icon: "💎" });
-      visibleTabs.push({ id: "withdrawals", label: "Withdrawals", icon: "💸" });
-    }
-    if (session.isMasterAdmin) {
-      visibleTabs.push({ id: "admins", label: "Admin", icon: "👥" });
-    }
-    if (session.isMasterAdmin || session.usersAccess) {
-      visibleTabs.push({ id: "users", label: "Users", icon: "👤" });
-      visibleTabs.push({ id: "notifications", label: "Push Notifications", icon: "📢" });
-    }
-    if (session.isMasterAdmin) {
-      visibleTabs.push({ id: "appsettings", label: "App Setting", icon: "⚙️" });
-      visibleTabs.push({ id: "referrals", label: "Referrals", icon: "🔗" });
-    }
-    if (session.isMasterAdmin || session.coinsAccess) {
-      visibleTabs.push({ id: "banners", label: "Banners", icon: "🖼️" });
-    }
-  }
+  const visibleTabs: { id: Tab; label: string; icon: string }[] = session
+    ? [
+        { id: "dashboard", label: "Dashboard", icon: "📊" },
+        ...ADMIN_TAB_DEFINITIONS.filter((def) => canAccessAdminTab(session, def.id)).map((def) => ({
+          id: def.id as Tab,
+          label: def.label,
+          icon: def.icon,
+        })),
+      ]
+    : [];
 
   useEffect(() => {
     if (!session) return;
-    const hasGames = session.isMasterAdmin || session.gamesAccessType === "all" || session.allowedGameIds.length > 0;
-    const validTabs: Tab[] = ["dashboard"];
-    if (hasGames) {
-      validTabs.push("modes");
-      validTabs.push("presets");
-    }
-    if (session.coinsAccess) {
-      validTabs.push("moneyorders");
-      validTabs.push("withdrawals");
-    }
-    if (session.isMasterAdmin) {
-      validTabs.push("admins");
-      validTabs.push("appsettings");
-      validTabs.push("referrals");
-    }
-    if (session.isMasterAdmin || session.coinsAccess) {
-      validTabs.push("banners");
-    }
-    if (session.isMasterAdmin || session.usersAccess) {
-      validTabs.push("notifications");
-      validTabs.push("users");
-    }
+    const validTabs: Tab[] = ["dashboard", ...ALL_ADMIN_TAB_IDS.filter((id) => canAccessAdminTab(session, id))];
     setTab((prev) => (validTabs.length > 0 && !validTabs.includes(prev) ? "dashboard" : prev));
   }, [session]);
 
@@ -156,9 +129,11 @@ export default function AdminPage() {
         fetch("/api/admin/modes"),
         fetch("/api/admin/matches"),
         fetch("/api/admin/match-presets"),
-        (sessionData.admin.usersAccess || sessionData.admin.coinsAccess) ? fetch("/api/admin/users") : Promise.resolve(null),
-        sessionData.admin.coinsAccess ? fetch("/api/admin/deposits") : Promise.resolve(null),
-        sessionData.admin.coinsAccess ? fetch("/api/admin/withdrawals") : Promise.resolve(null),
+        (canAccessAdminTab(sessionData.admin, "users") || canAccessAdminTab(sessionData.admin, "moneyorders") || canAccessAdminTab(sessionData.admin, "withdrawals"))
+          ? fetch("/api/admin/users")
+          : Promise.resolve(null),
+        canAccessAdminTab(sessionData.admin, "moneyorders") ? fetch("/api/admin/deposits") : Promise.resolve(null),
+        canAccessAdminTab(sessionData.admin, "withdrawals") ? fetch("/api/admin/withdrawals") : Promise.resolve(null),
       ]);
       
       if (gRes.ok) setGames(await gRes.json());
@@ -392,9 +367,8 @@ export default function AdminPage() {
                 />
               )}
               
-              {tab === "admins" && session?.isMasterAdmin && (
+              {tab === "admins" && session && canAccessAdminTab(session, "admins") && (
                 <CreateAdminSection
-                  games={games}
                   onSuccess={() => { fetchData(); showMsg("ok", "Admin created"); }}
                 />
               )}
@@ -417,10 +391,10 @@ export default function AdminPage() {
                 <ReferralsSection />
               )}
 
-              {tab === "users" && (session?.isMasterAdmin || session?.usersAccess) && (
+              {tab === "users" && session && canAccessAdminTab(session, "users") && (
                 <UsersSection
                   users={users}
-                  canAddCoins={!!session?.coinsAccess}
+                  canAddCoins={canAccessAdminTab(session, "moneyorders") || canAccessAdminTab(session, "withdrawals")}
                   onSuccess={() => { fetchData(false); showMsg("ok", "Users list updated"); }}
                 />
               )}
@@ -2825,20 +2799,19 @@ type AdminListItem = {
   id: string;
   adminname: string;
   isMasterAdmin: boolean;
-  usersAccess: boolean;
-  coinsAccess: boolean;
-  gamesAccessType: string;
-  allowedGameIds: string[];
+  tabAccess: AdminTabAccess;
 };
+
+function enabledTabIds(tabAccess: AdminTabAccess): AdminTabId[] {
+  return ALL_ADMIN_TAB_IDS.filter((id) => tabAccess[id]);
+}
 
 function AdminProfileModal({
   admin,
-  games,
   onClose,
   onDelete,
 }: {
   admin: AdminListItem;
-  games: Game[];
   onClose: () => void;
   onDelete: () => void;
 }) {
@@ -2951,19 +2924,18 @@ function AdminProfileModal({
               </dd>
             </div>
             <div className="flex flex-col gap-1.5 sm:block">
-              <dt className="text-xs font-medium uppercase tracking-wider text-slate-500">Permissions</dt>
+              <dt className="text-xs font-medium uppercase tracking-wider text-slate-500">Tab access</dt>
               <dd className="flex flex-wrap gap-1.5">
-                {admin.usersAccess && <span className="rounded bg-slate-600/50 px-2 py-0.5 text-xs text-slate-300">Users</span>}
-                {admin.coinsAccess && <span className="rounded bg-slate-600/50 px-2 py-0.5 text-xs text-slate-300">Coins</span>}
-                {admin.gamesAccessType === "all" ? (
-                  <span className="rounded bg-slate-600/50 px-2 py-0.5 text-xs text-slate-300">All games</span>
+                {admin.isMasterAdmin ? (
+                  <span className="rounded bg-slate-600/50 px-2 py-0.5 text-xs text-slate-300">All tabs</span>
+                ) : enabledTabIds(admin.tabAccess).length > 0 ? (
+                  enabledTabIds(admin.tabAccess).map((id) => (
+                    <span key={id} className="rounded bg-slate-600/50 px-2 py-0.5 text-xs text-slate-300">
+                      {tabAccessLabel(id)}
+                    </span>
+                  ))
                 ) : (
-                  (admin.allowedGameIds ?? []).map((gid) => {
-                    const game = games.find((g) => g.id === gid);
-                    return game ? (
-                      <span key={gid} className="rounded bg-slate-600/50 px-2 py-0.5 text-xs text-slate-300">{game.name}</span>
-                    ) : null;
-                  })
+                  <span className="text-xs text-slate-500">No tabs assigned</span>
                 )}
               </dd>
             </div>
@@ -3008,18 +2980,13 @@ function AdminProfileModal({
 }
 
 function CreateAdminSection({
-  games,
   onSuccess,
 }: {
-  games: Game[];
   onSuccess: () => void;
 }) {
   const [adminname, setAdminname] = useState("");
   const [password, setPassword] = useState("");
-  const [usersAccess, setUsersAccess] = useState(false);
-  const [coinsAccess, setCoinsAccess] = useState(false);
-  const [gamesAccessType, setGamesAccessType] = useState<"all" | "specific">("all");
-  const [allowedGameIds, setAllowedGameIds] = useState<string[]>([]);
+  const [tabAccess, setTabAccess] = useState<AdminTabAccess>(() => emptyTabAccess());
   const [submitting, setSubmitting] = useState(false);
   const [error, setError] = useState("");
   const [admins, setAdmins] = useState<AdminListItem[]>([]);
@@ -3036,15 +3003,17 @@ function CreateAdminSection({
     refreshAdmins();
   }, [refreshAdmins]);
 
-  const toggleGame = (gameId: string) => {
-    setAllowedGameIds((prev) =>
-      prev.includes(gameId) ? prev.filter((id) => id !== gameId) : [...prev, gameId]
-    );
+  const toggleTab = (tabId: AdminTabId) => {
+    setTabAccess((prev) => ({ ...prev, [tabId]: !prev[tabId] }));
   };
 
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
     setError("");
+    if (!Object.values(tabAccess).some(Boolean)) {
+      setError("Select at least one tab permission");
+      return;
+    }
     setSubmitting(true);
     try {
       const res = await fetch("/api/admin/admins", {
@@ -3053,10 +3022,7 @@ function CreateAdminSection({
         body: JSON.stringify({
           adminname,
           password,
-          usersAccess,
-          coinsAccess,
-          gamesAccessType,
-          allowedGameIds: gamesAccessType === "specific" ? allowedGameIds : [],
+          tabAccess,
         }),
       });
       const data = await res.json();
@@ -3066,10 +3032,7 @@ function CreateAdminSection({
       }
       setAdminname("");
       setPassword("");
-      setUsersAccess(false);
-      setCoinsAccess(false);
-      setGamesAccessType("all");
-      setAllowedGameIds([]);
+      setTabAccess(emptyTabAccess());
       refreshAdmins();
       onSuccess();
     } catch {
@@ -3083,7 +3046,7 @@ function CreateAdminSection({
     <div className="space-y-8">
       <section className="admin-panel w-full">
         <h2 className="mb-1 text-base font-semibold text-white/90">Create Admin</h2>
-        <p className="mb-6 text-sm text-slate-400">Create credentials for a new admin. Set permissions below.</p>
+        <p className="mb-6 text-sm text-slate-400">Create credentials and choose which admin panel tabs this user can open.</p>
         <form onSubmit={handleSubmit} className="space-y-5">
           <div>
             <label className="mb-2 block text-sm font-medium text-slate-300">Admin Name</label>
@@ -3109,67 +3072,24 @@ function CreateAdminSection({
             />
           </div>
           <div className="space-y-3">
-            <label className="block text-sm font-medium text-slate-300">Permissions</label>
-            <label className="flex items-center gap-2">
-              <input
-                type="checkbox"
-                checked={usersAccess}
-                onChange={(e) => setUsersAccess(e.target.checked)}
-                className="rounded border-slate-500"
-              />
-              <span className="text-slate-200">Users tab access</span>
-            </label>
-            <label className="flex items-center gap-2">
-              <input
-                type="checkbox"
-                checked={coinsAccess}
-                onChange={(e) => setCoinsAccess(e.target.checked)}
-                className="rounded border-slate-500"
-              />
-              <span className="text-slate-200">Coins tab access</span>
-            </label>
-            <div className="pt-2">
-              <span className="mb-2 block text-sm text-slate-400">Games access</span>
-              <div className="flex gap-4">
-                <label className="flex items-center gap-2">
+            <label className="block text-sm font-medium text-slate-300">Tab permissions</label>
+            <p className="text-xs text-slate-500">Dashboard is always available. Select the sections this admin can manage.</p>
+            <div className="grid gap-2 sm:grid-cols-2">
+              {ADMIN_TAB_DEFINITIONS.map((def) => (
+                <label
+                  key={def.id}
+                  className="flex cursor-pointer items-center gap-3 rounded-xl border border-slate-600 bg-slate-800/50 px-3 py-3 transition hover:border-green-500/30"
+                >
                   <input
-                    type="radio"
-                    name="gamesAccess"
-                    checked={gamesAccessType === "all"}
-                    onChange={() => setGamesAccessType("all")}
-                    className="border-slate-500"
+                    type="checkbox"
+                    checked={tabAccess[def.id]}
+                    onChange={() => toggleTab(def.id)}
+                    className="rounded border-slate-500"
                   />
-                  <span className="text-slate-200">All games</span>
+                  <span className="text-lg" aria-hidden>{def.icon}</span>
+                  <span className="text-sm text-slate-200">{def.label}</span>
                 </label>
-                <label className="flex items-center gap-2">
-                  <input
-                    type="radio"
-                    name="gamesAccess"
-                    checked={gamesAccessType === "specific"}
-                    onChange={() => setGamesAccessType("specific")}
-                    className="border-slate-500"
-                  />
-                  <span className="text-slate-200">Specific games</span>
-                </label>
-              </div>
-              {gamesAccessType === "specific" && (
-                <div className="mt-3 flex flex-wrap gap-2">
-                  {games.map((g) => (
-                    <label
-                      key={g.id}
-                      className="flex cursor-pointer items-center gap-2 rounded-lg border border-slate-600 bg-slate-800/50 px-3 py-2 transition hover:border-green-500/30"
-                    >
-                      <input
-                        type="checkbox"
-                        checked={allowedGameIds.includes(g.id)}
-                        onChange={() => toggleGame(g.id)}
-                        className="rounded border-slate-500"
-                      />
-                      <span className="text-sm text-slate-200">{g.name}</span>
-                    </label>
-                  ))}
-                </div>
-              )}
+              ))}
             </div>
           </div>
           {error && <p className="rounded-lg bg-rose-500/20 px-4 py-2 text-sm text-rose-300">{error}</p>}
@@ -3200,20 +3120,11 @@ function CreateAdminSection({
                 {a.isMasterAdmin && (
                   <span className="shrink-0 rounded-lg bg-amber-500/20 px-2 py-0.5 text-xs text-amber-300">Master</span>
                 )}
-                {a.usersAccess && <span className="shrink-0 rounded bg-slate-600/50 px-2 py-0.5 text-xs text-slate-300">Users</span>}
-                {a.coinsAccess && <span className="shrink-0 rounded bg-slate-600/50 px-2 py-0.5 text-xs text-slate-300">Coins</span>}
-                {a.gamesAccessType === "all" ? (
-                  <span className="shrink-0 rounded bg-slate-600/50 px-2 py-0.5 text-xs text-slate-300">All games</span>
-                ) : (
-                  (a.allowedGameIds ?? []).map((gid) => {
-                    const game = games.find((g) => g.id === gid);
-                    return game ? (
-                      <span key={gid} className="shrink-0 rounded bg-slate-600/50 px-2 py-0.5 text-xs text-slate-300">
-                        {game.name}
-                      </span>
-                    ) : null;
-                  })
-                )}
+                {!a.isMasterAdmin && enabledTabIds(a.tabAccess).map((id) => (
+                  <span key={id} className="shrink-0 rounded bg-slate-600/50 px-2 py-0.5 text-xs text-slate-300">
+                    {tabAccessLabel(id)}
+                  </span>
+                ))}
               </div>
             </li>
           ))}
@@ -3222,7 +3133,6 @@ function CreateAdminSection({
       {selectedAdmin && (
         <AdminProfileModal
           admin={selectedAdmin}
-          games={games}
           onClose={() => setSelectedAdmin(null)}
           onDelete={() => {
             refreshAdmins();
@@ -3841,7 +3751,7 @@ function WithdrawalsSection({
     <div className="space-y-6">
       <div>
         <h1 className="text-2xl font-bold text-white mb-1">Withdrawals</h1>
-        <p className="text-slate-400 text-sm">Review players' payouts, verify their UPI IDs, and handle payouts.</p>
+        <p className="text-slate-400 text-sm">Review payouts. UPI IDs are paid via UPI; email addresses receive a Google Play redeem code.</p>
       </div>
 
       <section className="admin-panel w-full">
@@ -3891,7 +3801,7 @@ function WithdrawalsSection({
 
         <input
           type="text"
-          placeholder="Search by name or UPI..."
+          placeholder="Search by name, UPI, or email..."
           value={searchQuery}
           onChange={(e) => setSearchQuery(e.target.value)}
           className="admin-input rounded-xl px-4 py-2 text-sm w-full md:w-64 outline-none"
@@ -3907,7 +3817,7 @@ function WithdrawalsSection({
               <thead>
                 <tr>
                   <th className="text-left">User</th>
-                  <th className="text-left">UPI ID</th>
+                  <th className="text-left">UPI / Email</th>
                   <th className="text-right">Debit Coins</th>
                   <th className="text-right">Net Payout</th>
                   <th className="text-center">Status</th>

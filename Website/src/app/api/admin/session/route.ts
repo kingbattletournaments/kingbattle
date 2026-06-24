@@ -2,6 +2,7 @@ import { NextResponse } from "next/server";
 import { getStore } from "@/lib/store";
 import { isUsingSupabase } from "@/lib/store-config";
 import { cookies } from "next/headers";
+import { adminClientPayload } from "@/lib/admin-tabs";
 
 const SESSION_COOKIE = "admin_session";
 
@@ -16,15 +17,7 @@ export async function GET() {
     return NextResponse.json({ admin: null }, { status: 200 });
   }
   return NextResponse.json({
-    admin: {
-      id: admin.id,
-      adminname: admin.adminname,
-      isMasterAdmin: admin.isMasterAdmin,
-      usersAccess: admin.usersAccess,
-      coinsAccess: admin.coinsAccess,
-      gamesAccessType: admin.gamesAccessType,
-      allowedGameIds: admin.allowedGameIds,
-    },
+    admin: adminClientPayload(admin),
     databaseConfigured: isUsingSupabase(),
   });
 }

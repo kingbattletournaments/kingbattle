@@ -6,6 +6,13 @@
 import bcrypt from "bcryptjs";
 import { getSupabase } from "./supabase";
 import type { AppBanner } from "./admin-store";
+import {
+  ALL_ADMIN_TAB_IDS,
+  emptyTabAccess,
+  legacyPermissionsFromTabAccess,
+  normalizeTabAccess,
+  type AdminTabAccess,
+} from "./admin-tabs";
 
 
 // Types matching admin-store
@@ -54,8 +61,57 @@ export type DbAdmin = {
   coinsAccess: boolean;
   gamesAccessType: "all" | "specific";
   allowedGameIds: string[];
+  tabAccess: AdminTabAccess;
   createdAt: string;
 };
+
+function parseStoredTabAccess(raw: unknown): AdminTabAccess | null {
+  if (!raw || typeof raw !== "object" || Array.isArray(raw)) return null;
+  const record = raw as Record<string, unknown>;
+  const merged = emptyTabAccess();
+  let any = false;
+  for (const id of ALL_ADMIN_TAB_IDS) {
+    if (id in record) {
+      merged[id] = !!record[id];
+      any = true;
+    }
+  }
+  return any ? merged : null;
+}
+
+type AdminRow = {
+  id: string;
+  adminname: string;
+  password_hash?: string;
+  is_master_admin?: boolean;
+  users_access?: boolean;
+  coins_access?: boolean;
+  games_access_type?: string;
+  created_at: string;
+  tab_access?: unknown;
+};
+
+async function mapAdminRow(admin: AdminRow, passwordHash = "[hidden]"): Promise<DbAdmin> {
+  const supabase = getSupabase();
+  const { data: games } = supabase
+    ? await supabase.from("admin_allowed_games").select("game_id").eq("admin_id", admin.id)
+    : { data: [] as { game_id: string }[] };
+  const allowedGameIds = (games ?? []).map((g) => g.game_id);
+  const storedTabAccess = parseStoredTabAccess(admin.tab_access);
+  const partial: DbAdmin = {
+    id: admin.id,
+    adminname: admin.adminname,
+    passwordHash: admin.password_hash ?? passwordHash,
+    isMasterAdmin: admin.is_master_admin ?? false,
+    usersAccess: admin.users_access ?? false,
+    coinsAccess: admin.coins_access ?? false,
+    gamesAccessType: (admin.games_access_type as "all" | "specific") ?? "all",
+    allowedGameIds,
+    tabAccess: storedTabAccess ?? emptyTabAccess(),
+    createdAt: admin.created_at,
+  };
+  return { ...partial, tabAccess: normalizeTabAccess({ ...partial, tabAccess: storedTabAccess }) };
+}
 
 export type DbMatch = {
   id: string;
@@ -1318,19 +1374,7 @@ export const db = {
     if (!admin || !admin.password_hash) return null;
     const ok = await bcrypt.compare(password, admin.password_hash);
     if (!ok) return null;
-    const { data: games } = await supabase.from("admin_allowed_games").select("game_id").eq("admin_id", admin.id);
-    const allowedGameIds = (games ?? []).map((g) => g.game_id);
-    return {
-      id: admin.id,
-      adminname: admin.adminname,
-      passwordHash: admin.password_hash,
-      isMasterAdmin: admin.is_master_admin ?? false,
-      usersAccess: admin.users_access ?? false,
-      coinsAccess: admin.coins_access ?? false,
-      gamesAccessType: (admin.games_access_type as "all" | "specific") ?? "all",
-      allowedGameIds,
-      createdAt: admin.created_at,
-    };
+    return mapAdminRow(admin, admin.password_hash);
   },
 
   async getAdminById(id: string): Promise<DbAdmin | null> {
@@ -1338,18 +1382,7 @@ export const db = {
     if (!supabase) return null;
     const { data: admin } = await supabase.from("admins").select("*").eq("id", id).single();
     if (!admin) return null;
-    const { data: games } = await supabase.from("admin_allowed_games").select("game_id").eq("admin_id", admin.id);
-    return {
-      id: admin.id,
-      adminname: admin.adminname,
-      passwordHash: "[hidden]",
-      isMasterAdmin: admin.is_master_admin ?? false,
-      usersAccess: admin.users_access ?? false,
-      coinsAccess: admin.coins_access ?? false,
-      gamesAccessType: (admin.games_access_type as "all" | "specific") ?? "all",
-      allowedGameIds: (games ?? []).map((g) => g.game_id),
-      createdAt: admin.created_at,
-    };
+    return mapAdminRow(admin);
   },
 
   async getAllAdmins(): Promise<DbAdmin[]> {
@@ -1359,18 +1392,7 @@ export const db = {
     if (!admins) return [];
     const result: DbAdmin[] = [];
     for (const a of admins) {
-      const { data: games } = await supabase.from("admin_allowed_games").select("game_id").eq("admin_id", a.id);
-      result.push({
-        id: a.id,
-        adminname: a.adminname ?? "",
-        passwordHash: "[hidden]",
-        isMasterAdmin: a.is_master_admin ?? false,
-        usersAccess: a.users_access ?? false,
-        coinsAccess: a.coins_access ?? false,
-        gamesAccessType: (a.games_access_type as "all" | "specific") ?? "all",
-        allowedGameIds: (games ?? []).map((g) => g.game_id),
-        createdAt: a.created_at,
-      });
+      result.push(await mapAdminRow(a));
     }
     return result;
   },
@@ -1378,12 +1400,14 @@ export const db = {
   async createAdmin(
     adminname: string,
     password: string,
-    opts: { usersAccess: boolean; coinsAccess: boolean; gamesAccessType: "all" | "specific"; allowedGameIds: string[] }
+    opts: { tabAccess: Partial<AdminTabAccess> }
   ): Promise<DbAdmin | null> {
     const supabase = getSupabase();
     if (!supabase) return null;
     const { data: existing } = await supabase.from("admins").select("id").ilike("adminname", adminname).single();
     if (existing) return null;
+    const tabAccess = { ...emptyTabAccess(), ...opts.tabAccess };
+    const legacy = legacyPermissionsFromTabAccess(tabAccess);
     const hash = bcrypt.hashSync(password, 10);
     const { data: admin, error } = await supabase
       .from("admins")
@@ -1391,16 +1415,14 @@ export const db = {
         adminname,
         password_hash: hash,
         is_master_admin: false,
-        users_access: opts.usersAccess,
-        coins_access: opts.coinsAccess,
-        games_access_type: opts.gamesAccessType,
+        users_access: legacy.usersAccess,
+        coins_access: legacy.coinsAccess,
+        games_access_type: legacy.gamesAccessType,
+        tab_access: tabAccess,
       })
       .select()
       .single();
     if (error || !admin) return null;
-    if (opts.gamesAccessType === "specific" && opts.allowedGameIds?.length) {
-      await supabase.from("admin_allowed_games").insert(opts.allowedGameIds.map((gid) => ({ admin_id: admin.id, game_id: gid })));
-    }
     return db.getAdminById(admin.id);
   },
 

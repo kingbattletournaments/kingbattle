@@ -4,6 +4,13 @@
  */
 
 import bcrypt from "bcryptjs";
+import {
+  emptyTabAccess,
+  legacyPermissionsFromTabAccess,
+  masterTabAccess,
+  normalizeTabAccess,
+  type AdminTabAccess,
+} from "./admin-tabs";
 
 export type Game = { id: string; name: string; imageUrl: string | null };
 export type GameMode = { id: string; gameId: string; name: string; imageUrl: string | null };
@@ -121,6 +128,7 @@ export type AdminPermission = {
   coinsAccess: boolean;
   gamesAccessType: "all" | "specific";
   allowedGameIds: string[];
+  tabAccess: AdminTabAccess;
   createdAt: string;
 };
 
@@ -264,6 +272,7 @@ const initialAdminPermissions: AdminPermission[] = [
     coinsAccess: true,
     gamesAccessType: "all",
     allowedGameIds: [],
+    tabAccess: masterTabAccess(),
     createdAt: new Date().toISOString(),
   },
 ];
@@ -1311,30 +1320,48 @@ export const adminStore = {
     const ok = await bcrypt.compare(password, admin.passwordHash);
     return ok ? admin : null;
   },
-  getAdminById: (id: string) => adminPermissions.find((a) => a.id === id) ?? null,
-  getAllAdmins: () => adminPermissions.map((a) => ({ ...a, passwordHash: "[hidden]" })),
+  getAdminById: (id: string) => {
+    const admin = adminPermissions.find((a) => a.id === id) ?? null;
+    if (!admin) return null;
+    if (!admin.tabAccess) {
+      admin.tabAccess = normalizeTabAccess(admin);
+    }
+    return admin;
+  },
+  getAllAdmins: () =>
+    adminPermissions.map((a) => {
+      if (!a.tabAccess) a.tabAccess = normalizeTabAccess(a);
+      return { ...a, passwordHash: "[hidden]" };
+    }),
   createAdmin: (
     adminname: string,
     password: string,
     opts: {
-      usersAccess: boolean;
-      coinsAccess: boolean;
-      gamesAccessType: "all" | "specific";
-      allowedGameIds: string[];
+      tabAccess: Partial<AdminTabAccess>;
     }
   ): AdminPermission | null => {
     if (adminPermissions.some((a) => a.adminname.toLowerCase() === adminname.toLowerCase())) return null;
     const id = `admin-${adminIdCounter++}`;
     globalForAdmin.adminIdCounter = adminIdCounter;
+    const tabAccess = { ...emptyTabAccess(), ...opts.tabAccess };
+    const legacy = legacyPermissionsFromTabAccess(tabAccess);
     const admin: AdminPermission = {
       id,
       adminname,
       passwordHash: bcrypt.hashSync(password, 10),
       isMasterAdmin: false,
-      usersAccess: opts.usersAccess,
-      coinsAccess: opts.coinsAccess,
-      gamesAccessType: opts.gamesAccessType,
-      allowedGameIds: opts.allowedGameIds ?? [],
+      usersAccess: legacy.usersAccess,
+      coinsAccess: legacy.coinsAccess,
+      gamesAccessType: legacy.gamesAccessType,
+      allowedGameIds: legacy.allowedGameIds,
+      tabAccess: normalizeTabAccess({
+        isMasterAdmin: false,
+        usersAccess: legacy.usersAccess,
+        coinsAccess: legacy.coinsAccess,
+        gamesAccessType: legacy.gamesAccessType,
+        allowedGameIds: legacy.allowedGameIds,
+        tabAccess,
+      }),
       createdAt: new Date().toISOString(),
     };
     adminPermissions.push(admin);

@@ -1,6 +1,7 @@
 import { NextResponse } from "next/server";
 import { getStore } from "@/lib/store";
 import { cookies } from "next/headers";
+import { adminClientPayload } from "@/lib/admin-tabs";
 
 const SESSION_COOKIE = "admin_session";
 const SESSION_MAX_AGE = 60 * 60 * 24 * 7; // 7 days
@@ -22,13 +23,5 @@ export async function POST(request: Request) {
     maxAge: SESSION_MAX_AGE,
     path: "/",
   });
-  return NextResponse.json({
-    id: admin.id,
-    adminname: admin.adminname,
-    isMasterAdmin: admin.isMasterAdmin,
-    usersAccess: admin.usersAccess,
-    coinsAccess: admin.coinsAccess,
-    gamesAccessType: admin.gamesAccessType,
-    allowedGameIds: admin.allowedGameIds,
-  });
+  return NextResponse.json(adminClientPayload(admin));
 }
