@@ -27,6 +27,5 @@ export async function POST(
   if (!match) {
     return NextResponse.json({ error: "Match not found or not upcoming" }, { status: 404 });
   }
-  const full = await store.getMatch(id);
-  return NextResponse.json(full ?? match);
+  return NextResponse.json({ ok: true, deleted: true, match });
 }

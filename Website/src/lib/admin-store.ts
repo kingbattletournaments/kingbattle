@@ -680,7 +680,9 @@ export const adminStore = {
   },
 
   matches: (modeId?: string) => {
-    const list = modeId ? matches.filter((m) => m.gameModeId === modeId) : [...matches];
+    const list = (modeId ? matches.filter((m) => m.gameModeId === modeId) : [...matches]).filter(
+      (m) => m.status !== "cancelled",
+    );
     return list.map((m) => {
       const count = matchParticipants.filter((mp) => mp.matchId === m.id).length;
       return { ...m, participantCount: count };
@@ -737,9 +739,10 @@ export const adminStore = {
     return m;
   },
   cancelMatch: (matchId: string) => {
-    const m = matches.find((x) => x.id === matchId);
+    const idx = matches.findIndex((x) => x.id === matchId);
+    const m = idx === -1 ? null : matches[idx];
     if (!m || m.status !== "upcoming") return null;
-    m.status = "cancelled";
+    const snapshot = { ...m };
     const participants = matchParticipants.filter((p) => p.matchId === matchId);
     for (const p of participants) {
       const u = users.find((x) => x.id === p.userId);
@@ -756,7 +759,12 @@ export const adminStore = {
         });
       }
     }
-    return m;
+    for (let i = matchParticipants.length - 1; i >= 0; i--) {
+      if (matchParticipants[i].matchId === matchId) matchParticipants.splice(i, 1);
+    }
+    delete matchParticipantOrder[matchId];
+    matches.splice(idx, 1);
+    return snapshot;
   },
   finishMatch: (matchId: string) => {
     const m = matches.find((x) => x.id === matchId);
@@ -809,6 +817,10 @@ export const adminStore = {
   deleteMatch: (id: string) => {
     const i = matches.findIndex((m) => m.id === id);
     if (i === -1) return false;
+    for (let j = matchParticipants.length - 1; j >= 0; j--) {
+      if (matchParticipants[j].matchId === id) matchParticipants.splice(j, 1);
+    }
+    delete matchParticipantOrder[id];
     matches.splice(i, 1);
     return true;
   },

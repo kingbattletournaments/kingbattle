@@ -197,14 +197,10 @@ fun MatchesScreen(
                 val filteredMatches = remember(matchesState.value, page) {
                     matchesState.value.filter { match ->
                         val status = canonicalStatus(match.status)
-                        val hasRoom = !match.room_code.isNullOrEmpty() && !match.room_password.isNullOrEmpty()
                         when (page) {
-                            0 -> // Ongoing tab: show matches that are officially ongoing or have room info set
-                                status == "ongoing" || hasRoom
-                            1 -> // Upcoming tab: only show matches that are upcoming and not yet started (no room info)
-                                status == "upcoming" && !hasRoom
-                            2 -> // Results tab
-                                status == "completed" || status == "cancelled"
+                            0 -> status == "ongoing"
+                            1 -> status == "upcoming"
+                            2 -> status == "completed" || status == "ended" || status == "finished"
                             else -> false
                         }
                     }

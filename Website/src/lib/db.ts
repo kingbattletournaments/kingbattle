@@ -906,7 +906,11 @@ export const db = {
   async matches(modeId?: string): Promise<DbMatch[]> {
     const supabase = getSupabase();
     if (!supabase) return [];
-    let q = supabase.from("matches").select("*").order("starts_at", { ascending: true, nullsFirst: false });
+    let q = supabase
+      .from("matches")
+      .select("*")
+      .neq("status", "cancelled")
+      .order("starts_at", { ascending: true, nullsFirst: false });
     if (modeId) q = q.eq("game_mode_id", modeId);
     const { data } = await q;
     if (!data) return [];
@@ -1143,15 +1147,7 @@ export const db = {
     if (!m) return null;
     const entryFee = m.entry_fee ?? 0;
     const title = (m.title as string) ?? "Match";
-
-    const { data, error } = await supabase
-      .from("matches")
-      .update({ status: "cancelled", updated_at: new Date().toISOString() })
-      .eq("id", id)
-      .eq("status", "upcoming")
-      .select()
-      .single();
-    if (error || !data) return null;
+    const snapshot = toMatch(m);
 
     if (entryFee > 0) {
       const { data: appRows } = await supabase.from("app_match_participants").select("app_user_id").eq("match_id", id);
@@ -1185,12 +1181,22 @@ export const db = {
       }
     }
 
-    return toMatch(data);
+    await supabase.from("app_match_participants").delete().eq("match_id", id);
+    await supabase.from("match_participants").delete().eq("match_id", id);
+    const { error } = await supabase.from("matches").delete().eq("id", id).eq("status", "upcoming");
+    if (error) {
+      console.error("cancelMatch delete failed:", error.message);
+      return null;
+    }
+
+    return snapshot;
   },
 
   async deleteMatch(id: string): Promise<boolean> {
     const supabase = getSupabase();
     if (!supabase) return false;
+    await supabase.from("app_match_participants").delete().eq("match_id", id);
+    await supabase.from("match_participants").delete().eq("match_id", id);
     const { error } = await supabase.from("matches").delete().eq("id", id);
     return !error;
   },

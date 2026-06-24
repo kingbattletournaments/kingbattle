@@ -1268,7 +1268,7 @@ function MatchesSection({
 
   const upcoming = matches.filter((m) => m.status === "upcoming");
   const ongoing = matches.filter((m) => m.status === "ongoing");
-  const finished = matches.filter((m) => m.status === "ended" || m.status === "completed" || m.status === "cancelled");
+  const finished = matches.filter((m) => m.status === "ended" || m.status === "completed");
   const tabMatches = matchTab === "upcoming" ? upcoming : matchTab === "ongoing" ? ongoing : finished;
   const selectableMatches = matchTab === "upcoming" ? upcoming : [];
   const selectableMatchIds = useMemo(() => selectableMatches.map((m) => m.id), [selectableMatches]);
