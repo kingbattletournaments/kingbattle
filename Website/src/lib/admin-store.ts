@@ -11,6 +11,7 @@ import {
   normalizeTabAccess,
   type AdminTabAccess,
 } from "./admin-tabs";
+import type { DashboardStats } from "./dashboard-stats";
 
 export type Game = { id: string; name: string; imageUrl: string | null };
 export type GameMode = { id: string; gameId: string; name: string; imageUrl: string | null };
@@ -1506,5 +1507,117 @@ export const adminStore = {
         tokenSuffix: String((u as { fcmToken: string }).fcmToken).slice(-8),
         isBlocked: !!u.isBlocked,
       }));
+  },
+
+  getDashboardStats: (): DashboardStats => {
+    const now = Date.now();
+    const dayMs = 24 * 60 * 60 * 1000;
+    const isWithinDays = (iso: string | undefined, days: number) => {
+      if (!iso) return false;
+      return now - new Date(iso).getTime() <= days * dayMs;
+    };
+
+    const activeMatches = matches.filter((m) => m.status !== "cancelled");
+    const upcomingMatches = activeMatches.filter((m) => m.status === "upcoming");
+    const ongoingMatches = activeMatches.filter((m) => m.status === "ongoing");
+
+    const participantCount = (matchId: string) =>
+      matchParticipants.filter((mp) => mp.matchId === matchId).length;
+
+    const upcomingWithCounts = upcomingMatches.map((m) => {
+      const count = participantCount(m.id);
+      const fillRate = m.maxParticipants > 0 ? count / m.maxParticipants : 0;
+      return { ...m, participantCount: count, fillRate };
+    });
+
+    const avgUpcomingFillRate =
+      upcomingWithCounts.length > 0
+        ? upcomingWithCounts.reduce((sum, m) => sum + m.fillRate, 0) / upcomingWithCounts.length
+        : 0;
+
+    const entryFeesCollected = [...upcomingMatches, ...ongoingMatches].reduce(
+      (sum, m) => sum + m.entryFee * participantCount(m.id),
+      0,
+    );
+
+    const acceptedDeposits = depositRequests.filter((d) => d.status === "accepted");
+    const acceptedWithdrawals = withdrawalRequests.filter((w) => w.status === "accepted");
+    const pendingWithdrawalsList = withdrawalRequests.filter((w) => w.status === "pending");
+    const pendingDepositsList = depositRequests.filter((d) => d.status === "pending");
+
+    const totalDeposits = acceptedDeposits.reduce((sum, d) => sum + d.amount, 0);
+    const totalWithdrawals = acceptedWithdrawals.reduce((sum, w) => sum + w.amount, 0);
+
+    return {
+      generatedAt: new Date().toISOString(),
+      users: {
+        total: users.length,
+        blocked: users.filter((u) => u.isBlocked).length,
+        pushEnabled: users.filter((u) => u.fcmToken).length,
+        activePlayers: users.filter((u) => (u.matchesPlayed ?? 0) > 0).length,
+        newToday: users.filter((u) => isWithinDays(u.createdAt, 1)).length,
+        new7d: users.filter((u) => isWithinDays(u.createdAt, 7)).length,
+        new30d: users.filter((u) => isWithinDays(u.createdAt, 30)).length,
+        walletCoins: users.reduce((sum, u) => sum + (u.coins ?? 0), 0),
+        withdrawableWinnings: users.reduce((sum, u) => sum + (u.wonCoins ?? 0), 0),
+      },
+      money: {
+        totalDeposits,
+        totalWithdrawals,
+        netFlow: totalDeposits - totalWithdrawals,
+        pendingDepositsCount: pendingDepositsList.length,
+        pendingDepositsAmount: pendingDepositsList.reduce((sum, d) => sum + d.amount, 0),
+        pendingWithdrawalsCount: pendingWithdrawalsList.length,
+        pendingWithdrawalsAmount: pendingWithdrawalsList.reduce((sum, w) => sum + w.amount, 0),
+        depositsToday: acceptedDeposits
+          .filter((d) => isWithinDays(d.createdAt, 1))
+          .reduce((sum, d) => sum + d.amount, 0),
+        deposits7d: acceptedDeposits
+          .filter((d) => isWithinDays(d.createdAt, 7))
+          .reduce((sum, d) => sum + d.amount, 0),
+      },
+      matches: {
+        upcoming: upcomingMatches.length,
+        ongoing: ongoingMatches.length,
+        completed: activeMatches.filter((m) => m.status === "completed" || m.status === "ended").length,
+        completed7d: activeMatches.filter(
+          (m) =>
+            (m.status === "completed" || m.status === "ended") && isWithinDays(m.scheduledAt, 7),
+        ).length,
+        solo: activeMatches.filter((m) => m.matchType === "solo").length,
+        duo: activeMatches.filter((m) => m.matchType === "duo").length,
+        squad: activeMatches.filter((m) => m.matchType === "squad").length,
+        avgUpcomingFillRate,
+        entryFeesCollected,
+      },
+      upcomingMatches: [...upcomingWithCounts]
+        .sort((a, b) => new Date(a.scheduledAt).getTime() - new Date(b.scheduledAt).getTime())
+        .slice(0, 3)
+        .map((m) => ({
+          id: m.id,
+          title: m.title,
+          scheduledAt: m.scheduledAt,
+          maxParticipants: m.maxParticipants,
+          entryFee: m.entryFee,
+          matchType: m.matchType,
+          participantCount: m.participantCount,
+          fillRate: m.fillRate,
+        })),
+      pendingWithdrawals: pendingWithdrawalsList
+        .sort((a, b) => new Date(a.createdAt).getTime() - new Date(b.createdAt).getTime())
+        .slice(0, 5)
+        .map((w) => {
+          const user = users.find((u) => u.id === w.userId);
+          return {
+            id: w.id,
+            userId: w.userId,
+            amount: w.amount,
+            upiId: w.upiId,
+            createdAt: w.createdAt,
+            userDisplayName: user?.displayName ?? w.userId,
+            userEmail: user?.email ?? "",
+          };
+        }),
+    };
   },
 };

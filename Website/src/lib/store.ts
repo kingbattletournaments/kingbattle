@@ -138,6 +138,7 @@ export function getStore() {
       deleteMatchPreset: (id: string) => db.deleteMatchPreset(id),
       createMatchesFromPreset: (presetId: string, gameModeId: string, scheduledAtList: string[]) =>
         db.createMatchesFromPreset(presetId, gameModeId, scheduledAtList),
+      getDashboardStats: () => db.getDashboardStats(),
     };
   }
   return {
@@ -311,5 +312,6 @@ export function getStore() {
     deleteMatchPreset: (id: string) => Promise.resolve(adminStore.deleteMatchPreset(id)),
     createMatchesFromPreset: (presetId: string, gameModeId: string, scheduledAtList: string[]) =>
       Promise.resolve(adminStore.createMatchesFromPreset(presetId, gameModeId, scheduledAtList)),
+    getDashboardStats: () => Promise.resolve(adminStore.getDashboardStats()),
   };
 }

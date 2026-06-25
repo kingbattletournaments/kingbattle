@@ -13,6 +13,7 @@ import {
   normalizeTabAccess,
   type AdminTabAccess,
 } from "./admin-tabs";
+import type { DashboardStats } from "./dashboard-stats";
 
 
 // Types matching admin-store
@@ -971,16 +972,31 @@ export const db = {
     const { data } = await q;
     if (!data) return [];
     const matchesList = data.map(toMatch);
-    
-    const { data: participantsData } = await supabase
-      .from("app_match_participants")
-      .select("match_id");
+    const matchIds = matchesList.map((m) => m.id);
+    if (matchIds.length === 0) return matchesList;
+
     const countMap: Record<string, number> = {};
-    if (participantsData) {
-      for (const p of participantsData) {
-        countMap[p.match_id] = (countMap[p.match_id] ?? 0) + 1;
+    const { data: countRows, error: viewError } = await supabase
+      .from("v_match_participant_counts")
+      .select("match_id, participant_count")
+      .in("match_id", matchIds);
+
+    if (!viewError && countRows) {
+      for (const row of countRows) {
+        countMap[row.match_id] = row.participant_count ?? 0;
+      }
+    } else {
+      const { data: participantsData } = await supabase
+        .from("app_match_participants")
+        .select("match_id")
+        .in("match_id", matchIds);
+      if (participantsData) {
+        for (const p of participantsData) {
+          countMap[p.match_id] = (countMap[p.match_id] ?? 0) + 1;
+        }
       }
     }
+
     for (const m of matchesList) {
       m.participantCount = countMap[m.id] ?? 0;
     }
@@ -1824,7 +1840,166 @@ export const db = {
     }
     return created;
   },
+
+  async getDashboardStats(): Promise<DashboardStats | null> {
+    const supabase = getSupabase();
+    if (!supabase) return null;
+
+    const { data: rpcData, error: rpcError } = await supabase.rpc("get_admin_dashboard_stats");
+    if (!rpcError && rpcData) {
+      return parseDashboardStatsPayload(rpcData);
+    }
+
+    const [userRes, moneyRes, matchRes, upcomingRes, pendingRes] = await Promise.all([
+      supabase.from("admin_dashboard_user_analytics").select("*").maybeSingle(),
+      supabase.from("admin_dashboard_money_analytics").select("*").maybeSingle(),
+      supabase.from("admin_dashboard_match_analytics").select("*").maybeSingle(),
+      supabase.from("admin_dashboard_upcoming_matches").select("*").limit(3),
+      supabase.from("admin_dashboard_pending_withdrawals").select("*").limit(5),
+    ]);
+
+    if (userRes.error || moneyRes.error || matchRes.error) {
+      return null;
+    }
+
+    const users = userRes.data;
+    const money = moneyRes.data;
+    const matches = matchRes.data;
+    const totalDeposits = Number(money?.total_deposits ?? 0);
+    const totalWithdrawals = Number(money?.total_withdrawals ?? 0);
+
+    return {
+      generatedAt: new Date().toISOString(),
+      users: {
+        total: users?.total_users ?? 0,
+        blocked: users?.blocked_users ?? 0,
+        pushEnabled: users?.push_enabled_users ?? 0,
+        activePlayers: users?.active_players ?? 0,
+        newToday: users?.new_users_today ?? 0,
+        new7d: users?.new_users_7d ?? 0,
+        new30d: users?.new_users_30d ?? 0,
+        walletCoins: Number(users?.wallet_coins ?? 0),
+        withdrawableWinnings: Number(users?.withdrawable_winnings ?? 0),
+      },
+      money: {
+        totalDeposits,
+        totalWithdrawals,
+        netFlow: totalDeposits - totalWithdrawals,
+        pendingDepositsCount: money?.pending_deposits_count ?? 0,
+        pendingDepositsAmount: Number(money?.pending_deposits_amount ?? 0),
+        pendingWithdrawalsCount: money?.pending_withdrawals_count ?? 0,
+        pendingWithdrawalsAmount: Number(money?.pending_withdrawals_amount ?? 0),
+        depositsToday: Number(money?.deposits_today ?? 0),
+        deposits7d: Number(money?.deposits_7d ?? 0),
+      },
+      matches: {
+        upcoming: matches?.upcoming_count ?? 0,
+        ongoing: matches?.ongoing_count ?? 0,
+        completed: matches?.completed_count ?? 0,
+        completed7d: matches?.completed_7d ?? 0,
+        solo: matches?.solo_count ?? 0,
+        duo: matches?.duo_count ?? 0,
+        squad: matches?.squad_count ?? 0,
+        avgUpcomingFillRate: Number(matches?.avg_upcoming_fill_rate ?? 0),
+        entryFeesCollected: Number(matches?.entry_fees_collected ?? 0),
+      },
+      upcomingMatches: (upcomingRes.data ?? []).map((row) => ({
+        id: row.id,
+        title: row.title,
+        scheduledAt: row.scheduled_at ?? "",
+        maxParticipants: row.max_participants ?? 0,
+        entryFee: row.entry_fee ?? 0,
+        matchType: row.match_type ?? "solo",
+        participantCount: row.participant_count ?? 0,
+        fillRate: Number(row.fill_rate ?? 0),
+      })),
+      pendingWithdrawals: (pendingRes.data ?? []).map((row) => ({
+        id: row.id,
+        userId: row.user_id,
+        amount: row.amount ?? 0,
+        upiId: row.upi_id ?? "",
+        createdAt: row.created_at ?? "",
+        userDisplayName: row.user_display_name ?? row.user_id,
+        userEmail: row.user_email ?? "",
+      })),
+    };
+  },
 };
+
+function parseDashboardStatsPayload(raw: unknown): DashboardStats | null {
+  if (!raw || typeof raw !== "object") return null;
+  const data = raw as Record<string, unknown>;
+  const users = data.users as Record<string, unknown> | undefined;
+  const money = data.money as Record<string, unknown> | undefined;
+  const matches = data.matches as Record<string, unknown> | undefined;
+  if (!users || !money || !matches) return null;
+
+  return {
+    generatedAt: typeof data.generatedAt === "string" ? data.generatedAt : new Date().toISOString(),
+    users: {
+      total: Number(users.total ?? 0),
+      blocked: Number(users.blocked ?? 0),
+      pushEnabled: Number(users.pushEnabled ?? 0),
+      activePlayers: Number(users.activePlayers ?? 0),
+      newToday: Number(users.newToday ?? 0),
+      new7d: Number(users.new7d ?? 0),
+      new30d: Number(users.new30d ?? 0),
+      walletCoins: Number(users.walletCoins ?? 0),
+      withdrawableWinnings: Number(users.withdrawableWinnings ?? 0),
+    },
+    money: {
+      totalDeposits: Number(money.totalDeposits ?? 0),
+      totalWithdrawals: Number(money.totalWithdrawals ?? 0),
+      netFlow: Number(money.netFlow ?? 0),
+      pendingDepositsCount: Number(money.pendingDepositsCount ?? 0),
+      pendingDepositsAmount: Number(money.pendingDepositsAmount ?? 0),
+      pendingWithdrawalsCount: Number(money.pendingWithdrawalsCount ?? 0),
+      pendingWithdrawalsAmount: Number(money.pendingWithdrawalsAmount ?? 0),
+      depositsToday: Number(money.depositsToday ?? 0),
+      deposits7d: Number(money.deposits7d ?? 0),
+    },
+    matches: {
+      upcoming: Number(matches.upcoming ?? 0),
+      ongoing: Number(matches.ongoing ?? 0),
+      completed: Number(matches.completed ?? 0),
+      completed7d: Number(matches.completed7d ?? 0),
+      solo: Number(matches.solo ?? 0),
+      duo: Number(matches.duo ?? 0),
+      squad: Number(matches.squad ?? 0),
+      avgUpcomingFillRate: Number(matches.avgUpcomingFillRate ?? 0),
+      entryFeesCollected: Number(matches.entryFeesCollected ?? 0),
+    },
+    upcomingMatches: Array.isArray(data.upcomingMatches)
+      ? data.upcomingMatches.map((row) => {
+          const m = row as Record<string, unknown>;
+          return {
+            id: String(m.id ?? ""),
+            title: String(m.title ?? ""),
+            scheduledAt: String(m.scheduledAt ?? ""),
+            maxParticipants: Number(m.maxParticipants ?? 0),
+            entryFee: Number(m.entryFee ?? 0),
+            matchType: String(m.matchType ?? "solo"),
+            participantCount: Number(m.participantCount ?? 0),
+            fillRate: Number(m.fillRate ?? 0),
+          };
+        })
+      : [],
+    pendingWithdrawals: Array.isArray(data.pendingWithdrawals)
+      ? data.pendingWithdrawals.map((row) => {
+          const w = row as Record<string, unknown>;
+          return {
+            id: String(w.id ?? ""),
+            userId: String(w.userId ?? ""),
+            amount: Number(w.amount ?? 0),
+            upiId: String(w.upiId ?? ""),
+            createdAt: String(w.createdAt ?? ""),
+            userDisplayName: String(w.userDisplayName ?? w.userId ?? ""),
+            userEmail: String(w.userEmail ?? ""),
+          };
+        })
+      : [],
+  };
+}
 
 export function isDbConfigured(): boolean {
   return !!(process.env.NEXT_PUBLIC_SUPABASE_URL && process.env.SUPABASE_SERVICE_ROLE_KEY);

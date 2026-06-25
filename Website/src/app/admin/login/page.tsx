@@ -38,40 +38,40 @@ export default function AdminLoginPage() {
     <div className="admin-page flex min-h-screen items-center justify-center px-4">
       <div className="w-full max-w-sm">
         <div className="admin-card rounded-2xl p-8">
-          <h1 className="mb-2 text-xl font-bold text-white">Admin Login</h1>
-          <p className="mb-6 text-sm text-slate-400">Sign in to access the admin dashboard</p>
+          <h1 className="mb-2 text-xl font-bold text-zinc-900">Admin Login</h1>
+          <p className="mb-6 text-sm text-zinc-500">Sign in to access the admin dashboard</p>
           <form onSubmit={handleSubmit} className="space-y-5">
             <div>
-              <label className="mb-2 block text-sm font-medium text-slate-300">Admin Name</label>
+              <label className="mb-2 block text-sm font-medium text-zinc-700">Admin Name</label>
               <input
                 type="text"
                 value={adminname}
                 onChange={(e) => setAdminname(e.target.value)}
                 required
                 autoComplete="username"
-                className="admin-input w-full rounded-xl px-4 py-3 text-white outline-none"
+                className="admin-input w-full rounded-xl px-4 py-3 outline-none"
                 placeholder="adminname"
               />
             </div>
             <div>
-              <label className="mb-2 block text-sm font-medium text-slate-300">Password</label>
+              <label className="mb-2 block text-sm font-medium text-zinc-700">Password</label>
               <input
                 type="password"
                 value={password}
                 onChange={(e) => setPassword(e.target.value)}
                 required
                 autoComplete="current-password"
-                className="admin-input w-full rounded-xl px-4 py-3 text-white outline-none"
+                className="admin-input w-full rounded-xl px-4 py-3 outline-none"
                 placeholder="••••••••"
               />
             </div>
             {error && (
-              <p className="rounded-lg bg-rose-500/20 px-4 py-2 text-sm text-rose-300">{error}</p>
+              <p className="rounded-lg bg-rose-50 px-4 py-2 text-sm text-rose-700 border border-rose-200">{error}</p>
             )}
             <button
               type="submit"
               disabled={loading}
-              className="admin-btn-primary w-full rounded-xl px-6 py-3 font-medium text-white disabled:opacity-50"
+              className="admin-btn-primary w-full rounded-xl px-6 py-3 font-medium disabled:opacity-50"
             >
               {loading ? "Signing in..." : "Sign In"}
             </button>

@@ -1,14 +1,14 @@
 export const ADMIN_TAB_DEFINITIONS = [
-  { id: "modes", label: "Modes", icon: "🎮" },
-  { id: "presets", label: "Match Presets", icon: "📋" },
-  { id: "moneyorders", label: "Deposits", icon: "💎" },
-  { id: "withdrawals", label: "Withdrawals", icon: "💸" },
-  { id: "users", label: "Users", icon: "👤" },
-  { id: "notifications", label: "Push Notifications", icon: "📢" },
-  { id: "appsettings", label: "App Setting", icon: "⚙️" },
-  { id: "referrals", label: "Referrals", icon: "🔗" },
-  { id: "banners", label: "Banners", icon: "🖼️" },
-  { id: "admins", label: "Admin", icon: "👥" },
+  { id: "modes", label: "Modes" },
+  { id: "presets", label: "Match Presets" },
+  { id: "moneyorders", label: "Deposits" },
+  { id: "withdrawals", label: "Withdrawals" },
+  { id: "users", label: "Users" },
+  { id: "notifications", label: "Push Notifications" },
+  { id: "appsettings", label: "App Setting" },
+  { id: "referrals", label: "Referrals" },
+  { id: "banners", label: "Banners" },
+  { id: "admins", label: "Admin" },
 ] as const;
 
 export type AdminTabId = (typeof ADMIN_TAB_DEFINITIONS)[number]["id"];

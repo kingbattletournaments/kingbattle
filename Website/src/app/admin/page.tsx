@@ -14,7 +14,10 @@ import {
   tabAccessLabel,
   type AdminTabAccess,
   type AdminTabId,
+  type AdminPanelTab,
 } from "@/lib/admin-tabs";
+import { AdminTabIcon } from "@/components/admin/AdminTabIcon";
+import type { DashboardStats } from "@/lib/dashboard-stats";
 
 type Tab = "dashboard" | "modes" | "presets" | "moneyorders" | "withdrawals" | "admins" | "notifications" | "appsettings" | "banners" | "referrals" | "users";
 type Game = { id: string; name: string; imageUrl: string | null };
@@ -84,7 +87,10 @@ export default function AdminPage() {
   const [users, setUsers] = useState<User[]>([]);
   const [deposits, setDeposits] = useState<any[]>([]);
   const [withdrawals, setWithdrawals] = useState<any[]>([]);
+  const [dashboardStats, setDashboardStats] = useState<DashboardStats | null>(null);
   const [loading, setLoading] = useState(true);
+  const [tabLoading, setTabLoading] = useState(false);
+  const loadedTabsRef = useRef<Set<string>>(new Set());
   const [message, setMessage] = useState<{ type: "ok" | "err"; text: string } | null>(null);
   const [sidebarOpen, setSidebarOpen] = useState(false);
   const [matchBulkSelect, setMatchBulkSelect] = useState<MatchBulkSelectControls | null>(null);
@@ -92,13 +98,12 @@ export default function AdminPage() {
   const hasSpecificGameAccess = session?.gamesAccessType === "specific" && !session?.isMasterAdmin;
   const hasSingleGameAccess = hasSpecificGameAccess && session && session.allowedGameIds.length === 1;
 
-  const visibleTabs: { id: Tab; label: string; icon: string }[] = session
+  const visibleTabs: { id: Tab; label: string }[] = session
     ? [
-        { id: "dashboard", label: "Dashboard", icon: "📊" },
+        { id: "dashboard", label: "Dashboard" },
         ...ADMIN_TAB_DEFINITIONS.filter((def) => canAccessAdminTab(session, def.id)).map((def) => ({
           id: def.id as Tab,
           label: def.label,
-          icon: def.icon,
         })),
       ]
     : [];
@@ -116,43 +121,189 @@ export default function AdminPage() {
     }
   }, [games, selectedGameId, selectedModeId]);
 
-  const fetchData = async (showLoading = true) => {
+  const fetchSessionAndCore = async (): Promise<AdminSession | null> => {
     const sessionRes = await fetch("/api/admin/session");
     const sessionData = await sessionRes.json();
-    if (!sessionData.admin) return;
+    if (!sessionData.admin) {
+      router.replace("/admin/login");
+      return null;
+    }
     setSession(sessionData.admin);
-
-    if (showLoading) setLoading(true);
+    setLoading(true);
     try {
-      const [gRes, mRes, matRes, presetRes, uRes, depRes, withRes] = await Promise.all([
-        fetch("/api/admin/games"),
-        fetch("/api/admin/modes"),
-        fetch("/api/admin/matches"),
-        fetch("/api/admin/match-presets"),
-        (canAccessAdminTab(sessionData.admin, "users") || canAccessAdminTab(sessionData.admin, "moneyorders") || canAccessAdminTab(sessionData.admin, "withdrawals"))
-          ? fetch("/api/admin/users")
-          : Promise.resolve(null),
-        canAccessAdminTab(sessionData.admin, "moneyorders") ? fetch("/api/admin/deposits") : Promise.resolve(null),
-        canAccessAdminTab(sessionData.admin, "withdrawals") ? fetch("/api/admin/withdrawals") : Promise.resolve(null),
-      ]);
-      
+      const [gRes, mRes] = await Promise.all([fetch("/api/admin/games"), fetch("/api/admin/modes")]);
       if (gRes.ok) setGames(await gRes.json());
       if (mRes.ok) setModes(await mRes.json());
-      if (matRes.ok) setMatches(await matRes.json());
-      if (presetRes.ok) setMatchPresets(await presetRes.json());
-      if (uRes?.ok) setUsers(await uRes.json());
-      if (depRes?.ok) setDeposits(await depRes.json());
-      if (withRes?.ok) setWithdrawals(await withRes.json());
-    } catch (e) {
+    } catch {
       setMessage({ type: "err", text: "Failed to load data" });
     } finally {
-      if (showLoading) setLoading(false);
+      setLoading(false);
+    }
+    return sessionData.admin as AdminSession;
+  };
+
+  const loadDashboardStats = useCallback(async (force = false) => {
+    if (!force && loadedTabsRef.current.has("dashboard")) return;
+    setTabLoading(true);
+    try {
+      const url = force ? "/api/admin/dashboard/stats?refresh=1" : "/api/admin/dashboard/stats";
+      const res = await fetch(url);
+      if (res.ok) {
+        setDashboardStats(await res.json());
+        loadedTabsRef.current.add("dashboard");
+      } else {
+        setMessage({ type: "err", text: "Failed to load dashboard stats" });
+      }
+    } catch {
+      setMessage({ type: "err", text: "Failed to load dashboard stats" });
+    } finally {
+      setTabLoading(false);
+    }
+  }, []);
+
+  const loadTabData = useCallback(
+    async (t: Tab, adminSession: AdminSession, force = false) => {
+      if (t === "dashboard") {
+        await loadDashboardStats(force);
+        return;
+      }
+
+      const cacheKey = t === "modes" && selectedModeId ? `modes:${selectedModeId}` : t;
+      if (!force && loadedTabsRef.current.has(cacheKey)) return;
+
+      setTabLoading(true);
+      try {
+        switch (t) {
+          case "modes": {
+            if (selectedModeId) {
+              const [matRes, presetRes] = await Promise.all([
+                fetch(`/api/admin/matches?modeId=${encodeURIComponent(selectedModeId)}`),
+                fetch(`/api/admin/match-presets?modeId=${encodeURIComponent(selectedModeId)}`),
+              ]);
+              if (matRes.ok) {
+                const modeMatches = await matRes.json();
+                setMatches((prev) => [
+                  ...prev.filter((m) => m.gameModeId !== selectedModeId),
+                  ...modeMatches,
+                ]);
+              }
+              if (presetRes.ok) {
+                const modePresets = await presetRes.json();
+                setMatchPresets((prev) => [
+                  ...prev.filter((p) => p.gameModeId !== selectedModeId),
+                  ...modePresets,
+                ]);
+              }
+            }
+            if (canAccessAdminTab(adminSession, "users")) {
+              const uRes = await fetch("/api/admin/users");
+              if (uRes.ok) setUsers(await uRes.json());
+            }
+            loadedTabsRef.current.add(cacheKey);
+            break;
+          }
+          case "presets": {
+            const presetRes = await fetch("/api/admin/match-presets");
+            if (presetRes.ok) setMatchPresets(await presetRes.json());
+            loadedTabsRef.current.add(cacheKey);
+            break;
+          }
+          case "moneyorders": {
+            const tasks: Promise<void>[] = [];
+            if (canAccessAdminTab(adminSession, "moneyorders")) {
+              tasks.push(
+                fetch("/api/admin/deposits").then(async (r) => {
+                  if (r.ok) setDeposits(await r.json());
+                }),
+              );
+            }
+            if (canAccessAdminTab(adminSession, "users")) {
+              tasks.push(
+                fetch("/api/admin/users").then(async (r) => {
+                  if (r.ok) setUsers(await r.json());
+                }),
+              );
+            }
+            await Promise.all(tasks);
+            loadedTabsRef.current.add(cacheKey);
+            break;
+          }
+          case "withdrawals": {
+            const tasks: Promise<void>[] = [];
+            if (canAccessAdminTab(adminSession, "withdrawals")) {
+              tasks.push(
+                fetch("/api/admin/withdrawals").then(async (r) => {
+                  if (r.ok) setWithdrawals(await r.json());
+                }),
+              );
+            }
+            if (canAccessAdminTab(adminSession, "users")) {
+              tasks.push(
+                fetch("/api/admin/users").then(async (r) => {
+                  if (r.ok) setUsers(await r.json());
+                }),
+              );
+            }
+            await Promise.all(tasks);
+            loadedTabsRef.current.add(cacheKey);
+            break;
+          }
+          case "users": {
+            const uRes = await fetch("/api/admin/users");
+            if (uRes.ok) setUsers(await uRes.json());
+            loadedTabsRef.current.add(cacheKey);
+            break;
+          }
+          default:
+            loadedTabsRef.current.add(cacheKey);
+            break;
+        }
+      } catch {
+        setMessage({ type: "err", text: "Failed to load tab data" });
+      } finally {
+        setTabLoading(false);
+      }
+    },
+    [loadDashboardStats, selectedModeId],
+  );
+
+  const invalidateDashboardCache = () => {
+    loadedTabsRef.current.delete("dashboard");
+    setDashboardStats(null);
+  };
+
+  const refreshCurrentTab = async (showLoading = true) => {
+    if (!session) return;
+    const cacheKey = tab === "modes" && selectedModeId ? `modes:${selectedModeId}` : tab;
+    loadedTabsRef.current.delete(cacheKey);
+    invalidateDashboardCache();
+    if (tab === "dashboard") {
+      if (showLoading) setTabLoading(true);
+      await loadDashboardStats(true);
+      if (showLoading) setTabLoading(false);
+    } else {
+      await loadTabData(tab, session, true);
     }
   };
 
   useEffect(() => {
-    fetchData();
+    (async () => {
+      const adminSession = await fetchSessionAndCore();
+      if (adminSession) await loadDashboardStats();
+    })();
+    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
+
+  useEffect(() => {
+    if (!session || tab === "dashboard") return;
+    loadTabData(tab, session);
+  }, [tab, session, loadTabData]);
+
+  useEffect(() => {
+    if (!session || tab !== "modes" || !selectedModeId) return;
+    loadedTabsRef.current.delete(`modes:${selectedModeId}`);
+    loadTabData("modes", session, true);
+  }, [selectedModeId, tab, session, loadTabData]);
 
   const showMsg = (type: "ok" | "err", text: string) => {
     setMessage({ type, text });
@@ -174,11 +325,11 @@ export default function AdminPage() {
               <button
                 type="button"
                 onClick={matchBulkSelect.selectAll}
-                className="rounded-xl bg-green-600/20 hover:bg-green-600/30 text-green-300 border border-green-500/30 px-4 py-2 text-sm font-semibold transition"
+                className="admin-btn-primary rounded-xl px-4 py-2 text-sm font-semibold transition"
               >
                 Select All
               </button>
-              <span className="text-sm text-slate-400">
+              <span className="text-sm text-zinc-500">
                 {matchBulkSelect.selectedCount} of {matchBulkSelect.totalSelectable} selected
               </span>
             </>
@@ -188,7 +339,7 @@ export default function AdminPage() {
               <button
                 type="button"
                 onClick={() => setSidebarOpen(!sidebarOpen)}
-                className="lg:hidden flex h-10 w-10 items-center justify-center rounded-xl bg-white/5 text-slate-300 hover:bg-white/10 hover:text-white"
+                className="lg:hidden flex h-10 w-10 items-center justify-center rounded-xl border border-zinc-200 bg-white text-zinc-700 hover:bg-zinc-50"
               >
                 <svg className="h-6 w-6" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2}>
                   <path strokeLinecap="round" strokeLinejoin="round" d="M4 6h16M4 12h16M4 18h16" />
@@ -200,10 +351,10 @@ export default function AdminPage() {
                   alt="King Battle"
                   width={36}
                   height={36}
-                  className="h-9 w-9 rounded-full object-cover border border-green-500/25"
+                  className="h-9 w-9 rounded-full object-cover border border-zinc-200"
                   priority
                 />
-                <span className="text-xs font-semibold px-2 py-0.5 rounded bg-green-500/10 text-green-400 border border-green-500/25 normal-case hidden sm:inline-block">
+                <span className="text-xs font-semibold px-2 py-0.5 rounded bg-zinc-900 text-zinc-900 border border-zinc-900 normal-case hidden sm:inline-block">
                   Admin
                 </span>
               </div>
@@ -217,20 +368,20 @@ export default function AdminPage() {
               <button
                 type="button"
                 onClick={matchBulkSelect.exitSelection}
-                className="flex h-10 items-center gap-2 rounded-xl bg-slate-800 hover:bg-slate-700 text-slate-200 border border-slate-600 px-4 text-sm font-semibold transition"
+                className="flex h-10 items-center gap-2 rounded-xl border border-zinc-200 bg-white hover:bg-zinc-50 text-zinc-700 px-4 text-sm font-semibold transition"
               >
                 Cancel
               </button>
             ) : (
               <>
                 <div className="hidden sm:flex flex-col text-right">
-                  <span className="text-xs text-slate-400 font-semibold">Logged in as</span>
-                  <span className="text-sm text-slate-200 font-bold font-mono">{session.adminname}</span>
+                  <span className="text-xs text-zinc-500 font-semibold">Logged in as</span>
+                  <span className="text-sm text-zinc-900 font-bold font-mono">{session.adminname}</span>
                 </div>
                 <button
                   type="button"
                   onClick={handleLogout}
-                  className="flex h-10 items-center gap-2 rounded-xl bg-red-600/10 hover:bg-red-600/20 text-red-400 border border-red-500/20 px-4 text-sm font-semibold transition"
+                  className="admin-btn-primary flex h-10 items-center gap-2 rounded-xl px-4 text-sm font-semibold transition"
                 >
                   <svg className="h-4 w-4" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2}>
                     <path strokeLinecap="round" strokeLinejoin="round" d="M17 16l4-4m0 0l-4-4m4 4H7m6 4v1a3 3 0 01-3 3H6a3 3 0 01-3-3V7a3 3 0 013-3h4a3 3 0 013 3v1" />
@@ -269,7 +420,7 @@ export default function AdminPage() {
               }}
               className={`admin-sidebar-item ${tab === t.id ? "active" : ""}`}
             >
-              <span className="text-lg">{t.icon}</span>
+              <AdminTabIcon tab={t.id as AdminPanelTab} className="h-5 w-5 shrink-0" />
               <span>{t.label}</span>
             </button>
           ))}
@@ -280,13 +431,13 @@ export default function AdminPage() {
         <main className="admin-main-content">
           {message && (
             <div
-              className={`mb-6 flex items-center gap-3 rounded-xl px-4 py-3.5 shadow-lg ${
+              className={`mb-6 flex items-center gap-3 rounded-xl px-4 py-3.5 shadow-sm border ${
                 message.type === "ok"
-                  ? "bg-emerald-500/20 text-emerald-200 border border-emerald-500/30"
-                  : "bg-rose-500/20 text-rose-200 border border-rose-500/30"
+                  ? "bg-zinc-50 text-zinc-800 border-zinc-200"
+                  : "bg-rose-50 text-rose-800 border-rose-200"
               }`}
             >
-              <span className={`h-2 w-2 rounded-full ${message.type === "ok" ? "bg-emerald-400" : "bg-rose-400"}`} />
+              <span className={`h-2 w-2 rounded-full ${message.type === "ok" ? "bg-zinc-900" : "bg-rose-500"}`} />
               {message.text}
             </div>
           )}
@@ -299,11 +450,11 @@ export default function AdminPage() {
             <>
               {tab === "dashboard" && (
                 <DashboardSection
-                  users={users}
-                  matches={matches}
-                  deposits={deposits}
-                  withdrawals={withdrawals}
+                  stats={dashboardStats}
+                  loading={tabLoading}
+                  session={session}
                   onNavigate={(t) => setTab(t)}
+                  onRefresh={() => loadDashboardStats(true)}
                 />
               )}
               
@@ -320,7 +471,7 @@ export default function AdminPage() {
                       setMatchBulkSelect(null);
                       setSelectedModeId(null);
                     }}
-                    onSuccess={(opts?: { silent?: boolean }) => { fetchData(!opts?.silent); showMsg("ok", "Updated"); }}
+                    onSuccess={(opts?: { silent?: boolean }) => { refreshCurrentTab(!opts?.silent); showMsg("ok", "Updated"); }}
                     onBulkSelectChange={setMatchBulkSelect}
                   />
                 ) : selectedGameId ? (
@@ -330,13 +481,13 @@ export default function AdminPage() {
                     gameId={selectedGameId}
                     onBack={undefined}
                     onSelectMode={(id) => setSelectedModeId(id)}
-                    onSuccess={() => { fetchData(); showMsg("ok", "Mode created"); }}
+                    onSuccess={() => { refreshCurrentTab(); showMsg("ok", "Mode created"); }}
                   />
                 ) : (
                   <GamesSection
                     games={games}
                     onSelectGame={(id) => setSelectedGameId(id)}
-                    onSuccess={() => { fetchData(); showMsg("ok", "Game created"); }}
+                    onSuccess={() => { refreshCurrentTab(); showMsg("ok", "Game created"); }}
                     showCreateGame={!hasSpecificGameAccess}
                   />
                 )
@@ -347,7 +498,7 @@ export default function AdminPage() {
                   games={games}
                   modes={modes}
                   presets={matchPresets}
-                  onSuccess={() => { fetchData(); showMsg("ok", "Preset saved"); }}
+                  onSuccess={() => { refreshCurrentTab(); showMsg("ok", "Preset saved"); }}
                 />
               )}
               
@@ -355,7 +506,7 @@ export default function AdminPage() {
                 <MoneyOrdersSection
                   deposits={deposits}
                   users={users}
-                  onSuccess={() => { fetchData(false); showMsg("ok", "Deposits Updated"); }}
+                  onSuccess={() => { refreshCurrentTab(false); showMsg("ok", "Deposits Updated"); }}
                 />
               )}
               
@@ -363,13 +514,13 @@ export default function AdminPage() {
                 <WithdrawalsSection
                   withdrawals={withdrawals}
                   users={users}
-                  onSuccess={() => { fetchData(false); showMsg("ok", "Withdrawals Updated"); }}
+                  onSuccess={() => { refreshCurrentTab(false); showMsg("ok", "Withdrawals Updated"); }}
                 />
               )}
               
               {tab === "admins" && session && canAccessAdminTab(session, "admins") && (
                 <CreateAdminSection
-                  onSuccess={() => { fetchData(); showMsg("ok", "Admin created"); }}
+                  onSuccess={() => { refreshCurrentTab(); showMsg("ok", "Admin created"); }}
                 />
               )}
               
@@ -379,7 +530,7 @@ export default function AdminPage() {
               
               {tab === "appsettings" && (
                 <AppSettingsSection
-                  onSuccess={() => { fetchData(false); showMsg("ok", "Settings saved"); }}
+                  onSuccess={() => { refreshCurrentTab(false); showMsg("ok", "Settings saved"); }}
                 />
               )}
 
@@ -395,7 +546,7 @@ export default function AdminPage() {
                 <UsersSection
                   users={users}
                   canAddCoins={canAccessAdminTab(session, "moneyorders") || canAccessAdminTab(session, "withdrawals")}
-                  onSuccess={() => { fetchData(false); showMsg("ok", "Users list updated"); }}
+                  onSuccess={() => { refreshCurrentTab(false); showMsg("ok", "Users list updated"); }}
                 />
               )}
             </>
@@ -445,7 +596,7 @@ function ItemMenu({
           if (stopPropagation) e.stopPropagation();
           setOpen((o) => !o);
         }}
-        className="rounded p-1.5 text-slate-400 transition hover:bg-white/10 hover:text-white"
+        className="rounded p-1.5 text-zinc-500 transition hover:bg-zinc-50 hover:text-zinc-900"
         aria-label="Options"
       >
         <svg className="h-5 w-5" fill="currentColor" viewBox="0 0 24 24">
@@ -455,14 +606,14 @@ function ItemMenu({
         </svg>
       </button>
       {open && (
-        <div className="absolute right-0 top-full z-20 mt-1 min-w-[120px] rounded-lg border border-slate-600 bg-slate-800 py-1 shadow-xl">
+        <div className="absolute right-0 top-full z-20 mt-1 min-w-[120px] rounded-lg border border-zinc-200 bg-zinc-50 py-1 shadow-xl">
           <button
             type="button"
             onClick={(e) => {
               if (stopPropagation) e.stopPropagation();
               handleRename();
             }}
-            className="flex w-full items-center gap-2 px-4 py-2 text-left text-sm text-slate-200 hover:bg-slate-700"
+            className="flex w-full items-center gap-2 px-4 py-2 text-left text-sm text-zinc-700 hover:bg-zinc-100"
           >
             Rename
           </button>
@@ -474,7 +625,7 @@ function ItemMenu({
                 setOpen(false);
                 onChangeImage();
               }}
-              className="flex w-full items-center gap-2 px-4 py-2 text-left text-sm text-slate-200 hover:bg-slate-700"
+              className="flex w-full items-center gap-2 px-4 py-2 text-left text-sm text-zinc-700 hover:bg-zinc-100"
             >
               Change image
             </button>
@@ -486,7 +637,7 @@ function ItemMenu({
               setOpen(false);
               if (confirm("Delete this item?")) onDelete();
             }}
-            className="flex w-full items-center gap-2 px-4 py-2 text-left text-sm text-rose-400 hover:bg-slate-700"
+            className="flex w-full items-center gap-2 px-4 py-2 text-left text-sm text-rose-400 hover:bg-zinc-100"
           >
             Delete
           </button>
@@ -530,15 +681,15 @@ function MatchTypeDropdown({ value, onChange }: { value: MatchType; onChange: (v
       <button
         type="button"
         onClick={() => setOpen((o) => !o)}
-        className="admin-input flex w-full items-center justify-between rounded-xl px-4 py-3 text-left text-white outline-none"
+        className="admin-input flex w-full items-center justify-between rounded-xl px-4 py-3 text-left text-zinc-900 outline-none"
       >
         <span>{label}</span>
-        <svg className={`h-5 w-5 text-slate-400 transition ${open ? "rotate-180" : ""}`} fill="none" viewBox="0 0 24 24" stroke="currentColor">
+        <svg className={`h-5 w-5 text-zinc-500 transition ${open ? "rotate-180" : ""}`} fill="none" viewBox="0 0 24 24" stroke="currentColor">
           <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M19 9l-7 7-7-7" />
         </svg>
       </button>
       {open && (
-        <div className="absolute top-full left-0 right-0 z-50 mt-1 rounded-xl border border-slate-600/50 bg-slate-800 py-1 shadow-xl">
+        <div className="absolute top-full left-0 right-0 z-50 mt-1 rounded-xl border border-zinc-200 bg-zinc-50 py-1 shadow-xl">
           {MATCH_TYPE_OPTIONS.map((opt) => (
             <button
               key={opt.value}
@@ -547,7 +698,7 @@ function MatchTypeDropdown({ value, onChange }: { value: MatchType; onChange: (v
                 onChange(opt.value);
                 setOpen(false);
               }}
-              className={`block w-full px-4 py-2.5 text-left text-slate-200 hover:bg-slate-700/80 ${opt.value === value ? "bg-slate-700/50 text-white" : ""}`}
+              className={`block w-full px-4 py-2.5 text-left text-zinc-700 hover:bg-zinc-100/80 ${opt.value === value ? "bg-zinc-100/50 text-zinc-900" : ""}`}
             >
               {opt.label}
             </button>
@@ -578,12 +729,12 @@ function RankRewardsEditor({
 }) {
   return (
     <div className="space-y-3">
-      <label className="block text-xs font-semibold text-slate-400">Rank rewards (coins per rank range)</label>
-      <p className="text-[11px] text-slate-500">
+      <label className="block text-xs font-semibold text-zinc-500">Rank rewards (coins per rank range)</label>
+      <p className="text-[11px] text-zinc-500">
         Add ranges like rank 5–10 with a prize for each player in that range. Use the same from/to for a single rank.
       </p>
       {value.length === 0 && (
-        <p className="text-sm text-slate-500">No rank ranges yet. Add one below.</p>
+        <p className="text-sm text-zinc-500">No rank ranges yet. Add one below.</p>
       )}
       {value.map((r, i) => (
         <div key={i} className="flex flex-wrap items-center gap-2">
@@ -594,10 +745,10 @@ function RankRewardsEditor({
             onChange={(e) =>
               onChange(value.map((x, j) => (j === i ? { ...x, fromRank: Number(e.target.value) || 1 } : x)))
             }
-            className="admin-input w-16 rounded-lg px-3 py-2 text-sm text-white outline-none"
+            className="admin-input w-16 rounded-lg px-3 py-2 text-sm text-zinc-900 outline-none"
             aria-label={`Range ${i + 1} from rank`}
           />
-          <span className="text-slate-500">-</span>
+          <span className="text-zinc-500">-</span>
           <input
             type="number"
             min="1"
@@ -605,10 +756,10 @@ function RankRewardsEditor({
             onChange={(e) =>
               onChange(value.map((x, j) => (j === i ? { ...x, toRank: Number(e.target.value) || 1 } : x)))
             }
-            className="admin-input w-16 rounded-lg px-3 py-2 text-sm text-white outline-none"
+            className="admin-input w-16 rounded-lg px-3 py-2 text-sm text-zinc-900 outline-none"
             aria-label={`Range ${i + 1} to rank`}
           />
-          <span className="text-slate-500">→</span>
+          <span className="text-zinc-500">→</span>
           <input
             type="number"
             min="0"
@@ -616,10 +767,10 @@ function RankRewardsEditor({
             onChange={(e) =>
               onChange(value.map((x, j) => (j === i ? { ...x, coins: Number(e.target.value) || 0 } : x)))
             }
-            className="admin-input w-20 rounded-lg px-3 py-2 text-sm text-white outline-none"
+            className="admin-input w-20 rounded-lg px-3 py-2 text-sm text-zinc-900 outline-none"
             placeholder="coins"
           />
-          <span className="text-slate-400 text-sm">coins</span>
+          <span className="text-zinc-500 text-sm">coins</span>
           <button
             type="button"
             onClick={() => onChange(value.filter((_, j) => j !== i))}
@@ -635,7 +786,7 @@ function RankRewardsEditor({
       <button
         type="button"
         onClick={() => onChange([...value, nextRankRange(value)])}
-        className="rounded-lg border border-dashed border-slate-500 px-3 py-2 text-sm text-slate-400 hover:border-green-500/50 hover:text-green-400"
+        className="rounded-lg border border-dashed border-zinc-300 px-3 py-2 text-sm text-zinc-500 hover:border-zinc-400 hover:text-zinc-900"
       >
         + Add rank range
       </button>
@@ -657,11 +808,11 @@ function ImageUpload({
   const inputId = `img-upload-${Math.random().toString(36).slice(2)}`;
   return (
     <div className="space-y-2">
-      <label className="mb-2 block text-sm font-medium text-slate-300">Image (optional)</label>
+      <label className="mb-2 block text-sm font-medium text-zinc-600">Image (optional)</label>
       <div className="flex flex-col gap-3 sm:flex-row sm:items-start">
         <label
           htmlFor={inputId}
-          className="admin-input flex min-h-[120px] cursor-pointer flex-col items-center justify-center rounded-xl border-2 border-dashed px-4 py-6 transition hover:border-green-500/50"
+          className="admin-input flex min-h-[120px] cursor-pointer flex-col items-center justify-center rounded-xl border-2 border-dashed px-4 py-6 transition hover:border-zinc-400"
         >
           <input
             id={inputId}
@@ -676,11 +827,11 @@ function ImageUpload({
           {previewUrl ? (
             <img src={previewUrl} alt="Preview" className="mb-2 max-h-24 rounded-lg object-cover" />
           ) : (
-            <svg className="mb-2 h-10 w-10 text-slate-500" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+            <svg className="mb-2 h-10 w-10 text-zinc-500" fill="none" viewBox="0 0 24 24" stroke="currentColor">
               <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={1.5} d="M4 16l4.586-4.586a2 2 0 012.828 0L16 16m-2-2l1.586-1.586a2 2 0 012.828 0L20 14m-6-6h.01M6 20h12a2 2 0 002-2V6a2 2 0 00-2-2H6a2 2 0 00-2 2v12a2 2 0 002 2z" />
             </svg>
           )}
-          <span className="text-sm text-slate-400">
+          <span className="text-sm text-zinc-500">
             {file ? file.name : "Click to upload or drag image"}
           </span>
         </label>
@@ -688,7 +839,7 @@ function ImageUpload({
           <button
             type="button"
             onClick={onClear}
-            className="rounded-lg bg-slate-700/50 px-4 py-2 text-sm text-slate-300 hover:bg-slate-600/50"
+            className="rounded-lg bg-zinc-100/50 px-4 py-2 text-sm text-zinc-600 hover:bg-zinc-100"
           >
             Remove
           </button>
@@ -757,17 +908,17 @@ function GamesSection({
     <div className="space-y-8">
       {showCreateGame && (
         <section className="admin-panel w-full">
-          <h2 className="mb-1 text-base font-semibold text-white/90">Create Game</h2>
-          <p className="mb-6 text-sm text-slate-400">Add a new game to the platform</p>
+          <h2 className="mb-1 text-base font-semibold text-zinc-900">Create Game</h2>
+          <p className="mb-6 text-sm text-zinc-500">Add a new game to the platform</p>
           <form onSubmit={handleSubmit} className="space-y-5">
             <div>
-              <label className="mb-2 block text-sm font-medium text-slate-300">Name</label>
+              <label className="mb-2 block text-sm font-medium text-zinc-600">Name</label>
               <input
                 type="text"
                 value={name}
                 onChange={(e) => setName(e.target.value)}
                 required
-                className="admin-input w-full rounded-xl px-4 py-3 text-white outline-none"
+                className="admin-input w-full rounded-xl px-4 py-3 text-zinc-900 outline-none"
                 placeholder="e.g. BGMI"
               />
             </div>
@@ -780,7 +931,7 @@ function GamesSection({
             <button
               type="submit"
               disabled={submitting}
-              className="admin-btn-primary rounded-xl px-6 py-3 font-medium text-white disabled:opacity-50"
+              className="admin-btn-primary rounded-xl px-6 py-3 font-medium disabled:opacity-50"
             >
               {submitting ? "Creating..." : "Create Game"}
             </button>
@@ -788,8 +939,8 @@ function GamesSection({
         </section>
       )}
       <section className="admin-panel w-full">
-        <h2 className="mb-1 text-base font-semibold text-white/90">Existing Games</h2>
-        <p className="mb-5 text-sm text-slate-400">Click a game to manage modes and matches</p>
+        <h2 className="mb-1 text-base font-semibold text-zinc-900">Existing Games</h2>
+        <p className="mb-5 text-sm text-zinc-500">Click a game to manage modes and matches</p>
         <ul className="space-y-2">
           {games.map((g) => (
             <li
@@ -798,9 +949,9 @@ function GamesSection({
               tabIndex={0}
               onClick={() => onSelectGame(g.id)}
               onKeyDown={(e) => e.key === "Enter" && onSelectGame(g.id)}
-              className="admin-list-item flex cursor-pointer items-center justify-between gap-2 rounded-xl px-4 py-3.5 transition hover:border-green-500/30"
+              className="admin-list-item flex cursor-pointer items-center justify-between gap-2 rounded-xl px-4 py-3.5 transition hover:border-zinc-300"
             >
-              <span className="font-medium text-slate-200">{g.name}</span>
+              <span className="font-medium text-zinc-700">{g.name}</span>
               <ItemMenu
                 currentName={g.name}
                 onDelete={async () => {
@@ -983,30 +1134,30 @@ function ModesSection({
                 <button
                   type="button"
                   onClick={onBack}
-                  className="flex h-9 w-9 items-center justify-center rounded-xl bg-slate-800 border border-slate-700 text-slate-400 hover:text-white transition"
+                  className="flex h-9 w-9 items-center justify-center rounded-xl bg-zinc-50 border border-zinc-200 text-zinc-500 hover:text-zinc-900 transition"
                   title="Back to Games"
                 >
                   ←
                 </button>
               )}
               <div>
-                <h1 className="text-2xl font-bold text-white mb-1">Modes for {gameName}</h1>
-                <p className="text-slate-400 text-sm">Select a game mode to view and manage matches.</p>
+                <h1 className="text-2xl font-bold text-zinc-900 mb-1">Modes for {gameName}</h1>
+                <p className="text-zinc-500 text-sm">Select a game mode to view and manage matches.</p>
               </div>
             </div>
             <button
               type="button"
               onClick={() => setView("create")}
-              className="admin-btn-primary rounded-xl px-5 py-2.5 text-sm font-semibold text-white shrink-0"
+              className="admin-btn-primary rounded-xl px-5 py-2.5 text-sm font-semibold shrink-0"
             >
               + Create Game Mode
             </button>
           </div>
 
           <div className="admin-panel w-full">
-            <h3 className="mb-4 text-base font-semibold text-white/90">Existing Modes</h3>
+            <h3 className="mb-4 text-base font-semibold text-zinc-900">Existing Modes</h3>
             {modes.length === 0 ? (
-              <p className="py-8 text-center text-sm text-slate-400">No game modes configured yet</p>
+              <p className="py-8 text-center text-sm text-zinc-500">No game modes configured yet</p>
             ) : (
               <ul className="grid grid-cols-1 md:grid-cols-2 gap-4">
                 {modes.map((m) => (
@@ -1016,21 +1167,21 @@ function ModesSection({
                     tabIndex={0}
                     onClick={() => onSelectMode(m.id)}
                     onKeyDown={(e) => e.key === "Enter" && onSelectMode(m.id)}
-                    className="admin-list-item flex cursor-pointer items-center justify-between gap-3 rounded-xl p-4 transition hover:border-green-500/30"
+                    className="admin-list-item flex cursor-pointer items-center justify-between gap-3 rounded-xl p-4 transition hover:border-zinc-300"
                   >
                     <div className="flex items-center gap-3 min-w-0">
                       {m.imageUrl ? (
                         <img
                           src={m.imageUrl}
                           alt={m.name}
-                          className="w-12 h-12 object-cover rounded-lg border border-slate-800 shrink-0"
+                          className="w-12 h-12 object-cover rounded-lg border border-zinc-200 shrink-0"
                         />
                       ) : (
-                        <div className="w-12 h-12 rounded-lg bg-slate-800 border border-slate-700/50 flex items-center justify-center text-slate-500 text-lg shrink-0">
+                        <div className="w-12 h-12 rounded-lg bg-zinc-50 border border-zinc-200 flex items-center justify-center text-zinc-500 text-lg shrink-0">
                           🎮
                         </div>
                       )}
-                      <span className="font-semibold text-slate-200 text-sm truncate">{m.name}</span>
+                      <span className="font-semibold text-zinc-700 text-sm truncate">{m.name}</span>
                     </div>
                     <div onClick={(e) => e.stopPropagation()}>
                       <ItemMenu
@@ -1051,24 +1202,24 @@ function ModesSection({
           <button
             type="button"
             onClick={() => setView("list")}
-            className="flex items-center gap-2 text-sm text-slate-400 transition hover:text-white"
+            className="flex items-center gap-2 text-sm text-zinc-500 transition hover:text-zinc-900"
           >
             ← Back to Modes
           </button>
           
           <section className="admin-form-section w-full">
-            <h2 className="mb-1 text-lg font-bold text-white">Create Game Mode</h2>
-            <p className="mb-6 text-sm text-slate-400">Define a new game mode block under {gameName}.</p>
+            <h2 className="mb-1 text-lg font-bold text-zinc-900">Create Game Mode</h2>
+            <p className="mb-6 text-sm text-zinc-500">Define a new game mode block under {gameName}.</p>
             
             <form onSubmit={handleSubmit} className="space-y-5">
               <div>
-                <label className="mb-2 block text-sm font-medium text-slate-300">Mode Name</label>
+                <label className="mb-2 block text-sm font-medium text-zinc-600">Mode Name</label>
                 <input
                   type="text"
                   value={name}
                   onChange={(e) => setName(e.target.value)}
                   required
-                  className="admin-input w-full rounded-xl px-4 py-3 text-white outline-none"
+                  className="admin-input w-full rounded-xl px-4 py-3 text-zinc-900 outline-none"
                   placeholder="e.g. Ranked, Classic"
                 />
               </div>
@@ -1082,14 +1233,14 @@ function ModesSection({
                 <button
                   type="submit"
                   disabled={submitting}
-                  className="admin-btn-primary rounded-xl px-6 py-3 font-medium text-white disabled:opacity-50"
+                  className="admin-btn-primary rounded-xl px-6 py-3 font-medium disabled:opacity-50"
                 >
                   {submitting ? "Creating..." : "Create Mode"}
                 </button>
                 <button
                   type="button"
                   onClick={() => setView("list")}
-                  className="bg-slate-800 border border-slate-700 hover:bg-slate-700 text-white rounded-xl px-6 py-3 font-medium transition"
+                  className="bg-zinc-50 border border-zinc-200 hover:bg-zinc-100 text-zinc-900 rounded-xl px-6 py-3 font-medium transition"
                 >
                   Cancel
                 </button>
@@ -1138,7 +1289,7 @@ function PresetSchedulePreviewList({ times }: { times: Date[] }) {
   return (
     <div className="space-y-1">
       {visible.map((t, i) => (
-        <p key={`${t.getTime()}-${i}`} className="text-sm text-slate-400">
+        <p key={`${t.getTime()}-${i}`} className="text-sm text-zinc-500">
           {formatMatchDateTime(t)}
         </p>
       ))}
@@ -1148,7 +1299,7 @@ function PresetSchedulePreviewList({ times }: { times: Date[] }) {
             <button
               type="button"
               onClick={() => setVisibleCount((c) => Math.min(c + PRESET_PREVIEW_PAGE, times.length))}
-              className="text-xs font-semibold text-green-400 hover:text-green-300"
+              className="text-xs font-semibold text-zinc-900 hover:text-zinc-700"
             >
               See more
             </button>
@@ -1156,7 +1307,7 @@ function PresetSchedulePreviewList({ times }: { times: Date[] }) {
             <button
               type="button"
               onClick={() => setVisibleCount(PRESET_PREVIEW_PAGE)}
-              className="text-xs font-semibold text-slate-400 hover:text-slate-300"
+              className="text-xs font-semibold text-zinc-500 hover:text-zinc-600"
             >
               See less
             </button>
@@ -1471,14 +1622,14 @@ function MatchesSection({
               <button
                 type="button"
                 onClick={onBack}
-                className="flex h-9 w-9 items-center justify-center rounded-xl bg-slate-800 border border-slate-700 text-slate-400 hover:text-white transition"
+                className="flex h-9 w-9 items-center justify-center rounded-xl bg-zinc-50 border border-zinc-200 text-zinc-500 hover:text-zinc-900 transition"
                 title="Back to Game Modes"
               >
                 ←
               </button>
               <div>
-                <h1 className="text-2xl font-bold text-white mb-1">Matches for {modeName}</h1>
-                <p className="text-slate-400 text-sm">Review players registration, details and map parameters.</p>
+                <h1 className="text-2xl font-bold text-zinc-900 mb-1">Matches for {modeName}</h1>
+                <p className="text-zinc-500 text-sm">Review players registration, details and map parameters.</p>
               </div>
             </div>
             {!selectedMatchId && !selectionMode && (
@@ -1486,7 +1637,7 @@ function MatchesSection({
                 <button
                   type="button"
                   onClick={() => setView("create")}
-                  className="admin-btn-primary rounded-xl px-5 py-2.5 text-sm font-semibold text-white"
+                  className="admin-btn-primary rounded-xl px-5 py-2.5 text-sm font-semibold"
                 >
                   + Create New Match
                 </button>
@@ -1497,7 +1648,7 @@ function MatchesSection({
                     setView("createFromPreset");
                   }}
                   disabled={matchPresets.length === 0}
-                  className="rounded-xl border border-green-500/40 bg-green-500/10 px-5 py-2.5 text-sm font-semibold text-green-300 hover:bg-green-500/20 disabled:opacity-40 disabled:cursor-not-allowed"
+                  className="rounded-xl border border-zinc-300 bg-zinc-50 px-5 py-2.5 text-sm font-semibold text-zinc-700 hover:bg-zinc-100 disabled:opacity-40 disabled:cursor-not-allowed"
                 >
                   Create using preset
                 </button>
@@ -1529,8 +1680,8 @@ function MatchesSection({
                       }}
                       className={`rounded-full px-3.5 py-2 text-xs font-semibold sm:px-5 sm:text-sm ${
                         matchTab === t
-                          ? "bg-green-600 text-white"
-                          : "bg-slate-800/80 text-slate-400 hover:bg-slate-700 border border-slate-700/60"
+                          ? "admin-btn-primary text-zinc-900"
+                          : "bg-zinc-50/80 text-zinc-500 hover:bg-zinc-100 border border-zinc-200/60"
                       }`}
                     >
                       {t.charAt(0).toUpperCase() + t.slice(1)}
@@ -1539,7 +1690,7 @@ function MatchesSection({
                 </div>
 
                 {tabMatches.length === 0 ? (
-                  <div className="rounded-xl border border-dashed border-slate-700 p-12 text-center text-slate-400 bg-slate-950/20">
+                  <div className="rounded-xl border border-dashed border-zinc-200 p-12 text-center text-zinc-500 bg-zinc-100/20">
                     No {matchTab} matches recorded under this mode.
                   </div>
                 ) : (
@@ -1550,7 +1701,7 @@ function MatchesSection({
                           type="button"
                           onClick={handleBulkCancel}
                           disabled={bulkCancelling || selectedMatchIds.size === 0}
-                          className="rounded-xl bg-red-600 hover:bg-red-500 disabled:opacity-50 disabled:cursor-not-allowed px-5 py-2.5 text-sm font-semibold text-white transition"
+                          className="rounded-xl bg-red-600 hover:bg-red-500 disabled:opacity-50 disabled:cursor-not-allowed px-5 py-2.5 text-sm font-semibold text-zinc-900 transition"
                         >
                           {bulkCancelling
                             ? "Cancelling..."
@@ -1573,8 +1724,8 @@ function MatchesSection({
                           key={m.id}
                           className={`admin-content-card relative rounded-2xl overflow-hidden transition flex flex-col cursor-pointer ${
                             isSelected
-                              ? "ring-2 ring-green-500 border-green-500/50"
-                              : "hover:border-green-500/30"
+                              ? "ring-2 ring-zinc-900 border-zinc-400"
+                              : "hover:border-zinc-300"
                           }`}
                           onClick={() => handleMatchCardClick(m.id, canSelect)}
                           onContextMenu={(e) => {
@@ -1590,12 +1741,12 @@ function MatchesSection({
                           onTouchCancel={clearLongPressTimer}
                         >
                           {isSelected && (
-                            <div className="absolute top-3 right-3 z-10 flex h-7 w-7 items-center justify-center rounded-full bg-green-500 text-white text-sm font-bold shadow-lg">
+                            <div className="absolute top-3 right-3 z-10 flex h-7 w-7 items-center justify-center rounded-full bg-zinc-900 text-white text-sm font-bold shadow-lg">
                               ✓
                             </div>
                           )}
                           {/* 1. Banner image */}
-                          <div className="relative aspect-[16/9] w-full bg-slate-950 overflow-hidden">
+                          <div className="relative aspect-[16/9] w-full bg-zinc-100 overflow-hidden">
                             <img
                               src={getMatchBanner(m)}
                               alt="Match Banner"
@@ -1604,81 +1755,81 @@ function MatchesSection({
                           </div>
 
                           {/* 2. Info Row */}
-                          <div className="flex items-center gap-3 p-4 border-b border-slate-800/60">
+                          <div className="flex items-center gap-3 p-4 border-b border-zinc-200/60">
                             <img
                               src="/images/app-icon.png"
                               alt="Logo"
-                              className="w-10 h-10 object-cover rounded-lg border border-slate-800 shrink-0"
+                              className="w-10 h-10 object-cover rounded-lg border border-zinc-200 shrink-0"
                             />
                             <div className="min-w-0 flex-1">
-                              <h4 className="font-bold text-white text-sm truncate" title={m.title}>{m.title}</h4>
-                              <p className="text-xs text-slate-500 font-medium mt-0.5">
+                              <h4 className="font-bold text-zinc-900 text-sm truncate" title={m.title}>{m.title}</h4>
+                              <p className="text-xs text-zinc-500 font-medium mt-0.5">
                                 Starts: {formatMatchDateTime(m.scheduledAt)}
                               </p>
                             </div>
                           </div>
 
                           {/* 3. Stats Grid */}
-                          <div className="p-4 grid grid-cols-3 gap-y-4 gap-x-2 text-center border-b border-slate-800/60 bg-slate-900/10">
+                          <div className="p-4 grid grid-cols-3 gap-y-4 gap-x-2 text-center border-b border-zinc-200/60 bg-white/10">
                             {/* Prize Pool */}
                             <div className="cursor-pointer select-none" onClick={(e) => { e.stopPropagation(); setExpandedMatchId(expandedMatchId === m.id ? null : m.id); }}>
-                              <p className="text-[10px] text-slate-500 font-bold uppercase tracking-wider">Prize Pool</p>
+                              <p className="text-[10px] text-zinc-500 font-bold uppercase tracking-wider">Prize Pool</p>
                               <div className="flex items-center justify-center gap-1 mt-1">
                                 <span className="text-xs">💵</span>
-                                <span className="text-xs font-bold text-white">{m.prizePool?.totalPrizePool ?? 0}</span>
-                                <span className="text-[10px] text-slate-400">{expandedMatchId === m.id ? "▲" : "▼"}</span>
+                                <span className="text-xs font-bold text-zinc-900">{m.prizePool?.totalPrizePool ?? 0}</span>
+                                <span className="text-[10px] text-zinc-500">{expandedMatchId === m.id ? "▲" : "▼"}</span>
                               </div>
                             </div>
 
                             {/* Per Kill */}
                             <div>
-                              <p className="text-[10px] text-slate-500 font-bold uppercase tracking-wider">Per Kill</p>
+                              <p className="text-[10px] text-zinc-500 font-bold uppercase tracking-wider">Per Kill</p>
                               <div className="flex items-center justify-center gap-1 mt-1">
                                 <span className="text-xs">💵</span>
-                                <span className="text-xs font-bold text-white">{m.prizePool?.coinsPerKill ?? 0}</span>
+                                <span className="text-xs font-bold text-zinc-900">{m.prizePool?.coinsPerKill ?? 0}</span>
                               </div>
                             </div>
 
                             {/* Entry Fee */}
                             <div>
-                              <p className="text-[10px] text-slate-500 font-bold uppercase tracking-wider">Entry Fee</p>
+                              <p className="text-[10px] text-zinc-500 font-bold uppercase tracking-wider">Entry Fee</p>
                               <div className="flex items-center justify-center gap-1 mt-1">
                                 <span className="text-xs">💵</span>
-                                <span className="text-xs font-bold text-white">{m.entryFee}</span>
+                                <span className="text-xs font-bold text-zinc-900">{m.entryFee}</span>
                               </div>
                             </div>
 
                             {/* Type */}
                             <div>
-                              <p className="text-[10px] text-slate-500 font-bold uppercase tracking-wider">Type</p>
-                              <p className="text-xs font-bold text-slate-300 mt-1 capitalize">{m.matchType ?? "Solo"}</p>
+                              <p className="text-[10px] text-zinc-500 font-bold uppercase tracking-wider">Type</p>
+                              <p className="text-xs font-bold text-zinc-600 mt-1 capitalize">{m.matchType ?? "Solo"}</p>
                             </div>
 
                             {/* Version */}
                             <div>
-                              <p className="text-[10px] text-slate-500 font-bold uppercase tracking-wider">Version</p>
-                              <p className="text-xs font-bold text-slate-300 mt-1">TPP</p>
+                              <p className="text-[10px] text-zinc-500 font-bold uppercase tracking-wider">Version</p>
+                              <p className="text-xs font-bold text-zinc-600 mt-1">TPP</p>
                             </div>
 
                             {/* Map */}
                             <div>
-                              <p className="text-[10px] text-slate-500 font-bold uppercase tracking-wider">Map</p>
-                              <p className="text-xs font-bold text-slate-300 mt-1 uppercase truncate">{m.map ?? "BERMUDA"}</p>
+                              <p className="text-[10px] text-zinc-500 font-bold uppercase tracking-wider">Map</p>
+                              <p className="text-xs font-bold text-zinc-600 mt-1 uppercase truncate">{m.map ?? "BERMUDA"}</p>
                             </div>
                           </div>
 
                           {/* Expandable rewards */}
                           {expandedMatchId === m.id && (
-                            <div className="p-4 bg-slate-950/40 border-b border-slate-800/60 text-xs">
-                              <p className="font-bold text-slate-400 text-[10px] uppercase tracking-wider mb-2">Rank Rewards</p>
+                            <div className="p-4 bg-zinc-100/40 border-b border-zinc-200/60 text-xs">
+                              <p className="font-bold text-zinc-500 text-[10px] uppercase tracking-wider mb-2">Rank Rewards</p>
                               {(!m.prizePool?.rankRewards || m.prizePool.rankRewards.length === 0) ? (
-                                <p className="text-slate-500 text-xs">All prizes distributed via per-kill earnings.</p>
+                                <p className="text-zinc-500 text-xs">All prizes distributed via per-kill earnings.</p>
                               ) : (
                                 <div className="space-y-1 max-h-32 overflow-y-auto pr-1">
                                   {m.prizePool.rankRewards.map((reward, ri) => (
-                                    <div key={ri} className="flex justify-between items-center text-slate-300 py-0.5 border-b border-slate-900/50 last:border-0">
+                                    <div key={ri} className="flex justify-between items-center text-zinc-600 py-0.5 border-b border-zinc-200 last:border-0">
                                       <span>Rank {reward.fromRank === reward.toRank ? reward.fromRank : `${reward.fromRank} - ${reward.toRank}`}</span>
-                                      <span className="font-semibold text-white">💵 {reward.coins} coins</span>
+                                      <span className="font-semibold text-zinc-900">💵 {reward.coins} coins</span>
                                     </div>
                                   ))}
                                 </div>
@@ -1687,16 +1838,16 @@ function MatchesSection({
                           )}
 
                           {/* 4. Progress and Button */}
-                          <div className="p-4 flex-1 flex flex-col justify-end space-y-3 bg-slate-900/5">
+                          <div className="p-4 flex-1 flex flex-col justify-end space-y-3 bg-white/5">
                             {/* Progress */}
                             <div>
-                              <div className="flex justify-between items-center text-xs text-slate-400 mb-1">
+                              <div className="flex justify-between items-center text-xs text-zinc-500 mb-1">
                                 <span>Joined: {spotsTaken} / {maxParticipants}</span>
                                 <span>{spotsLeft} spots left</span>
                               </div>
-                              <div className="w-full h-1.5 bg-slate-800 rounded-full overflow-hidden">
+                              <div className="w-full h-1.5 bg-zinc-50 rounded-full overflow-hidden">
                                 <div
-                                  className="h-full bg-green-500 transition-all"
+                                  className="h-full bg-zinc-900 transition-all"
                                   style={{ width: `${Math.min(100, (spotsTaken / maxParticipants) * 100)}%` }}
                                 />
                               </div>
@@ -1710,7 +1861,7 @@ function MatchesSection({
                                   e.stopPropagation();
                                   setSelectedMatchId(m.id);
                                 }}
-                                className="w-full bg-green-600 hover:bg-green-500 text-white rounded-xl py-2.5 text-xs font-semibold transition"
+                                className="w-full bg-zinc-900 hover:bg-zinc-800 text-zinc-900 rounded-xl py-2.5 text-xs font-semibold transition"
                               >
                                 Manage Match
                               </button>
@@ -1723,8 +1874,8 @@ function MatchesSection({
                                 }}
                                 className={`w-full rounded-xl py-2.5 text-xs font-semibold transition ${
                                   isSelected
-                                    ? "bg-green-600/20 text-green-300 border border-green-500/40"
-                                    : "bg-slate-800 text-slate-300 border border-slate-700"
+                                    ? "bg-zinc-100 text-zinc-800 border border-zinc-300"
+                                    : "bg-zinc-50 text-zinc-600 border border-zinc-200"
                                 }`}
                               >
                                 {isSelected ? "Selected" : "Select"}
@@ -1746,30 +1897,30 @@ function MatchesSection({
           <button
             type="button"
             onClick={() => setView("list")}
-            className="flex items-center gap-2 text-sm text-slate-400 transition hover:text-white"
+            className="flex items-center gap-2 text-sm text-zinc-500 transition hover:text-zinc-900"
           >
             ← Back to Matches List
           </button>
 
           <section className="admin-form-section w-full">
-            <h2 className="mb-1 text-lg font-bold text-white">Create Matches from Preset</h2>
-            <p className="mb-6 text-sm text-slate-400">
+            <h2 className="mb-1 text-lg font-bold text-zinc-900">Create Matches from Preset</h2>
+            <p className="mb-6 text-sm text-zinc-500">
               Select a preset and schedule multiple matches for {modeName} on one day.
             </p>
 
             {matchPresets.length === 0 ? (
-              <p className="text-slate-400 text-sm">
+              <p className="text-zinc-500 text-sm">
                 No presets for this mode yet. Create one in the Match Presets tab first.
               </p>
             ) : (
               <form onSubmit={handleCreateFromPreset} className="space-y-5">
                 <div>
-                  <label className="mb-2 block text-sm font-medium text-slate-300">Preset</label>
+                  <label className="mb-2 block text-sm font-medium text-zinc-600">Preset</label>
                   <select
                     value={selectedPresetId}
                     onChange={(e) => setSelectedPresetId(e.target.value)}
                     required
-                    className="admin-input w-full rounded-xl px-4 py-3 text-white outline-none"
+                    className="admin-input w-full rounded-xl px-4 py-3 text-zinc-900 outline-none"
                   >
                     <option value="">Select preset...</option>
                     {matchPresets.map((p) => (
@@ -1780,51 +1931,51 @@ function MatchesSection({
                   </select>
                 </div>
                 <div>
-                  <label className="mb-2 block text-sm font-medium text-slate-300">Match date</label>
+                  <label className="mb-2 block text-sm font-medium text-zinc-600">Match date</label>
                   <input
                     type="date"
                     value={presetMatchDate}
                     onChange={(e) => setPresetMatchDate(e.target.value)}
                     required
-                    className="admin-input w-full rounded-xl px-4 py-3 text-white outline-none"
+                    className="admin-input w-full rounded-xl px-4 py-3 text-zinc-900 outline-none"
                   />
                 </div>
                 <div className="grid gap-5 sm:grid-cols-3">
                   <div>
-                    <label className="mb-2 block text-sm font-medium text-slate-300">Starting time</label>
+                    <label className="mb-2 block text-sm font-medium text-zinc-600">Starting time</label>
                     <input
                       type="time"
                       value={presetStartingTime}
                       onChange={(e) => setPresetStartingTime(e.target.value)}
                       required
-                      className="admin-input w-full rounded-xl px-4 py-3 text-white outline-none"
+                      className="admin-input w-full rounded-xl px-4 py-3 text-zinc-900 outline-none"
                     />
                   </div>
                   <div>
-                    <label className="mb-2 block text-sm font-medium text-slate-300">Time gap (minutes)</label>
+                    <label className="mb-2 block text-sm font-medium text-zinc-600">Time gap (minutes)</label>
                     <input
                       type="number"
                       min="1"
                       value={presetGapMinutes}
                       onChange={(e) => setPresetGapMinutes(e.target.value)}
                       required
-                      className="admin-input w-full rounded-xl px-4 py-3 text-white outline-none"
+                      className="admin-input w-full rounded-xl px-4 py-3 text-zinc-900 outline-none"
                     />
                   </div>
                   <div>
-                    <label className="mb-2 block text-sm font-medium text-slate-300">Ending time</label>
+                    <label className="mb-2 block text-sm font-medium text-zinc-600">Ending time</label>
                     <input
                       type="time"
                       value={presetEndingTime}
                       onChange={(e) => setPresetEndingTime(e.target.value)}
                       required
-                      className="admin-input w-full rounded-xl px-4 py-3 text-white outline-none"
+                      className="admin-input w-full rounded-xl px-4 py-3 text-zinc-900 outline-none"
                     />
                   </div>
                 </div>
                 {presetSchedulePreview.length > 0 && (
-                  <div className="rounded-xl border border-slate-700/80 bg-slate-800/20 p-4">
-                    <p className="text-sm font-medium text-slate-300 mb-2">
+                  <div className="rounded-xl border border-zinc-200/80 bg-zinc-50/20 p-4">
+                    <p className="text-sm font-medium text-zinc-600 mb-2">
                       {presetSchedulePreview.length} match{presetSchedulePreview.length === 1 ? "" : "es"} will be created at:
                     </p>
                     <PresetSchedulePreviewList times={presetSchedulePreview} />
@@ -1839,14 +1990,14 @@ function MatchesSection({
                   <button
                     type="submit"
                     disabled={presetSubmitting || presetSchedulePreview.length === 0}
-                    className="admin-btn-primary rounded-xl px-6 py-3 font-medium text-white disabled:opacity-50"
+                    className="admin-btn-primary rounded-xl px-6 py-3 font-medium disabled:opacity-50"
                   >
                     {presetSubmitting ? "Creating..." : `Create ${presetSchedulePreview.length || ""} Matches`}
                   </button>
                   <button
                     type="button"
                     onClick={() => setView("list")}
-                    className="bg-slate-800 border border-slate-700 hover:bg-slate-700 text-white rounded-xl px-6 py-3 font-medium transition"
+                    className="bg-zinc-50 border border-zinc-200 hover:bg-zinc-100 text-zinc-900 rounded-xl px-6 py-3 font-medium transition"
                   >
                     Cancel
                   </button>
@@ -1860,62 +2011,62 @@ function MatchesSection({
           <button
             type="button"
             onClick={() => setView("list")}
-            className="flex items-center gap-2 text-sm text-slate-400 transition hover:text-white"
+            className="flex items-center gap-2 text-sm text-zinc-500 transition hover:text-zinc-900"
           >
             ← Back to Matches List
           </button>
 
           <section className="admin-form-section w-full">
-            <h2 className="mb-1 text-lg font-bold text-white">Create New Match</h2>
-            <p className="mb-6 text-sm text-slate-400">Setup matches and reward parameters under {modeName}.</p>
+            <h2 className="mb-1 text-lg font-bold text-zinc-900">Create New Match</h2>
+            <p className="mb-6 text-sm text-zinc-500">Setup matches and reward parameters under {modeName}.</p>
 
             <form onSubmit={handleSubmit} className="space-y-5">
               <div>
-                <label className="mb-2 block text-sm font-medium text-slate-300">Title</label>
+                <label className="mb-2 block text-sm font-medium text-zinc-600">Title</label>
                 <input
                   type="text"
                   value={title}
                   onChange={(e) => setTitle(e.target.value)}
                   required
-                  className="admin-input w-full rounded-xl px-4 py-3 text-white outline-none"
+                  className="admin-input w-full rounded-xl px-4 py-3 text-zinc-900 outline-none"
                   placeholder="e.g. Weekend Cup #1"
                 />
               </div>
               <div>
-                <label className="mb-2 block text-sm font-medium text-slate-300">Match Type</label>
+                <label className="mb-2 block text-sm font-medium text-zinc-600">Match Type</label>
                 <MatchTypeDropdown value={matchType} onChange={setMatchType} />
               </div>
               <div className="grid gap-5 sm:grid-cols-2">
                 <div>
-                  <label className="mb-2 block text-sm font-medium text-slate-300">Entry Fee (coins)</label>
+                  <label className="mb-2 block text-sm font-medium text-zinc-600">Entry Fee (coins)</label>
                   <input
                     type="number"
                     min="0"
                     value={entryFee}
                     onChange={(e) => setEntryFee(e.target.value)}
                     required
-                    className="admin-input w-full rounded-xl px-4 py-3 text-white outline-none"
+                    className="admin-input w-full rounded-xl px-4 py-3 text-zinc-900 outline-none"
                     placeholder="50"
                   />
                 </div>
                 <div>
-                  <label className="mb-2 block text-sm font-medium text-slate-300">Max Participants</label>
+                  <label className="mb-2 block text-sm font-medium text-zinc-600">Max Participants</label>
                   <input
                     type="number"
                     min="2"
                     value={maxParticipants}
                     onChange={(e) => setMaxParticipants(e.target.value)}
-                    className="admin-input w-full rounded-xl px-4 py-3 text-white outline-none"
+                    className="admin-input w-full rounded-xl px-4 py-3 text-zinc-900 outline-none"
                   />
                 </div>
               </div>
               <div>
-                <label className="mb-2 block text-sm font-medium text-slate-300">Scheduled At (optional)</label>
+                <label className="mb-2 block text-sm font-medium text-zinc-600">Scheduled At (optional)</label>
                 <input
                   type="datetime-local"
                   value={scheduledAt}
                   onChange={(e) => setScheduledAt(e.target.value)}
-                  className="admin-input w-full rounded-xl px-4 py-3 text-white outline-none"
+                  className="admin-input w-full rounded-xl px-4 py-3 text-zinc-900 outline-none"
                 />
               </div>
               <ImageUpload
@@ -1924,28 +2075,28 @@ function MatchesSection({
                 onChange={handleImageChange}
                 onClear={handleImageClear}
               />
-              <div className="rounded-xl border border-slate-700/80 bg-slate-800/10 p-5">
-                <h3 className="mb-3 text-sm font-semibold text-slate-300">Prize Pool</h3>
+              <div className="rounded-xl border border-zinc-200/80 bg-zinc-50/10 p-5">
+                <h3 className="mb-3 text-sm font-semibold text-zinc-600">Prize Pool</h3>
                 <div className="mb-4 grid gap-4 sm:grid-cols-2">
                   <div>
-                    <label className="mb-1 block text-xs text-slate-400">Total prize pool (coins)</label>
+                    <label className="mb-1 block text-xs text-zinc-500">Total prize pool (coins)</label>
                     <input
                       type="number"
                       min="0"
                       value={totalPrizePool}
                       onChange={(e) => setTotalPrizePool(e.target.value)}
-                      className="admin-input w-full rounded-lg px-4 py-2.5 text-sm text-white outline-none"
+                      className="admin-input w-full rounded-lg px-4 py-2.5 text-sm text-zinc-900 outline-none"
                       placeholder="e.g. 500"
                     />
                   </div>
                   <div>
-                    <label className="mb-1 block text-xs text-slate-400">Coins per kill</label>
+                    <label className="mb-1 block text-xs text-zinc-500">Coins per kill</label>
                     <input
                       type="number"
                       min="0"
                       value={coinsPerKill}
                       onChange={(e) => setCoinsPerKill(e.target.value)}
-                      className="admin-input w-full rounded-lg px-4 py-2.5 text-sm text-white outline-none"
+                      className="admin-input w-full rounded-lg px-4 py-2.5 text-sm text-zinc-900 outline-none"
                       placeholder="5"
                     />
                   </div>
@@ -1956,14 +2107,14 @@ function MatchesSection({
                 <button
                   type="submit"
                   disabled={submitting}
-                  className="admin-btn-primary rounded-xl px-6 py-3 font-medium text-white disabled:opacity-50"
+                  className="admin-btn-primary rounded-xl px-6 py-3 font-medium disabled:opacity-50"
                 >
                   {submitting ? "Creating..." : "Create Match"}
                 </button>
                 <button
                   type="button"
                   onClick={() => setView("list")}
-                  className="bg-slate-800 border border-slate-700 hover:bg-slate-700 text-white rounded-xl px-6 py-3 font-medium transition"
+                  className="bg-zinc-50 border border-zinc-200 hover:bg-zinc-100 text-zinc-900 rounded-xl px-6 py-3 font-medium transition"
                 >
                   Cancel
                 </button>
@@ -2116,8 +2267,8 @@ function MatchPresetsSection({
     <div className="space-y-6">
       <div className="flex flex-col gap-4 sm:flex-row sm:items-center sm:justify-between">
         <div>
-          <h1 className="text-2xl font-bold text-white mb-1">Match Presets</h1>
-          <p className="text-slate-400 text-sm">Save match templates without date or time for bulk scheduling.</p>
+          <h1 className="text-2xl font-bold text-zinc-900 mb-1">Match Presets</h1>
+          <p className="text-zinc-500 text-sm">Save match templates without date or time for bulk scheduling.</p>
         </div>
         {view === "list" && (
           <button
@@ -2127,7 +2278,7 @@ function MatchPresetsSection({
               setGameModeId(filterModeId || filteredModes[0]?.id || "");
               setView("create");
             }}
-            className="admin-btn-primary rounded-xl px-5 py-2.5 text-sm font-semibold text-white shrink-0"
+            className="admin-btn-primary rounded-xl px-5 py-2.5 text-sm font-semibold shrink-0"
           >
             + Create Preset
           </button>
@@ -2144,7 +2295,7 @@ function MatchPresetsSection({
                   setFilterGameId(e.target.value);
                   setFilterModeId("");
                 }}
-                className="admin-input rounded-xl px-4 py-2.5 text-sm text-white outline-none"
+                className="admin-input rounded-xl px-4 py-2.5 text-sm text-zinc-900 outline-none"
               >
                 <option value="">All games</option>
                 {games.map((g) => (
@@ -2154,7 +2305,7 @@ function MatchPresetsSection({
               <select
                 value={filterModeId}
                 onChange={(e) => setFilterModeId(e.target.value)}
-                className="admin-input rounded-xl px-4 py-2.5 text-sm text-white outline-none"
+                className="admin-input rounded-xl px-4 py-2.5 text-sm text-zinc-900 outline-none"
               >
                 <option value="">All modes</option>
                 {filteredModes.map((m) => (
@@ -2174,7 +2325,7 @@ function MatchPresetsSection({
 
           <section className="admin-table-panel w-full">
             {filteredPresets.length === 0 ? (
-              <p className="py-12 text-center text-sm text-slate-400">
+              <p className="py-12 text-center text-sm text-zinc-500">
                 {visiblePresets.length === 0
                   ? "No presets yet. Create one to schedule matches faster."
                   : "No presets match your search."}
@@ -2196,16 +2347,16 @@ function MatchPresetsSection({
                   <tbody>
                     {filteredPresets.map((p) => (
                       <tr key={p.id}>
-                        <td className="font-semibold text-white">{p.name}</td>
+                        <td className="font-semibold text-zinc-900">{p.name}</td>
                         <td>
-                          <p className="font-medium text-slate-300">{modeLabel(p.gameModeId)}</p>
-                          <p className="text-xs text-slate-500 font-mono mt-0.5">{p.gameModeId}</p>
+                          <p className="font-medium text-zinc-600">{modeLabel(p.gameModeId)}</p>
+                          <p className="text-xs text-zinc-500 font-mono mt-0.5">{p.gameModeId}</p>
                         </td>
-                        <td className="text-slate-300">{p.title}</td>
+                        <td className="text-zinc-600">{p.title}</td>
                         <td className="text-right font-medium text-amber-300">💵 {p.entryFee}</td>
-                        <td className="text-right font-medium text-white">{p.maxParticipants}</td>
+                        <td className="text-right font-medium text-zinc-900">{p.maxParticipants}</td>
                         <td className="text-center">
-                          <span className="inline-block px-2.5 py-1 text-xs font-semibold rounded-full bg-slate-700/50 text-slate-200 border border-slate-600/50 capitalize">
+                          <span className="inline-block px-2.5 py-1 text-xs font-semibold rounded-full bg-zinc-100/50 text-zinc-700 border border-zinc-200 capitalize">
                             {p.matchType ?? "solo"}
                           </span>
                         </td>
@@ -2213,7 +2364,7 @@ function MatchPresetsSection({
                           <button
                             type="button"
                             onClick={() => handleDelete(p.id)}
-                            className="bg-rose-600/90 hover:bg-rose-500 text-white rounded-lg px-3 py-1.5 text-xs font-medium transition"
+                            className="bg-rose-600/90 hover:bg-rose-500 text-zinc-900 rounded-lg px-3 py-1.5 text-xs font-medium transition"
                           >
                             Delete
                           </button>
@@ -2231,21 +2382,21 @@ function MatchPresetsSection({
           <button
             type="button"
             onClick={() => setView("list")}
-            className="flex items-center gap-2 text-sm text-slate-400 transition hover:text-white"
+            className="flex items-center gap-2 text-sm text-zinc-500 transition hover:text-zinc-900"
           >
             ← Back to presets
           </button>
           <section className="admin-form-section w-full">
-            <h2 className="mb-1 text-lg font-bold text-white">Create Match Preset</h2>
-            <p className="mb-6 text-sm text-slate-400">All match details except date and time.</p>
+            <h2 className="mb-1 text-lg font-bold text-zinc-900">Create Match Preset</h2>
+            <p className="mb-6 text-sm text-zinc-500">All match details except date and time.</p>
             <form onSubmit={handleSubmit} className="space-y-5">
               <div>
-                <label className="mb-2 block text-sm font-medium text-slate-300">Game mode</label>
+                <label className="mb-2 block text-sm font-medium text-zinc-600">Game mode</label>
                 <select
                   value={gameModeId}
                   onChange={(e) => setGameModeId(e.target.value)}
                   required
-                  className="admin-input w-full rounded-xl px-4 py-3 text-white outline-none"
+                  className="admin-input w-full rounded-xl px-4 py-3 text-zinc-900 outline-none"
                 >
                   <option value="">Select mode...</option>
                   {modes.map((m) => {
@@ -2259,61 +2410,61 @@ function MatchPresetsSection({
                 </select>
               </div>
               <div>
-                <label className="mb-2 block text-sm font-medium text-slate-300">Preset name</label>
+                <label className="mb-2 block text-sm font-medium text-zinc-600">Preset name</label>
                 <input
                   type="text"
                   value={name}
                   onChange={(e) => setName(e.target.value)}
                   required
-                  className="admin-input w-full rounded-xl px-4 py-3 text-white outline-none"
+                  className="admin-input w-full rounded-xl px-4 py-3 text-zinc-900 outline-none"
                   placeholder="e.g. Morning Solo batch"
                 />
               </div>
               <div>
-                <label className="mb-2 block text-sm font-medium text-slate-300">Match title</label>
+                <label className="mb-2 block text-sm font-medium text-zinc-600">Match title</label>
                 <input
                   type="text"
                   value={title}
                   onChange={(e) => setTitle(e.target.value)}
                   required
-                  className="admin-input w-full rounded-xl px-4 py-3 text-white outline-none"
+                  className="admin-input w-full rounded-xl px-4 py-3 text-zinc-900 outline-none"
                   placeholder="e.g. Daily Cup"
                 />
               </div>
               <div>
-                <label className="mb-2 block text-sm font-medium text-slate-300">Match Type</label>
+                <label className="mb-2 block text-sm font-medium text-zinc-600">Match Type</label>
                 <MatchTypeDropdown value={matchType} onChange={setMatchType} />
               </div>
               <div className="grid gap-5 sm:grid-cols-2">
                 <div>
-                  <label className="mb-2 block text-sm font-medium text-slate-300">Entry Fee (coins)</label>
+                  <label className="mb-2 block text-sm font-medium text-zinc-600">Entry Fee (coins)</label>
                   <input
                     type="number"
                     min="0"
                     value={entryFee}
                     onChange={(e) => setEntryFee(e.target.value)}
                     required
-                    className="admin-input w-full rounded-xl px-4 py-3 text-white outline-none"
+                    className="admin-input w-full rounded-xl px-4 py-3 text-zinc-900 outline-none"
                   />
                 </div>
                 <div>
-                  <label className="mb-2 block text-sm font-medium text-slate-300">Max Participants</label>
+                  <label className="mb-2 block text-sm font-medium text-zinc-600">Max Participants</label>
                   <input
                     type="number"
                     min="2"
                     value={maxParticipants}
                     onChange={(e) => setMaxParticipants(e.target.value)}
-                    className="admin-input w-full rounded-xl px-4 py-3 text-white outline-none"
+                    className="admin-input w-full rounded-xl px-4 py-3 text-zinc-900 outline-none"
                   />
                 </div>
               </div>
               <div>
-                <label className="mb-2 block text-sm font-medium text-slate-300">Map</label>
+                <label className="mb-2 block text-sm font-medium text-zinc-600">Map</label>
                 <input
                   type="text"
                   value={map}
                   onChange={(e) => setMap(e.target.value)}
-                  className="admin-input w-full rounded-xl px-4 py-3 text-white outline-none"
+                  className="admin-input w-full rounded-xl px-4 py-3 text-zinc-900 outline-none"
                   placeholder="BERMUDA"
                 />
               </div>
@@ -2323,27 +2474,27 @@ function MatchPresetsSection({
                 onChange={handleImageChange}
                 onClear={handleImageClear}
               />
-              <div className="rounded-xl border border-slate-700/80 bg-slate-800/10 p-5">
-                <h3 className="mb-3 text-sm font-semibold text-slate-300">Prize Pool</h3>
+              <div className="rounded-xl border border-zinc-200/80 bg-zinc-50/10 p-5">
+                <h3 className="mb-3 text-sm font-semibold text-zinc-600">Prize Pool</h3>
                 <div className="mb-4 grid gap-4 sm:grid-cols-2">
                   <div>
-                    <label className="mb-1 block text-xs text-slate-400">Total prize pool (coins)</label>
+                    <label className="mb-1 block text-xs text-zinc-500">Total prize pool (coins)</label>
                     <input
                       type="number"
                       min="0"
                       value={totalPrizePool}
                       onChange={(e) => setTotalPrizePool(e.target.value)}
-                      className="admin-input w-full rounded-lg px-4 py-2.5 text-sm text-white outline-none"
+                      className="admin-input w-full rounded-lg px-4 py-2.5 text-sm text-zinc-900 outline-none"
                     />
                   </div>
                   <div>
-                    <label className="mb-1 block text-xs text-slate-400">Coins per kill</label>
+                    <label className="mb-1 block text-xs text-zinc-500">Coins per kill</label>
                     <input
                       type="number"
                       min="0"
                       value={coinsPerKill}
                       onChange={(e) => setCoinsPerKill(e.target.value)}
-                      className="admin-input w-full rounded-lg px-4 py-2.5 text-sm text-white outline-none"
+                      className="admin-input w-full rounded-lg px-4 py-2.5 text-sm text-zinc-900 outline-none"
                     />
                   </div>
                 </div>
@@ -2353,14 +2504,14 @@ function MatchPresetsSection({
                 <button
                   type="submit"
                   disabled={submitting}
-                  className="admin-btn-primary rounded-xl px-6 py-3 font-medium text-white disabled:opacity-50"
+                  className="admin-btn-primary rounded-xl px-6 py-3 font-medium disabled:opacity-50"
                 >
                   {submitting ? "Saving..." : "Save Preset"}
                 </button>
                 <button
                   type="button"
                   onClick={() => setView("list")}
-                  className="bg-slate-800 border border-slate-700 hover:bg-slate-700 text-white rounded-xl px-6 py-3 font-medium transition"
+                  className="bg-zinc-50 border border-zinc-200 hover:bg-zinc-100 text-zinc-900 rounded-xl px-6 py-3 font-medium transition"
                 >
                   Cancel
                 </button>
@@ -2564,36 +2715,36 @@ function MatchDetailView({
       <button
         type="button"
         onClick={onBack}
-        className="flex items-center gap-2 text-sm text-slate-400 transition hover:text-white"
+        className="flex items-center gap-2 text-sm text-zinc-500 transition hover:text-zinc-900"
       >
         ← Back to matches
       </button>
 
-      <div className="rounded-xl border border-slate-600/50 bg-slate-800/30 p-6">
-        <h2 className="text-lg font-semibold text-white">{match.title}</h2>
+      <div className="rounded-xl border border-zinc-200 bg-zinc-50/30 p-6">
+        <h2 className="text-lg font-semibold text-zinc-900">{match.title}</h2>
         <div className="mt-2 flex flex-wrap gap-2">
           <span className={`rounded-lg px-3 py-1 text-xs font-medium ${
             match.status === "ongoing" ? "bg-emerald-500/20 text-emerald-300" :
             match.status === "cancelled" ? "bg-rose-500/20 text-rose-300" :
-            match.status === "ended" || match.status === "completed" ? "bg-slate-600/30 text-slate-400" :
+            match.status === "ended" || match.status === "completed" ? "bg-slate-600/30 text-zinc-500" :
             "bg-amber-500/20 text-amber-300"
           }`}>
             {match.status}
           </span>
-          <span className="rounded bg-slate-600/50 px-3 py-1 text-xs text-slate-400">{match.matchType}</span>
-          <span className="rounded bg-slate-600/50 px-3 py-1 text-xs text-amber-400">{match.entryFee} coins</span>
+          <span className="rounded bg-zinc-100 px-3 py-1 text-xs text-zinc-500">{match.matchType}</span>
+          <span className="rounded bg-zinc-100 px-3 py-1 text-xs text-amber-400">{match.entryFee} coins</span>
         </div>
-        <p className="mt-2 text-sm text-slate-400">
+        <p className="mt-2 text-sm text-zinc-500">
           {gameName} • Scheduled: {formatMatchDateTime(match.scheduledAt)}
         </p>
       </div>
 
-      <div className="rounded-xl border border-slate-600/50 bg-slate-800/30 p-6">
-        <h3 className="mb-3 text-sm font-medium text-slate-300">Prize Pool</h3>
+      <div className="rounded-xl border border-zinc-200 bg-zinc-50/30 p-6">
+        <h3 className="mb-3 text-sm font-medium text-zinc-600">Prize Pool</h3>
         <div className="space-y-2 text-sm">
-          <p className="text-slate-200">Coins per kill: {match.prizePool?.coinsPerKill ?? 0}</p>
+          <p className="text-zinc-700">Coins per kill: {match.prizePool?.coinsPerKill ?? 0}</p>
           {(match.prizePool?.rankRewards ?? []).map((r: RankReward, i: number) => (
-            <p key={i} className="text-slate-200">
+            <p key={i} className="text-zinc-700">
               {r.fromRank === r.toRank
                 ? `Rank ${r.fromRank}`
                 : `Ranks ${r.fromRank}–${r.toRank}`}
@@ -2603,19 +2754,19 @@ function MatchDetailView({
         </div>
       </div>
 
-      <div className="rounded-xl border border-slate-600/50 bg-slate-800/30 p-4 sm:p-6">
+      <div className="rounded-xl border border-zinc-200 bg-zinc-50/30 p-4 sm:p-6">
         <div className="mb-3 flex flex-col gap-1 sm:flex-row sm:items-baseline">
-          <h3 className="text-sm font-medium text-slate-300">
+          <h3 className="text-sm font-medium text-zinc-600">
             Players Joined ({participants.length})
           </h3>
           {isOngoing && (
-            <span className="text-xs font-normal text-emerald-400">
+            <span className="text-xs font-normal text-zinc-900">
               Edit kills/rank, then click Update to save. Changes apply only after Update.
             </span>
           )}
         </div>
         {participants.length === 0 ? (
-          <p className="text-sm text-slate-400">No players registered yet</p>
+          <p className="text-sm text-zinc-500">No players registered yet</p>
         ) : (
           <ul className="space-y-3">
             {participants.map((p, i) => {
@@ -2634,26 +2785,26 @@ function MatchDetailView({
               return (
                 <li
                   key={p.id}
-                  className="flex flex-col gap-3 rounded-lg bg-slate-700/30 p-4 transition sm:flex-row sm:flex-wrap sm:items-center sm:gap-3"
+                  className="flex flex-col gap-3 rounded-lg bg-zinc-100/30 p-4 transition sm:flex-row sm:flex-wrap sm:items-center sm:gap-3"
                 >
                   {hasBeenUpdated && (
-                    <span className="shrink-0 text-sm font-bold text-slate-400">#{position}</span>
+                    <span className="shrink-0 text-sm font-bold text-zinc-500">#{position}</span>
                   )}
                   <div className="min-w-0 flex-1 space-y-2">
                     {p.userId && (
-                      <div className="break-all text-xs font-mono text-slate-500">
+                      <div className="break-all text-xs font-mono text-zinc-500">
                         User ID: {p.userId}
                       </div>
                     )}
                     {(p.teamMembers ?? []).map((t, ti) => (
                       <div key={ti} className="flex flex-wrap items-center gap-2">
                         <div>
-                          <div className="text-base font-bold text-white">{t.inGameName}</div>
-                          <div className="text-xs opacity-60 text-slate-400">{t.inGameUid}</div>
+                          <div className="text-base font-bold text-zinc-900">{t.inGameName}</div>
+                          <div className="text-xs opacity-60 text-zinc-500">{t.inGameUid}</div>
                         </div>
                         {isOngoing && (
                           <div className="flex items-center gap-1">
-                            <label className="text-xs text-slate-500">Kills</label>
+                            <label className="text-xs text-zinc-500">Kills</label>
                             <input
                               type="number"
                               min={0}
@@ -2675,7 +2826,7 @@ function MatchDetailView({
                   {isOngoing && (
                     <>
                       <div className="flex items-center gap-1">
-                        <label className="text-xs text-slate-500">Rank</label>
+                        <label className="text-xs text-zinc-500">Rank</label>
                         <input
                           type="number"
                           min={1}
@@ -2697,7 +2848,7 @@ function MatchDetailView({
                           type="button"
                           onClick={() => handleUpdateParticipant(p)}
                           disabled={!!updatingParticipant}
-                          className="shrink-0 rounded-lg bg-emerald-600 px-3 py-1.5 text-xs font-medium text-white hover:bg-emerald-500 disabled:opacity-50"
+                          className="shrink-0 rounded-lg admin-btn-primary px-3 py-1.5 text-xs font-medium disabled:opacity-50"
                         >
                           {updatingParticipant === p.id ? "Updating..." : "Update"}
                         </button>
@@ -2719,14 +2870,14 @@ function MatchDetailView({
       {isOngoing && (
         <div className="rounded-xl border border-emerald-500/20 bg-emerald-500/5 p-6">
           <h3 className="mb-4 text-sm font-medium text-emerald-200">Finish Match</h3>
-          <p className="mb-4 text-xs text-slate-400">
+          <p className="mb-4 text-xs text-zinc-500">
             After updating rank and kills for all participants, click Finish to complete the match. Coins will be transferred to winners.
           </p>
           <button
             type="button"
             onClick={handleFinish}
             disabled={finishing}
-            className="rounded-xl bg-emerald-600 px-4 py-2 text-sm font-medium text-white hover:bg-emerald-500 disabled:opacity-50"
+            className="rounded-xl admin-btn-primary px-4 py-2 text-sm font-medium disabled:opacity-50"
           >
             {finishing ? "Finishing..." : "Finish Match"}
           </button>
@@ -2736,27 +2887,27 @@ function MatchDetailView({
       {isUpcoming && (
         <div className="rounded-xl border border-amber-500/20 bg-amber-500/5 p-6">
           <h3 className="mb-4 text-sm font-medium text-amber-200">Room Info</h3>
-          <p className="mb-4 text-xs text-slate-400">
+          <p className="mb-4 text-xs text-zinc-500">
             Set room code and password, then start the match. Joined players receive both via push notification.
           </p>
           <div className="mb-4 grid gap-4 sm:grid-cols-2">
             <div>
-              <label className="mb-1 block text-xs text-slate-400">Room Code</label>
+              <label className="mb-1 block text-xs text-zinc-500">Room Code</label>
               <input
                 type="text"
                 value={roomCode}
                 onChange={(e) => setRoomCode(e.target.value)}
-                className="admin-input w-full rounded-lg px-4 py-2.5 text-sm text-white outline-none"
+                className="admin-input w-full rounded-lg px-4 py-2.5 text-sm text-zinc-900 outline-none"
                 placeholder="ROOM123"
               />
             </div>
             <div>
-              <label className="mb-1 block text-xs text-slate-400">Room Password</label>
+              <label className="mb-1 block text-xs text-zinc-500">Room Password</label>
               <input
                 type="text"
                 value={roomPassword}
                 onChange={(e) => setRoomPassword(e.target.value)}
-                className="admin-input w-full rounded-lg px-4 py-2.5 text-sm text-white outline-none"
+                className="admin-input w-full rounded-lg px-4 py-2.5 text-sm text-zinc-900 outline-none"
                 placeholder="pass123"
               />
             </div>
@@ -2766,7 +2917,7 @@ function MatchDetailView({
               type="button"
               onClick={handleSaveRoom}
               disabled={saving}
-              className="rounded-xl bg-slate-600 px-4 py-2 text-sm font-medium text-white hover:bg-slate-500 disabled:opacity-50"
+              className="rounded-xl bg-slate-600 px-4 py-2 text-sm font-medium text-zinc-900 hover:bg-slate-500 disabled:opacity-50"
             >
               {saving ? "Saving..." : "Save Room Info"}
             </button>
@@ -2775,7 +2926,7 @@ function MatchDetailView({
                 type="button"
                 onClick={handleStart}
                 disabled={starting}
-                className="rounded-xl bg-emerald-600 px-4 py-2 text-sm font-medium text-white hover:bg-emerald-500 disabled:opacity-50"
+                className="rounded-xl admin-btn-primary px-4 py-2 text-sm font-medium disabled:opacity-50"
               >
                 {starting ? "Starting..." : "Start Match"}
               </button>
@@ -2784,7 +2935,7 @@ function MatchDetailView({
               type="button"
               onClick={handleCancel}
               disabled={cancelling}
-              className="rounded-xl bg-rose-600 px-4 py-2 text-sm font-medium text-white hover:bg-rose-500 disabled:opacity-50"
+              className="rounded-xl bg-rose-600 px-4 py-2 text-sm font-medium text-zinc-900 hover:bg-rose-500 disabled:opacity-50"
             >
               {cancelling ? "Cancelling..." : "Cancel Match"}
             </button>
@@ -2883,19 +3034,19 @@ function AdminProfileModal({
       />
       <div
         ref={ref}
-        className="relative z-10 w-full max-h-[90vh] sm:max-h-[calc(100vh-2rem)] sm:max-w-md overflow-y-auto rounded-t-2xl sm:rounded-2xl border border-slate-600/50 border-b-0 sm:border-b bg-slate-900 shadow-xl pb-[env(safe-area-inset-bottom)] sm:pb-0"
+        className="relative z-10 w-full max-h-[90vh] sm:max-h-[calc(100vh-2rem)] sm:max-w-md overflow-y-auto rounded-t-2xl sm:rounded-2xl border border-zinc-200 border-b-0 sm:border-b bg-white shadow-xl pb-[env(safe-area-inset-bottom)] sm:pb-0"
       >
         {/* Mobile: drag handle */}
-        <div className="sticky top-0 z-10 flex flex-col bg-slate-900/95 backdrop-blur-sm sm:bg-slate-900 sm:backdrop-blur-none">
+        <div className="sticky top-0 z-10 flex flex-col bg-white/95 backdrop-blur-sm sm:bg-white sm:backdrop-blur-none">
           <div className="flex justify-center pt-3 pb-1 sm:hidden">
-            <div className="h-1 w-12 rounded-full bg-slate-600" aria-hidden />
+            <div className="h-1 w-12 rounded-full bg-zinc-300" aria-hidden />
           </div>
           <div className="flex items-center justify-between px-4 pb-4 pt-1 sm:px-6 sm:pt-6 sm:pb-0">
-            <h2 className="text-base sm:text-lg font-semibold text-white">Admin Profile</h2>
+            <h2 className="text-base sm:text-lg font-semibold text-zinc-900">Admin Profile</h2>
             <button
               type="button"
               onClick={onClose}
-              className="-mr-2 rounded-lg p-2.5 text-slate-400 transition hover:bg-white/10 hover:text-white touch-manipulation"
+              className="-mr-2 rounded-lg p-2.5 text-zinc-500 transition hover:bg-zinc-50 hover:text-zinc-900 touch-manipulation"
               aria-label="Close"
             >
               <svg className="h-5 w-5" fill="none" viewBox="0 0 24 24" stroke="currentColor">
@@ -2908,40 +3059,40 @@ function AdminProfileModal({
         <div className="px-4 pb-6 pt-0 sm:px-6 sm:pt-0 sm:pb-6">
           <dl className="space-y-4 sm:space-y-4">
             <div className="flex flex-col gap-1 sm:block">
-              <dt className="text-xs font-medium uppercase tracking-wider text-slate-500">Admin Name</dt>
-              <dd className="font-medium text-white break-words">{admin.adminname}</dd>
+              <dt className="text-xs font-medium uppercase tracking-wider text-zinc-500">Admin Name</dt>
+              <dd className="font-medium text-zinc-900 break-words">{admin.adminname}</dd>
             </div>
             <div className="flex flex-col gap-1 sm:block">
-              <dt className="text-xs font-medium uppercase tracking-wider text-slate-500">Admin ID</dt>
-              <dd className="font-mono text-sm text-slate-400 break-all">{admin.id}</dd>
+              <dt className="text-xs font-medium uppercase tracking-wider text-zinc-500">Admin ID</dt>
+              <dd className="font-mono text-sm text-zinc-500 break-all">{admin.id}</dd>
             </div>
             <div className="flex flex-col gap-1.5 sm:block">
-              <dt className="text-xs font-medium uppercase tracking-wider text-slate-500">Role</dt>
+              <dt className="text-xs font-medium uppercase tracking-wider text-zinc-500">Role</dt>
               <dd>
-                <span className={`inline-block rounded-lg px-2.5 py-1 text-xs font-medium ${admin.isMasterAdmin ? "bg-amber-500/20 text-amber-300" : "text-slate-300 bg-slate-600/50"}`}>
+                <span className={`inline-block rounded-lg px-2.5 py-1 text-xs font-medium ${admin.isMasterAdmin ? "admin-badge-master" : "admin-badge"}`}>
                   {admin.isMasterAdmin ? "Master Admin" : "Admin"}
                 </span>
               </dd>
             </div>
             <div className="flex flex-col gap-1.5 sm:block">
-              <dt className="text-xs font-medium uppercase tracking-wider text-slate-500">Tab access</dt>
+              <dt className="text-xs font-medium uppercase tracking-wider text-zinc-500">Tab access</dt>
               <dd className="flex flex-wrap gap-1.5">
                 {admin.isMasterAdmin ? (
-                  <span className="rounded bg-slate-600/50 px-2 py-0.5 text-xs text-slate-300">All tabs</span>
+                  <span className="rounded bg-zinc-100 px-2 py-0.5 text-xs text-zinc-600">All tabs</span>
                 ) : enabledTabIds(admin.tabAccess).length > 0 ? (
                   enabledTabIds(admin.tabAccess).map((id) => (
-                    <span key={id} className="rounded bg-slate-600/50 px-2 py-0.5 text-xs text-slate-300">
+                    <span key={id} className="rounded bg-zinc-100 px-2 py-0.5 text-xs text-zinc-600">
                       {tabAccessLabel(id)}
                     </span>
                   ))
                 ) : (
-                  <span className="text-xs text-slate-500">No tabs assigned</span>
+                  <span className="text-xs text-zinc-500">No tabs assigned</span>
                 )}
               </dd>
             </div>
           </dl>
 
-          <div className="mt-6 sm:mt-8 space-y-4 border-t border-slate-700/50 pt-6">
+          <div className="mt-6 sm:mt-8 space-y-4 border-t border-zinc-200 pt-6">
             <form onSubmit={handleChangePassword} className="flex flex-col gap-3 sm:flex-row sm:gap-2">
               <input
                 type="password"
@@ -2964,13 +3115,13 @@ function AdminProfileModal({
                 type="button"
                 onClick={handleDelete}
                 disabled={deleting}
-                className="w-full rounded-lg bg-red-600 px-4 py-3 sm:py-2 text-sm font-medium text-white hover:bg-red-500 disabled:opacity-50 min-h-[44px] sm:min-h-0"
+                className="w-full rounded-lg bg-red-600 px-4 py-3 sm:py-2 text-sm font-medium text-zinc-900 hover:bg-red-500 disabled:opacity-50 min-h-[44px] sm:min-h-0"
               >
                 {deleting ? "..." : "Delete Admin"}
               </button>
             )}
             {admin.isMasterAdmin && (
-              <p className="text-xs text-slate-500">Master admin cannot be deleted. Only password can be changed.</p>
+              <p className="text-xs text-zinc-500">Master admin cannot be deleted. Only password can be changed.</p>
             )}
           </div>
         </div>
@@ -3045,49 +3196,49 @@ function CreateAdminSection({
   return (
     <div className="space-y-8">
       <section className="admin-panel w-full">
-        <h2 className="mb-1 text-base font-semibold text-white/90">Create Admin</h2>
-        <p className="mb-6 text-sm text-slate-400">Create credentials and choose which admin panel tabs this user can open.</p>
+        <h2 className="mb-1 text-base font-semibold text-zinc-900">Create Admin</h2>
+        <p className="mb-6 text-sm text-zinc-500">Create credentials and choose which admin panel tabs this user can open.</p>
         <form onSubmit={handleSubmit} className="space-y-5">
           <div>
-            <label className="mb-2 block text-sm font-medium text-slate-300">Admin Name</label>
+            <label className="mb-2 block text-sm font-medium text-zinc-600">Admin Name</label>
             <input
               type="text"
               value={adminname}
               onChange={(e) => setAdminname(e.target.value)}
               required
-              className="admin-input w-full rounded-xl px-4 py-3 text-white outline-none"
+              className="admin-input w-full rounded-xl px-4 py-3 text-zinc-900 outline-none"
               placeholder="adminname"
             />
           </div>
           <div>
-            <label className="mb-2 block text-sm font-medium text-slate-300">Password</label>
+            <label className="mb-2 block text-sm font-medium text-zinc-600">Password</label>
             <input
               type="password"
               value={password}
               onChange={(e) => setPassword(e.target.value)}
               required
               minLength={6}
-              className="admin-input w-full rounded-xl px-4 py-3 text-white outline-none"
+              className="admin-input w-full rounded-xl px-4 py-3 text-zinc-900 outline-none"
               placeholder="••••••••"
             />
           </div>
           <div className="space-y-3">
-            <label className="block text-sm font-medium text-slate-300">Tab permissions</label>
-            <p className="text-xs text-slate-500">Dashboard is always available. Select the sections this admin can manage.</p>
+            <label className="block text-sm font-medium text-zinc-600">Tab permissions</label>
+            <p className="text-xs text-zinc-500">Dashboard is always available. Select the sections this admin can manage.</p>
             <div className="grid gap-2 sm:grid-cols-2">
               {ADMIN_TAB_DEFINITIONS.map((def) => (
                 <label
                   key={def.id}
-                  className="flex cursor-pointer items-center gap-3 rounded-xl border border-slate-600 bg-slate-800/50 px-3 py-3 transition hover:border-green-500/30"
+                  className="flex cursor-pointer items-center gap-3 rounded-xl border border-zinc-200 bg-zinc-50 px-3 py-3 transition hover:border-zinc-300"
                 >
                   <input
                     type="checkbox"
                     checked={tabAccess[def.id]}
                     onChange={() => toggleTab(def.id)}
-                    className="rounded border-slate-500"
+                    className="rounded border-zinc-300"
                   />
-                  <span className="text-lg" aria-hidden>{def.icon}</span>
-                  <span className="text-sm text-slate-200">{def.label}</span>
+                  <AdminTabIcon tab={def.id} className="h-5 w-5 shrink-0" />
+                  <span className="text-sm text-zinc-700">{def.label}</span>
                 </label>
               ))}
             </div>
@@ -3096,15 +3247,15 @@ function CreateAdminSection({
           <button
             type="submit"
             disabled={submitting}
-            className="admin-btn-primary rounded-xl px-6 py-3 font-medium text-white disabled:opacity-50"
+            className="admin-btn-primary rounded-xl px-6 py-3 font-medium disabled:opacity-50"
           >
             {submitting ? "Creating..." : "Create Admin"}
           </button>
         </form>
       </section>
       <section className="admin-panel w-full">
-        <h2 className="mb-1 text-base font-semibold text-white/90">Existing Admins</h2>
-        <p className="mb-5 text-sm text-slate-400">{admins.length} admin(s)</p>
+        <h2 className="mb-1 text-base font-semibold text-zinc-900">Existing Admins</h2>
+        <p className="mb-5 text-sm text-zinc-500">{admins.length} admin(s)</p>
         <ul className="space-y-2">
           {admins.map((a) => (
             <li
@@ -3113,15 +3264,15 @@ function CreateAdminSection({
               tabIndex={0}
               onClick={() => setSelectedAdmin(a)}
               onKeyDown={(e) => e.key === "Enter" && setSelectedAdmin(a)}
-              className="admin-list-item flex cursor-pointer flex-col gap-2 rounded-xl px-4 py-3.5 transition hover:border-green-500/30 sm:flex-row sm:items-center sm:justify-between"
+              className="admin-list-item flex cursor-pointer flex-col gap-2 rounded-xl px-4 py-3.5 transition hover:border-zinc-300 sm:flex-row sm:items-center sm:justify-between"
             >
-              <span className="shrink-0 font-medium text-slate-200">{a.adminname}</span>
+              <span className="shrink-0 font-medium text-zinc-700">{a.adminname}</span>
               <div className="flex flex-wrap gap-1.5">
                 {a.isMasterAdmin && (
                   <span className="shrink-0 rounded-lg bg-amber-500/20 px-2 py-0.5 text-xs text-amber-300">Master</span>
                 )}
                 {!a.isMasterAdmin && enabledTabIds(a.tabAccess).map((id) => (
-                  <span key={id} className="shrink-0 rounded bg-slate-600/50 px-2 py-0.5 text-xs text-slate-300">
+                  <span key={id} className="shrink-0 rounded bg-zinc-100 px-2 py-0.5 text-xs text-zinc-600">
                     {tabAccessLabel(id)}
                   </span>
                 ))}
@@ -3170,21 +3321,21 @@ function UsersSection({
   return (
     <div className="space-y-6">
       <div>
-        <h1 className="text-2xl font-bold text-white mb-1">Users List</h1>
-        <p className="text-slate-400 text-sm">
+        <h1 className="text-2xl font-bold text-zinc-900 mb-1">Users List</h1>
+        <p className="text-zinc-500 text-sm">
           View registered users, normal balances, win balances, block/unblock, and add coins.
         </p>
       </div>
 
       <div className="flex flex-col gap-4 sm:flex-row sm:items-center sm:justify-between">
-        <div className="flex bg-slate-800/60 p-1 rounded-xl border border-slate-700/50 w-fit">
+        <div className="flex bg-zinc-50/60 p-1 rounded-xl border border-zinc-200 w-fit">
           {(["all", "blocked"] as const).map((t) => (
             <button
               key={t}
               type="button"
               onClick={() => setUsersTab(t)}
               className={`px-4 py-2 rounded-lg text-sm font-semibold transition ${
-                usersTab === t ? "bg-green-600 text-white" : "text-slate-400 hover:text-slate-200"
+                usersTab === t ? "admin-btn-primary" : "text-zinc-500 hover:text-zinc-700"
               }`}
             >
               {t === "all" ? "All Users" : "Blocked Only"}
@@ -3203,7 +3354,7 @@ function UsersSection({
 
       <section className="admin-table-panel w-full">
         {filteredUsers.length === 0 ? (
-          <p className="py-12 text-center text-sm text-slate-400">No users found</p>
+          <p className="py-12 text-center text-sm text-zinc-500">No users found</p>
         ) : (
           <div className="excel-table-container">
             <table className="excel-table">
@@ -3224,11 +3375,11 @@ function UsersSection({
                   const normalCoins = Math.max(0, u.coins - winCoins);
                   return (
                     <tr key={u.id}>
-                      <td className="font-semibold text-white">{u.displayName}</td>
-                      <td className="font-mono text-slate-400">{u.username || u.id}</td>
+                      <td className="font-semibold text-zinc-900">{u.displayName}</td>
+                      <td className="font-mono text-zinc-500">{u.username || u.id}</td>
                       <td className="text-right font-medium text-amber-300">💵 {normalCoins}</td>
-                      <td className="text-right font-medium text-emerald-400">💵 {winCoins}</td>
-                      <td className="text-right font-bold text-white">💵 {u.coins}</td>
+                      <td className="text-right font-medium text-zinc-900">💵 {winCoins}</td>
+                      <td className="text-right font-bold text-zinc-900">💵 {u.coins}</td>
                       <td className="text-center">
                         <span
                           className={`inline-block px-2.5 py-1 text-xs font-semibold rounded-full ${
@@ -3244,7 +3395,7 @@ function UsersSection({
                         <button
                           type="button"
                           onClick={() => setSelectedUser(u)}
-                          className="bg-green-600 hover:bg-green-500 text-white rounded-lg px-3 py-1.5 text-xs font-medium transition"
+                          className="bg-zinc-900 hover:bg-zinc-800 text-zinc-900 rounded-lg px-3 py-1.5 text-xs font-medium transition"
                         >
                           View Details
                         </button>
@@ -3367,14 +3518,14 @@ function UserProfileModal({
     <div className="fixed inset-0 top-16 z-50 flex items-center justify-center bg-black/70 p-4">
       <div
         ref={ref}
-        className="max-h-[calc(100vh-6rem)] w-full max-w-md overflow-y-auto rounded-2xl border border-slate-600/50 bg-slate-900 p-6 shadow-xl"
+        className="max-h-[calc(100vh-6rem)] w-full max-w-md overflow-y-auto rounded-2xl border border-zinc-200 bg-white p-6 shadow-xl"
       >
         <div className="mb-6 flex items-center justify-between">
-          <h2 className="text-lg font-semibold text-white">User Profile</h2>
+          <h2 className="text-lg font-semibold text-zinc-900">User Profile</h2>
           <button
             type="button"
             onClick={onClose}
-            className="rounded-lg p-2 text-slate-400 transition hover:bg-white/10 hover:text-white"
+            className="rounded-lg p-2 text-zinc-500 transition hover:bg-zinc-50 hover:text-zinc-900"
             aria-label="Close"
           >
             <svg className="h-5 w-5" fill="none" viewBox="0 0 24 24" stroke="currentColor">
@@ -3382,35 +3533,35 @@ function UserProfileModal({
             </svg>
           </button>
         </div>
-        <dl className="space-y-4 text-slate-300">
+        <dl className="space-y-4 text-zinc-600">
           <div>
-            <span className="text-xs font-medium uppercase tracking-wider text-slate-500">Display Name</span>
-            <p className="mt-1 font-medium text-white">{user.displayName}</p>
+            <span className="text-xs font-medium uppercase tracking-wider text-zinc-500">Display Name</span>
+            <p className="mt-1 font-medium text-zinc-900">{user.displayName}</p>
           </div>
           <div>
-            <span className="text-xs font-medium uppercase tracking-wider text-slate-500">Email</span>
-            <p className="mt-1 text-slate-200">{user.email}</p>
+            <span className="text-xs font-medium uppercase tracking-wider text-zinc-500">Email</span>
+            <p className="mt-1 text-zinc-700">{user.email}</p>
           </div>
           <div>
-            <span className="text-xs font-medium uppercase tracking-wider text-slate-500">Username / ID</span>
-            <p className="mt-1 font-mono text-sm text-slate-400">{user.username || user.id}</p>
+            <span className="text-xs font-medium uppercase tracking-wider text-zinc-500">Username / ID</span>
+            <p className="mt-1 font-mono text-sm text-zinc-500">{user.username || user.id}</p>
           </div>
           <div className="grid grid-cols-2 gap-4">
             <div>
-              <span className="text-xs font-medium uppercase tracking-wider text-slate-500">Normal Coins</span>
+              <span className="text-xs font-medium uppercase tracking-wider text-zinc-500">Normal Coins</span>
               <p className="mt-1 font-semibold text-amber-300">💵 {normalCoins}</p>
             </div>
             <div>
-              <span className="text-xs font-medium uppercase tracking-wider text-slate-500">Won Coins</span>
-              <p className="mt-1 font-semibold text-emerald-400">💵 {winCoins}</p>
+              <span className="text-xs font-medium uppercase tracking-wider text-zinc-500">Won Coins</span>
+              <p className="mt-1 font-semibold text-zinc-900">💵 {winCoins}</p>
             </div>
           </div>
           <div>
-            <span className="text-xs font-medium uppercase tracking-wider text-slate-500">Total Coins</span>
-            <p className="mt-1 font-bold text-white text-lg">💵 {user.coins}</p>
+            <span className="text-xs font-medium uppercase tracking-wider text-zinc-500">Total Coins</span>
+            <p className="mt-1 font-bold text-zinc-900 text-lg">💵 {user.coins}</p>
           </div>
           <div>
-            <span className="text-xs font-medium uppercase tracking-wider text-slate-500">Status</span>
+            <span className="text-xs font-medium uppercase tracking-wider text-zinc-500">Status</span>
             <div className="mt-1">
               <span className={`inline-block px-2.5 py-0.5 text-xs font-medium rounded ${user.isBlocked ? "bg-rose-500/20 text-rose-300" : "bg-emerald-500/20 text-emerald-300"}`}>
                 {user.isBlocked ? "Blocked" : "Active"}
@@ -3418,7 +3569,7 @@ function UserProfileModal({
             </div>
           </div>
         </dl>
-        <div className="mt-8 space-y-4 border-t border-slate-700/50 pt-6">
+        <div className="mt-8 space-y-4 border-t border-zinc-200 pt-6">
           {canAddCoins && (
             <form onSubmit={handleAddCoins} className="flex gap-2">
               <input
@@ -3445,8 +3596,8 @@ function UserProfileModal({
               disabled={blocking}
               className={`rounded-lg px-4 py-2 text-sm font-medium disabled:opacity-50 ${
                 user.isBlocked
-                  ? "bg-emerald-600 text-white hover:bg-emerald-500"
-                  : "bg-amber-600/80 text-white hover:bg-amber-500/80"
+                  ? "admin-btn-primary"
+                  : "bg-amber-600/80 text-zinc-900 hover:bg-amber-500/80"
               }`}
             >
               {blocking ? "..." : user.isBlocked ? "Unblock" : "Block"}
@@ -3455,7 +3606,7 @@ function UserProfileModal({
               type="button"
               onClick={handleDelete}
               disabled={deleting}
-              className="rounded-lg bg-red-600 px-4 py-2 text-sm font-medium text-white hover:bg-red-500 disabled:opacity-50"
+              className="rounded-lg bg-red-600 px-4 py-2 text-sm font-medium text-zinc-900 hover:bg-red-500 disabled:opacity-50"
             >
               {deleting ? "..." : "Delete Account"}
             </button>
@@ -3489,70 +3640,201 @@ type WithdrawalRequestWithUser = {
 };
 
 function DashboardSection({
-  users,
-  matches,
-  deposits,
-  withdrawals,
+  stats,
+  loading,
+  session,
   onNavigate,
+  onRefresh,
 }: {
-  users: User[];
-  matches: Match[];
-  deposits: any[];
-  withdrawals: any[];
+  stats: DashboardStats | null;
+  loading: boolean;
+  session: AdminSession | null;
   onNavigate: (t: Tab) => void;
+  onRefresh: () => void;
 }) {
-  const totalUsers = users.length;
-  const completedMatches = matches.filter((m) => m.status === "completed" || m.status === "ended").length;
-  const totalDeposits = deposits.filter((d) => d.status === "accepted").reduce((sum, d) => sum + d.amount, 0);
-  const totalWithdrawals = withdrawals.filter((w) => w.status === "accepted").reduce((sum, w) => sum + w.amount, 0);
+  const canUsers = session ? canAccessAdminTab(session, "users") : false;
+  const canWithdrawals = session ? canAccessAdminTab(session, "withdrawals") : false;
+  const canDeposits = session ? canAccessAdminTab(session, "moneyorders") : false;
+  const canModes = session ? canAccessAdminTab(session, "modes") : false;
+
+  const fmtCoins = (n: number) => n.toLocaleString("en-IN");
+  const fmtPct = (n: number) => `${Math.round(n * 100)}%`;
+
+  if (loading && !stats) {
+    return (
+      <div className="flex flex-col items-center justify-center py-16">
+        <LoadingSpinner size="lg" label="Loading dashboard..." />
+      </div>
+    );
+  }
+
+  if (!stats) {
+    return (
+      <div className="space-y-4 py-12 text-center">
+        <p className="text-zinc-500 text-sm">Could not load dashboard statistics.</p>
+        <button type="button" onClick={onRefresh} className="admin-btn-primary rounded-xl px-4 py-2 text-sm font-semibold">
+          Retry
+        </button>
+      </div>
+    );
+  }
+
+  const { users, money, matches, upcomingMatches, pendingWithdrawals } = stats;
+
+  const statCard = (
+    label: string,
+    value: string | number,
+    onClick?: () => void,
+    accent?: "red" | "green" | "blue" | "amber" | "purple" | "cyan",
+  ) => (
+    <div
+      key={label}
+      className={`stat-card ${accent ?? "blue"}${onClick ? " cursor-pointer" : ""}`}
+      onClick={onClick}
+      onKeyDown={onClick ? (e) => e.key === "Enter" && onClick() : undefined}
+      role={onClick ? "button" : undefined}
+      tabIndex={onClick ? 0 : undefined}
+    >
+      <div>
+        <p className="text-zinc-500 text-xs font-semibold uppercase tracking-wider mb-1">{label}</p>
+        <h3 className="text-2xl sm:text-3xl font-extrabold text-zinc-900">{value}</h3>
+      </div>
+    </div>
+  );
 
   return (
     <div className="space-y-8">
-      <div>
-        <h1 className="text-2xl font-bold text-white mb-1">Dashboard</h1>
-        <p className="text-slate-400 text-sm">System performance, statistics, and pending transactions overview.</p>
+      <div className="flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between">
+        <div>
+          <h1 className="text-2xl font-bold text-zinc-900 mb-1">Dashboard</h1>
+          <p className="text-zinc-500 text-sm">
+            Aggregated platform metrics from the database. Updated{" "}
+            {stats.generatedAt ? formatMatchDateTime(stats.generatedAt) : "recently"}.
+          </p>
+        </div>
+        <button
+          type="button"
+          onClick={onRefresh}
+          disabled={loading}
+          className="admin-btn-primary self-start rounded-xl px-4 py-2 text-sm font-semibold disabled:opacity-60"
+        >
+          {loading ? "Refreshing..." : "Refresh stats"}
+        </button>
       </div>
 
-      <div className="stat-card-grid">
-        <div className="stat-card red cursor-pointer" onClick={() => onNavigate("users")}>
-          <div>
-            <p className="text-slate-400 text-xs font-semibold uppercase tracking-wider mb-1">Total Users</p>
-            <h3 className="text-3xl font-extrabold text-white">{totalUsers}</h3>
-          </div>
-          <div className="stat-icon-wrapper">
-            <span className="stat-icon text-red-500">👤</span>
-          </div>
+      <section>
+        <h2 className="dashboard-section-title">Actions &amp; ops</h2>
+        <div className="stat-card-grid">
+          {canWithdrawals &&
+            statCard(
+              "Pending withdrawals",
+              `${money.pendingWithdrawalsCount} · ${fmtCoins(money.pendingWithdrawalsAmount)}`,
+              () => onNavigate("withdrawals"),
+              "amber",
+            )}
+          {canModes && statCard("Upcoming matches", matches.upcoming, () => onNavigate("modes"), "green")}
+          {canModes && statCard("Live matches", matches.ongoing, () => onNavigate("modes"), "cyan")}
+          {canUsers && statCard("Blocked users", users.blocked, () => onNavigate("users"), "red")}
         </div>
+      </section>
 
-        <div className="stat-card green cursor-pointer" onClick={() => onNavigate("modes")}>
-          <div>
-            <p className="text-slate-400 text-xs font-semibold uppercase tracking-wider mb-1">Total Matches Completed</p>
-            <h3 className="text-3xl font-extrabold text-white">{completedMatches}</h3>
-          </div>
-          <div className="stat-icon-wrapper">
-            <span className="stat-icon text-green-500">🎮</span>
-          </div>
+      <section>
+        <h2 className="dashboard-section-title">Money &amp; platform health</h2>
+        <div className="stat-card-grid">
+          {canDeposits &&
+            statCard("Total deposits", fmtCoins(money.totalDeposits), () => onNavigate("moneyorders"), "blue")}
+          {canWithdrawals &&
+            statCard(
+              "Total withdrawals",
+              fmtCoins(money.totalWithdrawals),
+              () => onNavigate("withdrawals"),
+              "amber",
+            )}
+          {(canDeposits || canWithdrawals) &&
+            statCard("Net flow", fmtCoins(money.netFlow), undefined, money.netFlow >= 0 ? "green" : "red")}
+          {canWithdrawals &&
+            statCard("Pending payout liability", fmtCoins(money.pendingWithdrawalsAmount), () => onNavigate("withdrawals"), "purple")}
+          {canUsers && statCard("Coins in wallets", fmtCoins(users.walletCoins), () => onNavigate("users"))}
+          {canUsers && statCard("Withdrawable winnings", fmtCoins(users.withdrawableWinnings), () => onNavigate("users"))}
         </div>
+      </section>
 
-        <div className="stat-card blue cursor-pointer" onClick={() => onNavigate("moneyorders")}>
-          <div>
-            <p className="text-slate-400 text-xs font-semibold uppercase tracking-wider mb-1">Total Deposit</p>
-            <h3 className="text-3xl font-extrabold text-white">💵 {totalDeposits}</h3>
-          </div>
-          <div className="stat-icon-wrapper">
-            <span className="stat-icon text-blue-500">💳</span>
-          </div>
+      <section>
+        <h2 className="dashboard-section-title">Growth &amp; activity (7 days)</h2>
+        <div className="stat-card-grid">
+          {canUsers && statCard("New users (7d)", users.new7d, () => onNavigate("users"), "green")}
+          {canUsers && statCard("New users (30d)", users.new30d, () => onNavigate("users"))}
+          {canUsers && statCard("New users today", users.newToday, () => onNavigate("users"))}
+          {canDeposits && statCard("Deposits (7d)", fmtCoins(money.deposits7d), () => onNavigate("moneyorders"), "blue")}
+          {canDeposits && statCard("Deposits today", fmtCoins(money.depositsToday), () => onNavigate("moneyorders"))}
+          {canModes && statCard("Completed matches (7d)", matches.completed7d, () => onNavigate("modes"))}
+          {canUsers && statCard("Push-enabled users", users.pushEnabled, () => onNavigate("users"), "purple")}
+          {canUsers && statCard("Active players", users.activePlayers, () => onNavigate("users"))}
+          {canUsers && statCard("Total users", users.total, () => onNavigate("users"), "red")}
         </div>
+      </section>
 
-        <div className="stat-card amber cursor-pointer" onClick={() => onNavigate("withdrawals")}>
-          <div>
-            <p className="text-slate-400 text-xs font-semibold uppercase tracking-wider mb-1">Total Withdrawal</p>
-            <h3 className="text-3xl font-extrabold text-white">💵 {totalWithdrawals}</h3>
-          </div>
-          <div className="stat-icon-wrapper">
-            <span className="stat-icon text-amber-500">💸</span>
-          </div>
+      <section>
+        <h2 className="dashboard-section-title">Matches &amp; engagement</h2>
+        <div className="stat-card-grid">
+          {canModes && statCard("Completed matches", matches.completed, () => onNavigate("modes"), "green")}
+          {canModes && statCard("Avg upcoming fill rate", fmtPct(matches.avgUpcomingFillRate), () => onNavigate("modes"))}
+          {canModes && statCard("Entry fees collected", fmtCoins(matches.entryFeesCollected), () => onNavigate("modes"), "blue")}
+          {canModes && statCard("Solo / Duo / Squad", `${matches.solo} / ${matches.duo} / ${matches.squad}`, () => onNavigate("modes"))}
         </div>
+      </section>
+
+      <div className="dashboard-quick-grid">
+        {canModes && upcomingMatches.length > 0 && (
+          <section className="dashboard-quick-panel">
+            <div className="flex items-center justify-between mb-4">
+              <h2 className="dashboard-section-title mb-0">Next upcoming matches</h2>
+              <button type="button" onClick={() => onNavigate("modes")} className="text-xs font-semibold text-zinc-500 hover:text-zinc-900">
+                View all
+              </button>
+            </div>
+            <ul className="dashboard-quick-list">
+              {upcomingMatches.map((m) => (
+                <li key={m.id} className="dashboard-quick-item">
+                  <div>
+                    <p className="font-semibold text-zinc-900 text-sm">{m.title}</p>
+                    <p className="text-xs text-zinc-500 mt-0.5">
+                      {m.scheduledAt ? formatMatchDateTime(m.scheduledAt) : "TBD"} · {m.matchType}
+                    </p>
+                  </div>
+                  <div className="text-right text-sm">
+                    <p className="font-semibold text-zinc-900">
+                      {m.participantCount}/{m.maxParticipants}
+                    </p>
+                    <p className="text-xs text-zinc-500">{fmtPct(m.fillRate)} · {fmtCoins(m.entryFee)} fee</p>
+                  </div>
+                </li>
+              ))}
+            </ul>
+          </section>
+        )}
+
+        {canWithdrawals && pendingWithdrawals.length > 0 && (
+          <section className="dashboard-quick-panel">
+            <div className="flex items-center justify-between mb-4">
+              <h2 className="dashboard-section-title mb-0">Pending withdrawal queue</h2>
+              <button type="button" onClick={() => onNavigate("withdrawals")} className="text-xs font-semibold text-zinc-500 hover:text-zinc-900">
+                View all
+              </button>
+            </div>
+            <ul className="dashboard-quick-list">
+              {pendingWithdrawals.map((w) => (
+                <li key={w.id} className="dashboard-quick-item">
+                  <div>
+                    <p className="font-semibold text-zinc-900 text-sm">{w.userDisplayName}</p>
+                    <p className="text-xs text-zinc-500 mt-0.5 truncate max-w-[200px]">{w.upiId || w.userEmail}</p>
+                  </div>
+                  <p className="font-semibold text-zinc-900 text-sm">{fmtCoins(w.amount)}</p>
+                </li>
+              ))}
+            </ul>
+          </section>
+        )}
       </div>
     </div>
   );
@@ -3588,8 +3870,8 @@ function MoneyOrdersSection({
     <div className="space-y-6">
       <div className="flex flex-col gap-4 sm:flex-row sm:items-center sm:justify-between">
         <div>
-          <h1 className="text-2xl font-bold text-white mb-1">Deposits</h1>
-          <p className="text-slate-400 text-sm">View successful deposits processed automatically via ZapUPI Payment Gateway.</p>
+          <h1 className="text-2xl font-bold text-zinc-900 mb-1">Deposits</h1>
+          <p className="text-zinc-500 text-sm">View successful deposits processed automatically via ZapUPI Payment Gateway.</p>
         </div>
 
         <input
@@ -3603,7 +3885,7 @@ function MoneyOrdersSection({
 
       <div className="admin-table-panel w-full">
         {filtered.length === 0 ? (
-          <p className="py-12 text-center text-sm text-slate-400">No successful deposits found</p>
+          <p className="py-12 text-center text-sm text-zinc-500">No successful deposits found</p>
         ) : (
           <div className="excel-table-container">
             <table className="excel-table">
@@ -3621,12 +3903,12 @@ function MoneyOrdersSection({
                   return (
                     <tr key={d.id}>
                       <td>
-                        <p className="font-semibold text-white">{user?.displayName || "Unknown"}</p>
-                        <p className="text-xs text-slate-500 font-mono mt-0.5">{d.userId}</p>
+                        <p className="font-semibold text-zinc-900">{user?.displayName || "Unknown"}</p>
+                        <p className="text-xs text-zinc-500 font-mono mt-0.5">{d.userId}</p>
                       </td>
                       <td>
-                        <p className="font-mono font-medium text-slate-300">{d.utr}</p>
-                        <p className="text-xs text-slate-500 mt-0.5">{new Date(d.createdAt).toLocaleString()}</p>
+                        <p className="font-mono font-medium text-zinc-600">{d.utr}</p>
+                        <p className="text-xs text-zinc-500 mt-0.5">{new Date(d.createdAt).toLocaleString()}</p>
                       </td>
                       <td className="text-right font-bold text-amber-300">💵 {d.amount}</td>
                       <td className="text-center">
@@ -3750,13 +4032,13 @@ function WithdrawalsSection({
   return (
     <div className="space-y-6">
       <div>
-        <h1 className="text-2xl font-bold text-white mb-1">Withdrawals</h1>
-        <p className="text-slate-400 text-sm">Review payouts. UPI IDs are paid via UPI; email addresses receive a Google Play redeem code.</p>
+        <h1 className="text-2xl font-bold text-zinc-900 mb-1">Withdrawals</h1>
+        <p className="text-zinc-500 text-sm">Review payouts. UPI IDs are paid via UPI; email addresses receive a Google Play redeem code.</p>
       </div>
 
       <section className="admin-panel w-full">
-        <h3 className="mb-2 text-sm font-semibold text-slate-300">Withdrawal Service Charge</h3>
-        <p className="mb-4 text-xs text-slate-400 font-medium">
+        <h3 className="mb-2 text-sm font-semibold text-zinc-600">Withdrawal Service Charge</h3>
+        <p className="mb-4 text-xs text-zinc-500 font-medium">
           Define the platform commission (%) deducted automatically upon payout.
         </p>
         <div className="flex items-center gap-3">
@@ -3770,13 +4052,13 @@ function WithdrawalsSection({
               onChange={(e) => setChargeInput(e.target.value)}
               className="admin-input w-24 rounded-lg px-3 py-2 text-sm outline-none"
             />
-            <span className="text-sm text-slate-400">%</span>
+            <span className="text-sm text-zinc-500">%</span>
           </div>
           <button
             type="button"
             onClick={handleSaveCharge}
             disabled={savingCharge}
-            className="admin-btn-primary rounded-lg px-4 py-2 text-sm font-semibold text-white disabled:opacity-50"
+            className="admin-btn-primary rounded-lg px-4 py-2 text-sm font-semibold text-zinc-900 disabled:opacity-50"
           >
             {savingCharge ? "Saving..." : "Save Config"}
           </button>
@@ -3784,14 +4066,14 @@ function WithdrawalsSection({
       </section>
 
       <div className="flex flex-col gap-4 md:flex-row md:items-center md:justify-between">
-        <div className="flex bg-slate-800/60 p-1 rounded-xl border border-slate-700/50 w-fit">
+        <div className="flex bg-zinc-50/60 p-1 rounded-xl border border-zinc-200 w-fit">
           {(["all", "pending", "accepted", "rejected"] as const).map((s) => (
             <button
               key={s}
               type="button"
               onClick={() => setFilterStatus(s)}
               className={`px-4 py-2 rounded-lg text-sm font-semibold transition ${
-                filterStatus === s ? "bg-green-600 text-white" : "text-slate-400 hover:text-slate-200"
+                filterStatus === s ? "admin-btn-primary text-zinc-900" : "text-zinc-500 hover:text-zinc-700"
               }`}
             >
               {s.charAt(0).toUpperCase() + s.slice(1)}
@@ -3810,7 +4092,7 @@ function WithdrawalsSection({
 
       <div className="admin-table-panel w-full">
         {filtered.length === 0 ? (
-          <p className="py-12 text-center text-sm text-slate-400">No withdrawals found</p>
+          <p className="py-12 text-center text-sm text-zinc-500">No withdrawals found</p>
         ) : (
           <div className="excel-table-container">
             <table className="excel-table">
@@ -3831,15 +4113,15 @@ function WithdrawalsSection({
                   return (
                     <tr key={w.id}>
                       <td>
-                        <p className="font-semibold text-white">{user?.displayName || "Unknown"}</p>
-                        <p className="text-xs text-slate-500 font-mono mt-0.5">{w.userId}</p>
+                        <p className="font-semibold text-zinc-900">{user?.displayName || "Unknown"}</p>
+                        <p className="text-xs text-zinc-500 font-mono mt-0.5">{w.userId}</p>
                       </td>
                       <td>
-                        <p className="font-medium text-slate-300">{w.upiId}</p>
-                        <p className="text-xs text-slate-500 mt-0.5">{new Date(w.createdAt).toLocaleString()}</p>
+                        <p className="font-medium text-zinc-600">{w.upiId}</p>
+                        <p className="text-xs text-zinc-500 mt-0.5">{new Date(w.createdAt).toLocaleString()}</p>
                       </td>
                       <td className="text-right font-semibold text-rose-400">- 💵 {w.amount}</td>
-                      <td className="text-right font-bold text-emerald-400">₹ {netPayout}</td>
+                      <td className="text-right font-bold text-zinc-900">₹ {netPayout}</td>
                       <td className="text-center">
                         <span
                           className={`inline-block px-2.5 py-1 text-xs font-semibold rounded-full ${
@@ -3865,7 +4147,7 @@ function WithdrawalsSection({
                               type="button"
                               disabled={loading}
                               onClick={() => handleWithdrawAccept(w.id)}
-                              className="bg-emerald-600 hover:bg-emerald-500 text-white rounded-lg px-2.5 py-1.5 text-xs font-medium transition"
+                              className="admin-btn-primary rounded-lg px-2.5 py-1.5 text-xs font-medium transition"
                             >
                               Approve
                             </button>
@@ -3873,7 +4155,7 @@ function WithdrawalsSection({
                               type="button"
                               disabled={loading}
                               onClick={() => handleWithdrawReject(w.id)}
-                              className="bg-rose-600 hover:bg-rose-500 text-white rounded-lg px-2.5 py-1.5 text-xs font-medium transition"
+                              className="bg-rose-600 hover:bg-rose-500 text-zinc-900 rounded-lg px-2.5 py-1.5 text-xs font-medium transition"
                             >
                               Reject
                             </button>
@@ -3969,16 +4251,16 @@ function PushNotificationsSection() {
   return (
     <div className="space-y-6">
       <div>
-        <h1 className="text-2xl font-bold text-white mb-1">Push Notifications</h1>
-        <p className="text-slate-400 text-sm">Send dynamic Firebase notifications directly to users' Android applications.</p>
+        <h1 className="text-2xl font-bold text-zinc-900 mb-1">Push Notifications</h1>
+        <p className="text-zinc-500 text-sm">Send dynamic Firebase notifications directly to users' Android applications.</p>
       </div>
 
       <div className="grid grid-cols-1 lg:grid-cols-3 gap-6">
         <form onSubmit={handleSend} className="admin-panel w-full lg:col-span-2 space-y-5">
-          <h3 className="text-lg font-bold text-white mb-2">Compose Broadcast</h3>
+          <h3 className="text-lg font-bold text-zinc-900 mb-2">Compose Broadcast</h3>
 
           <div>
-            <label className="mb-2 block text-xs font-semibold uppercase tracking-wider text-slate-400">Target Segment</label>
+            <label className="mb-2 block text-xs font-semibold uppercase tracking-wider text-zinc-500">Target Segment</label>
             <div className="flex gap-2">
               {(["all", "active", "blocked"] as const).map((t) => (
                 <button
@@ -3986,7 +4268,7 @@ function PushNotificationsSection() {
                   type="button"
                   onClick={() => setTarget(t)}
                   className={`rounded-lg px-4 py-2 text-xs font-bold uppercase transition ${
-                    target === t ? "bg-green-600 text-white" : "bg-slate-800 text-slate-400 hover:bg-slate-700"
+                    target === t ? "admin-btn-primary text-zinc-900" : "bg-zinc-50 text-zinc-500 hover:bg-zinc-100"
                   }`}
                 >
                   {t === "all" ? "All Users" : t === "active" ? "Active Only" : "Blocked Only"}
@@ -3996,44 +4278,44 @@ function PushNotificationsSection() {
           </div>
 
           <div>
-            <label className="mb-2 block text-sm font-medium text-slate-300">Notification Title</label>
+            <label className="mb-2 block text-sm font-medium text-zinc-600">Notification Title</label>
             <input
               type="text"
               required
               value={title}
               onChange={(e) => setTitle(e.target.value)}
               placeholder="e.g. Free Fire Tournament Starting Soon!"
-              className="admin-input w-full rounded-xl px-4 py-3 text-sm text-white outline-none"
+              className="admin-input w-full rounded-xl px-4 py-3 text-sm text-zinc-900 outline-none"
             />
           </div>
 
           <div>
-            <label className="mb-2 block text-sm font-medium text-slate-300">Notification Body</label>
+            <label className="mb-2 block text-sm font-medium text-zinc-600">Notification Body</label>
             <textarea
               required
               rows={3}
               value={body}
               onChange={(e) => setBody(e.target.value)}
               placeholder="e.g. Join the Bermuda Daily Solo match. Entry is 10 coins. Huge prize pools!"
-              className="admin-input w-full rounded-xl px-4 py-3 text-sm text-white resize-none outline-none"
+              className="admin-input w-full rounded-xl px-4 py-3 text-sm text-zinc-900 resize-none outline-none"
             />
           </div>
 
           <div>
-            <label className="mb-2 block text-sm font-medium text-slate-300">Action Link (Optional)</label>
+            <label className="mb-2 block text-sm font-medium text-zinc-600">Action Link (Optional)</label>
             <input
               type="url"
               value={link}
               onChange={(e) => setLink(e.target.value)}
               placeholder="e.g. https://kingbattle.site/match/match-101"
-              className="admin-input w-full rounded-xl px-4 py-3 text-sm text-white outline-none"
+              className="admin-input w-full rounded-xl px-4 py-3 text-sm text-zinc-900 outline-none"
             />
           </div>
 
           <button
             type="submit"
             disabled={sending}
-            className="admin-btn-primary w-full rounded-xl py-3 text-sm font-bold text-white disabled:opacity-50"
+            className="admin-btn-primary w-full rounded-xl py-3 text-sm font-bold disabled:opacity-50"
           >
             {sending ? "Broadcasting..." : "Send Broadcast Now"}
           </button>
@@ -4041,7 +4323,7 @@ function PushNotificationsSection() {
 
         <div className="admin-panel w-full flex flex-col h-[520px]">
           <div className="flex justify-between items-center mb-4">
-            <h3 className="text-md font-bold text-white">Broadcast History</h3>
+            <h3 className="text-md font-bold text-zinc-900">Broadcast History</h3>
             {history.length > 0 && (
               <button type="button" onClick={handleClearHistory} className="text-xs text-red-400 hover:text-red-300">
                 Clear
@@ -4051,18 +4333,18 @@ function PushNotificationsSection() {
 
           <div className="flex-1 overflow-y-auto space-y-3 pr-1">
             {history.length === 0 ? (
-              <p className="text-sm text-slate-500 py-12 text-center my-auto">No notifications sent yet.</p>
+              <p className="text-sm text-zinc-500 py-12 text-center my-auto">No notifications sent yet.</p>
             ) : (
               history.map((h) => (
-                <div key={h.id} className="bg-slate-800/30 border border-slate-700/30 rounded-xl p-3 space-y-1">
-                  <div className="flex justify-between text-xs text-slate-500">
+                <div key={h.id} className="bg-zinc-50/30 border border-zinc-200/30 rounded-xl p-3 space-y-1">
+                  <div className="flex justify-between text-xs text-zinc-500">
                     <span className="font-bold uppercase tracking-wider text-green-500/80">{h.target}</span>
                     <span>{new Date(h.sentAt).toLocaleTimeString()}</span>
                   </div>
-                  <h4 className="font-semibold text-sm text-slate-200">{h.title}</h4>
-                  <p className="text-xs text-slate-400 line-clamp-2">{h.body}</p>
+                  <h4 className="font-semibold text-sm text-zinc-700">{h.title}</h4>
+                  <p className="text-xs text-zinc-500 line-clamp-2">{h.body}</p>
                   {typeof h.successCount === "number" && (
-                    <p className="text-[10px] text-slate-500">
+                    <p className="text-[10px] text-zinc-500">
                       {h.successCount} delivered
                       {h.failureCount ? ` · ${h.failureCount} failed` : ""}
                     </p>
@@ -4244,8 +4526,8 @@ function AppSettingsSection({ onSuccess }: { onSuccess: () => void }) {
   return (
     <div className="space-y-6">
       <div>
-        <h1 className="text-2xl font-bold text-white mb-1">App Settings</h1>
-        <p className="text-slate-400 text-sm">
+        <h1 className="text-2xl font-bold text-zinc-900 mb-1">App Settings</h1>
+        <p className="text-zinc-500 text-sm">
           Configure marquee announcement texts, customer support channels, signup incentives, and gateway QR codes.
         </p>
       </div>
@@ -4253,8 +4535,8 @@ function AppSettingsSection({ onSuccess }: { onSuccess: () => void }) {
       <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
         <section className="admin-panel w-full space-y-4">
           <div>
-            <h3 className="text-md font-bold text-slate-300">Marquee Announcement</h3>
-            <p className="text-xs text-slate-500 mt-1">This text scrolls at the top of the user app home page.</p>
+            <h3 className="text-md font-bold text-zinc-600">Marquee Announcement</h3>
+            <p className="text-xs text-zinc-500 mt-1">This text scrolls at the top of the user app home page.</p>
           </div>
           <div className="space-y-2">
             <input
@@ -4268,7 +4550,7 @@ function AppSettingsSection({ onSuccess }: { onSuccess: () => void }) {
               type="button"
               onClick={handleSaveAnnouncement}
               disabled={savingAnnouncement}
-              className="admin-btn-primary rounded-lg px-4 py-2 text-xs font-semibold text-white disabled:opacity-50"
+              className="admin-btn-primary rounded-lg px-4 py-2 text-xs font-semibold disabled:opacity-50"
             >
               {savingAnnouncement ? "Saving..." : "Save Announcement"}
             </button>
@@ -4277,8 +4559,8 @@ function AppSettingsSection({ onSuccess }: { onSuccess: () => void }) {
 
         <section className="admin-panel w-full space-y-4">
           <div>
-            <h3 className="text-md font-bold text-slate-300">Signup Coin Bonus</h3>
-            <p className="text-xs text-slate-500 mt-1">Free balance credited to newly registered players.</p>
+            <h3 className="text-md font-bold text-zinc-600">Signup Coin Bonus</h3>
+            <p className="text-xs text-zinc-500 mt-1">Free balance credited to newly registered players.</p>
           </div>
           <div className="space-y-2">
             <input
@@ -4292,7 +4574,7 @@ function AppSettingsSection({ onSuccess }: { onSuccess: () => void }) {
               type="button"
               onClick={handleSaveSignupBonus}
               disabled={savingBonus}
-              className="admin-btn-primary rounded-lg px-4 py-2 text-xs font-semibold text-white disabled:opacity-50"
+              className="admin-btn-primary rounded-lg px-4 py-2 text-xs font-semibold disabled:opacity-50"
             >
               {savingBonus ? "Saving..." : "Save Bonus"}
             </button>
@@ -4301,8 +4583,8 @@ function AppSettingsSection({ onSuccess }: { onSuccess: () => void }) {
 
         <section className="admin-panel w-full space-y-4">
           <div>
-            <h3 className="text-md font-bold text-slate-300">Customer Support URL</h3>
-            <p className="text-xs text-slate-500 mt-1">
+            <h3 className="text-md font-bold text-zinc-600">Customer Support URL</h3>
+            <p className="text-xs text-zinc-500 mt-1">
               WhatsApp wa.me link, Telegram t.me link, or general support contact channel.
             </p>
           </div>
@@ -4318,7 +4600,7 @@ function AppSettingsSection({ onSuccess }: { onSuccess: () => void }) {
               type="button"
               onClick={handleSaveSupportUrl}
               disabled={savingSupport}
-              className="admin-btn-primary rounded-lg px-4 py-2 text-xs font-semibold text-white disabled:opacity-50"
+              className="admin-btn-primary rounded-lg px-4 py-2 text-xs font-semibold disabled:opacity-50"
             >
               {savingSupport ? "Saving..." : "Save Support"}
             </button>
@@ -4327,11 +4609,11 @@ function AppSettingsSection({ onSuccess }: { onSuccess: () => void }) {
 
         <section className="admin-panel w-full space-y-4">
           <div>
-            <h3 className="text-md font-bold text-slate-300">Manual Deposit QR Code</h3>
-            <p className="text-xs text-slate-500 mt-1">UPI barcode scanned by users to deposit money manually.</p>
+            <h3 className="text-md font-bold text-zinc-600">Manual Deposit QR Code</h3>
+            <p className="text-xs text-zinc-500 mt-1">UPI barcode scanned by users to deposit money manually.</p>
           </div>
           <div className="flex flex-col gap-3">
-            <label className="admin-input flex min-h-[120px] cursor-pointer flex-col items-center justify-center rounded-xl border border-dashed p-4 transition hover:border-green-500/50">
+            <label className="admin-input flex min-h-[120px] cursor-pointer flex-col items-center justify-center rounded-xl border border-dashed p-4 transition hover:border-zinc-400">
               <input
                 type="file"
                 accept="image/*"
@@ -4348,7 +4630,7 @@ function AppSettingsSection({ onSuccess }: { onSuccess: () => void }) {
                   className="max-h-24 max-w-24 rounded-lg object-contain"
                 />
               ) : (
-                <span className="text-xs text-slate-500">Click to upload UPI QR code</span>
+                <span className="text-xs text-zinc-500">Click to upload UPI QR code</span>
               )}
             </label>
             <div className="flex gap-2">
@@ -4356,7 +4638,7 @@ function AppSettingsSection({ onSuccess }: { onSuccess: () => void }) {
                 <button
                   type="button"
                   onClick={handleQrClear}
-                  className="rounded-lg bg-slate-800 border border-slate-700 px-3 py-1.5 text-xs text-slate-300"
+                  className="rounded-lg bg-zinc-50 border border-zinc-200 px-3 py-1.5 text-xs text-zinc-600"
                 >
                   Clear
                 </button>
@@ -4365,7 +4647,7 @@ function AppSettingsSection({ onSuccess }: { onSuccess: () => void }) {
                 type="button"
                 onClick={handleSaveQr}
                 disabled={savingQr || (!qrFile && !depositQrUrl)}
-                className="admin-btn-primary rounded-lg px-3 py-1.5 text-xs font-semibold text-white disabled:opacity-50"
+                className="admin-btn-primary rounded-lg px-3 py-1.5 text-xs font-semibold text-zinc-900 disabled:opacity-50"
               >
                 {savingQr ? "Saving..." : qrFile ? "Upload & Update" : "Remove QR"}
               </button>
@@ -4422,16 +4704,16 @@ function AddCoinsSection({
 
   return (
     <section className="admin-panel w-full">
-      <h2 className="mb-1 text-base font-semibold text-white/90">Add Coins</h2>
-      <p className="mb-6 text-sm text-slate-400">Search by user ID, then add coins to their account</p>
+      <h2 className="mb-1 text-base font-semibold text-zinc-900">Add Coins</h2>
+      <p className="mb-6 text-sm text-zinc-500">Search by user ID, then add coins to their account</p>
       <form onSubmit={handleSubmit} className="space-y-5">
         <div>
-          <label className="mb-2 block text-sm font-medium text-slate-300">Search by User ID</label>
+          <label className="mb-2 block text-sm font-medium text-zinc-600">Search by User ID</label>
           <input
             type="text"
             value={searchQuery}
             onChange={(e) => setSearchQuery(e.target.value)}
-            className="admin-input w-full rounded-xl px-4 py-3 text-white outline-none"
+            className="admin-input w-full rounded-xl px-4 py-3 text-zinc-900 outline-none"
             placeholder="Type user ID..."
           />
         </div>
@@ -4444,41 +4726,41 @@ function AddCoinsSection({
 
         {displayUser && !showNoUserFound && (
           <div className="space-y-4">
-            <div className="rounded-xl border border-slate-600/50 bg-slate-800/30 p-4">
-              <p className="mb-1 text-xs font-medium uppercase tracking-wider text-slate-500">
+            <div className="rounded-xl border border-zinc-200 bg-zinc-50/30 p-4">
+              <p className="mb-1 text-xs font-medium uppercase tracking-wider text-zinc-500">
                 User found — confirm before adding coins
               </p>
-              <p className="font-mono text-sm text-slate-400">{displayUser.id}</p>
-              <p className="font-semibold text-white">{displayUser.displayName}</p>
-              <p className="text-sm text-slate-400">{displayUser.email}</p>
+              <p className="font-mono text-sm text-zinc-500">{displayUser.id}</p>
+              <p className="font-semibold text-zinc-900">{displayUser.displayName}</p>
+              <p className="text-sm text-zinc-500">{displayUser.email}</p>
               <p className="mt-1 text-sm font-medium text-amber-300">{displayUser.coins} coins</p>
             </div>
             <div>
-              <label className="mb-2 block text-sm font-medium text-slate-300">Amount to Add</label>
+              <label className="mb-2 block text-sm font-medium text-zinc-600">Amount to Add</label>
               <input
                 type="number"
                 min="1"
                 value={amount}
                 onChange={(e) => setAmount(e.target.value)}
                 required
-                className="admin-input w-full rounded-xl px-4 py-3 text-white outline-none"
+                className="admin-input w-full rounded-xl px-4 py-3 text-zinc-900 outline-none"
                 placeholder="e.g. 100"
               />
             </div>
             <div>
-              <label className="mb-2 block text-sm font-medium text-slate-300">Note</label>
+              <label className="mb-2 block text-sm font-medium text-zinc-600">Note</label>
               <input
                 type="text"
                 value={note}
                 onChange={(e) => setNote(e.target.value)}
-                className="admin-input w-full rounded-xl px-4 py-3 text-white outline-none"
+                className="admin-input w-full rounded-xl px-4 py-3 text-zinc-900 outline-none"
                 placeholder="e.g. From admin, Refund, Winnings, Match entry..."
               />
             </div>
             <button
               type="submit"
               disabled={submitting}
-              className="admin-btn-primary rounded-xl px-6 py-3 font-medium text-white disabled:opacity-50"
+              className="admin-btn-primary rounded-xl px-6 py-3 font-medium disabled:opacity-50"
             >
               {submitting ? "Adding..." : "Add Coins"}
             </button>
@@ -4674,26 +4956,26 @@ function BannersSection() {
         <>
           <div className="flex items-center justify-between">
             <div>
-              <h2 className="text-xl font-bold text-white">App Banners</h2>
-              <p className="text-slate-400 text-sm">Manage promotional and event banners shown in the app.</p>
+              <h2 className="text-xl font-bold text-zinc-900">App Banners</h2>
+              <p className="text-zinc-500 text-sm">Manage promotional and event banners shown in the app.</p>
             </div>
             <button
               type="button"
               onClick={() => setView("create")}
-              className="admin-btn-primary rounded-xl px-5 py-2.5 text-sm font-semibold text-white shrink-0"
+              className="admin-btn-primary rounded-xl px-5 py-2.5 text-sm font-semibold shrink-0"
             >
               + Add New Banner
             </button>
           </div>
 
           <section className="space-y-4">
-            <h3 className="text-base font-semibold text-white">Existing Banners</h3>
+            <h3 className="text-base font-semibold text-zinc-900">Existing Banners</h3>
             {loading ? (
               <div className="flex py-10 justify-center">
                 <LoadingSpinner label="Loading banners..." />
               </div>
             ) : banners.length === 0 ? (
-              <div className="text-center py-10 text-slate-500 border border-slate-800/40 rounded-xl bg-slate-950/20">
+              <div className="text-center py-10 text-zinc-500 border border-zinc-200/40 rounded-xl bg-zinc-100/20">
                 No banners configured yet.
               </div>
             ) : (
@@ -4701,7 +4983,7 @@ function BannersSection() {
                 {banners.map((b) => (
                   <div key={b.id} className="admin-content-card overflow-hidden flex flex-col justify-between">
                     <div>
-                      <div className="aspect-[16/9] w-full overflow-hidden rounded-lg bg-slate-950/50 relative">
+                      <div className="aspect-[16/9] w-full overflow-hidden rounded-lg bg-zinc-100/50 relative">
                         {b.imageUrl ? (
                           <img src={b.imageUrl} alt="Banner" className="h-full w-full object-cover" />
                         ) : (
@@ -4711,12 +4993,12 @@ function BannersSection() {
                       
                       <div className="mt-4 space-y-3">
                         <div>
-                          <span className="text-xs font-semibold uppercase tracking-wider text-slate-500">Link URL</span>
+                          <span className="text-xs font-semibold uppercase tracking-wider text-zinc-500">Link URL</span>
                           <a
                             href={b.linkUrl}
                             target="_blank"
                             rel="noreferrer"
-                            className="block truncate font-mono text-xs text-green-400 hover:underline mt-0.5"
+                            className="block truncate font-mono text-xs text-zinc-900 hover:underline mt-0.5"
                             title={b.linkUrl}
                           >
                             {b.linkUrl}
@@ -4724,21 +5006,21 @@ function BannersSection() {
                         </div>
 
                         <div className="flex gap-2">
-                          <span className={`rounded-full px-2 py-0.5 text-2xs font-semibold ${b.displayPlayCarousel ? "bg-green-500/10 text-green-400 border border-green-500/20" : "bg-slate-800/50 text-slate-500 border border-slate-700/20"}`}>
+                          <span className={`rounded-full px-2 py-0.5 text-2xs font-semibold ${b.displayPlayCarousel ? "bg-green-500/10 text-zinc-900 border border-green-500/20" : "bg-zinc-50 text-zinc-500 border border-zinc-200/20"}`}>
                             Play Carousel
                           </span>
-                          <span className={`rounded-full px-2 py-0.5 text-2xs font-semibold ${b.displayEarn ? "bg-green-500/10 text-green-400 border border-green-500/20" : "bg-slate-800/50 text-slate-500 border border-slate-700/20"}`}>
+                          <span className={`rounded-full px-2 py-0.5 text-2xs font-semibold ${b.displayEarn ? "bg-green-500/10 text-zinc-900 border border-green-500/20" : "bg-zinc-50 text-zinc-500 border border-zinc-200/20"}`}>
                             Earn Tab
                           </span>
                         </div>
                       </div>
                     </div>
 
-                    <div className="mt-4 flex gap-2 border-t border-slate-800/60 pt-4">
+                    <div className="mt-4 flex gap-2 border-t border-zinc-200/60 pt-4">
                       <button
                         type="button"
                         onClick={() => startEdit(b)}
-                        className="flex-1 rounded-lg bg-slate-800/60 py-2 text-xs font-semibold text-slate-300 hover:bg-slate-700 transition"
+                        className="flex-1 rounded-lg bg-zinc-50/60 py-2 text-xs font-semibold text-zinc-600 hover:bg-zinc-100 transition"
                       >
                         Edit
                       </button>
@@ -4764,26 +5046,26 @@ function BannersSection() {
           <button
             type="button"
             onClick={() => setView("list")}
-            className="flex items-center gap-2 text-sm text-slate-400 transition hover:text-white"
+            className="flex items-center gap-2 text-sm text-zinc-500 transition hover:text-zinc-900"
           >
             ← Back to Banners List
           </button>
 
           <section className="admin-form-section w-full">
-            <h3 className="mb-1 text-lg font-bold text-white">Add New Banner</h3>
-            <p className="mb-6 text-sm text-slate-400">Configure promotional or navigation banner details.</p>
+            <h3 className="mb-1 text-lg font-bold text-zinc-900">Add New Banner</h3>
+            <p className="mb-6 text-sm text-zinc-500">Configure promotional or navigation banner details.</p>
             <form onSubmit={handleAddBanner} className="space-y-4">
               <div>
-                <label className="mb-2 block text-sm font-medium text-slate-300">Destination Link URL</label>
+                <label className="mb-2 block text-sm font-medium text-zinc-600">Destination Link URL</label>
                 <input
                   type="text"
                   value={linkUrl}
                   onChange={(e) => setLinkUrl(e.target.value)}
                   placeholder="e.g. https://youtube.com/..."
                   required
-                  className="admin-input w-full rounded-xl px-4 py-3 text-white outline-none"
+                  className="admin-input w-full rounded-xl px-4 py-3 text-zinc-900 outline-none"
                 />
-                <span className="mt-1 block text-xs text-slate-500">URL to open when clicked</span>
+                <span className="mt-1 block text-xs text-zinc-500">URL to open when clicked</span>
               </div>
 
               <div className="grid gap-4 sm:grid-cols-2">
@@ -4800,17 +5082,17 @@ function BannersSection() {
                   }}
                 />
 
-                <div className="flex flex-col justify-center space-y-3 rounded-xl border border-slate-800 bg-slate-900/20 p-4">
-                  <label className="text-sm font-medium text-slate-300">Display Locations</label>
+                <div className="flex flex-col justify-center space-y-3 rounded-xl border border-zinc-200 bg-white/20 p-4">
+                  <label className="text-sm font-medium text-zinc-600">Display Locations</label>
                   
                   <label className="flex items-center gap-3 cursor-pointer select-none">
                     <input
                       type="checkbox"
                       checked={displayPlayCarousel}
                       onChange={(e) => setDisplayPlayCarousel(e.target.checked)}
-                      className="h-4 w-4 rounded border-slate-700 bg-slate-900 text-green-500 focus:ring-green-500/20"
+                      className="h-4 w-4 rounded border-zinc-200 bg-white text-green-500 focus:ring-green-500/20"
                     />
-                    <span className="text-sm text-slate-400">Show in Play Carousel (Homepage)</span>
+                    <span className="text-sm text-zinc-500">Show in Play Carousel (Homepage)</span>
                   </label>
 
                   <label className="flex items-center gap-3 cursor-pointer select-none">
@@ -4818,9 +5100,9 @@ function BannersSection() {
                       type="checkbox"
                       checked={displayEarn}
                       onChange={(e) => setDisplayEarn(e.target.checked)}
-                      className="h-4 w-4 rounded border-slate-700 bg-slate-900 text-green-500 focus:ring-green-500/20"
+                      className="h-4 w-4 rounded border-zinc-200 bg-white text-green-500 focus:ring-green-500/20"
                     />
-                    <span className="text-sm text-slate-400">Show in Earn Tab</span>
+                    <span className="text-sm text-zinc-500">Show in Earn Tab</span>
                   </label>
                 </div>
               </div>
@@ -4829,14 +5111,14 @@ function BannersSection() {
                 <button
                   type="submit"
                   disabled={submitting}
-                  className="admin-btn-primary rounded-xl px-6 py-3 font-medium text-white disabled:opacity-50"
+                  className="admin-btn-primary rounded-xl px-6 py-3 font-medium disabled:opacity-50"
                 >
                   {submitting ? "Adding..." : "Add Banner"}
                 </button>
                 <button
                   type="button"
                   onClick={() => setView("list")}
-                  className="bg-slate-800 border border-slate-700 hover:bg-slate-700 text-white rounded-xl px-6 py-3 font-medium transition"
+                  className="bg-zinc-50 border border-zinc-200 hover:bg-zinc-100 text-zinc-900 rounded-xl px-6 py-3 font-medium transition"
                 >
                   Cancel
                 </button>
@@ -4851,24 +5133,24 @@ function BannersSection() {
           <button
             type="button"
             onClick={() => { setView("list"); setEditingBanner(null); }}
-            className="flex items-center gap-2 text-sm text-slate-400 transition hover:text-white"
+            className="flex items-center gap-2 text-sm text-zinc-500 transition hover:text-zinc-900"
           >
             ← Back to Banners List
           </button>
 
           <section className="admin-form-section w-full">
-            <h3 className="mb-1 text-lg font-bold text-white">Edit Banner</h3>
-            <p className="mb-6 text-sm text-slate-400">Update promotional banner details.</p>
+            <h3 className="mb-1 text-lg font-bold text-zinc-900">Edit Banner</h3>
+            <p className="mb-6 text-sm text-zinc-500">Update promotional banner details.</p>
             <form onSubmit={handleSaveEdit} className="space-y-4">
               <div>
-                <label className="mb-2 block text-sm font-medium text-slate-300">Destination Link URL</label>
+                <label className="mb-2 block text-sm font-medium text-zinc-600">Destination Link URL</label>
                 <input
                   type="text"
                   value={editLinkUrl}
                   onChange={(e) => setEditLinkUrl(e.target.value)}
                   placeholder="e.g. https://..."
                   required
-                  className="admin-input w-full rounded-xl px-4 py-3 text-white outline-none"
+                  className="admin-input w-full rounded-xl px-4 py-3 text-zinc-900 outline-none"
                 />
               </div>
 
@@ -4886,17 +5168,17 @@ function BannersSection() {
                 }}
               />
 
-              <div className="flex flex-col space-y-3 rounded-xl border border-slate-800 bg-slate-900/20 p-4">
-                <label className="text-sm font-medium text-slate-300">Display Locations</label>
+              <div className="flex flex-col space-y-3 rounded-xl border border-zinc-200 bg-white/20 p-4">
+                <label className="text-sm font-medium text-zinc-600">Display Locations</label>
                 
                 <label className="flex items-center gap-3 cursor-pointer select-none">
                   <input
                     type="checkbox"
                     checked={editDisplayPlayCarousel}
                     onChange={(e) => setEditDisplayPlayCarousel(e.target.checked)}
-                    className="h-4 w-4 rounded border-slate-700 bg-slate-900 text-green-500 focus:ring-green-500/20"
+                    className="h-4 w-4 rounded border-zinc-200 bg-white text-green-500 focus:ring-green-500/20"
                   />
-                  <span className="text-sm text-slate-400">Show in Play Carousel (Homepage)</span>
+                  <span className="text-sm text-zinc-500">Show in Play Carousel (Homepage)</span>
                 </label>
 
                 <label className="flex items-center gap-3 cursor-pointer select-none">
@@ -4904,9 +5186,9 @@ function BannersSection() {
                     type="checkbox"
                     checked={editDisplayEarn}
                     onChange={(e) => setEditDisplayEarn(e.target.checked)}
-                    className="h-4 w-4 rounded border-slate-700 bg-slate-900 text-green-500 focus:ring-green-500/20"
+                    className="h-4 w-4 rounded border-zinc-200 bg-white text-green-500 focus:ring-green-500/20"
                   />
-                  <span className="text-sm text-slate-400">Show in Earn Tab</span>
+                  <span className="text-sm text-zinc-500">Show in Earn Tab</span>
                 </label>
               </div>
 
@@ -4914,14 +5196,14 @@ function BannersSection() {
                 <button
                   type="submit"
                   disabled={submitting}
-                  className="admin-btn-primary rounded-xl px-6 py-3 font-medium text-white disabled:opacity-50"
+                  className="admin-btn-primary rounded-xl px-6 py-3 font-medium disabled:opacity-50"
                 >
                   {submitting ? "Saving..." : "Save Changes"}
                 </button>
                 <button
                   type="button"
                   onClick={() => { setView("list"); setEditingBanner(null); }}
-                  className="bg-slate-800 border border-slate-700 hover:bg-slate-700 text-white rounded-xl px-6 py-3 font-medium transition"
+                  className="bg-zinc-50 border border-zinc-200 hover:bg-zinc-100 text-zinc-900 rounded-xl px-6 py-3 font-medium transition"
                 >
                   Cancel
                 </button>
@@ -5008,8 +5290,8 @@ function ReferralsSection() {
   return (
     <div className="space-y-8">
       <section className="admin-panel w-full">
-        <h2 className="mb-2 text-base font-semibold text-white/90">Referral System Settings</h2>
-        <p className="mb-6 text-sm text-slate-400">Configure the behavior of your referral system.</p>
+        <h2 className="mb-2 text-base font-semibold text-zinc-900">Referral System Settings</h2>
+        <p className="mb-6 text-sm text-zinc-500">Configure the behavior of your referral system.</p>
         <form onSubmit={handleSaveSettings} className="space-y-5">
           <div className="flex items-center gap-2">
             <input
@@ -5017,21 +5299,21 @@ function ReferralsSection() {
               id="referralEnabled"
               checked={enabled}
               onChange={(e) => setEnabled(e.target.checked)}
-              className="rounded border-slate-700 bg-slate-900 text-green-500 focus:ring-green-500"
+              className="rounded border-zinc-200 bg-white text-green-500 focus:ring-green-500"
             />
-            <label htmlFor="referralEnabled" className="text-sm font-medium text-slate-300">
+            <label htmlFor="referralEnabled" className="text-sm font-medium text-zinc-600">
               Enable Referral System
             </label>
           </div>
           <div>
-            <label className="mb-2 block text-sm font-medium text-slate-300">Referral Reward Coins</label>
+            <label className="mb-2 block text-sm font-medium text-zinc-600">Referral Reward Coins</label>
             <input
               type="number"
               min="0"
               value={rewardCoins}
               onChange={(e) => setRewardCoins(Number(e.target.value))}
               required
-              className="admin-input w-full rounded-xl px-4 py-3 text-white outline-none"
+              className="admin-input w-full rounded-xl px-4 py-3 text-zinc-900 outline-none"
               placeholder="10"
             />
           </div>
@@ -5051,7 +5333,7 @@ function ReferralsSection() {
           <button
             type="submit"
             disabled={savingSettings}
-            className="admin-btn-primary rounded-xl px-6 py-3 font-medium text-white disabled:opacity-50"
+            className="admin-btn-primary rounded-xl px-6 py-3 font-medium disabled:opacity-50"
           >
             {savingSettings ? "Saving..." : "Save Settings"}
           </button>
@@ -5060,11 +5342,11 @@ function ReferralsSection() {
 
       <section className="admin-table-panel w-full space-y-4">
         <div>
-          <h2 className="mb-1 text-base font-semibold text-white/90">Referrals History</h2>
-          <p className="mb-5 text-sm text-slate-400">{referrals.length} referral(s) recorded</p>
+          <h2 className="mb-1 text-base font-semibold text-zinc-900">Referrals History</h2>
+          <p className="mb-5 text-sm text-zinc-500">{referrals.length} referral(s) recorded</p>
         </div>
         {referrals.length === 0 ? (
-          <div className="text-center py-10 text-slate-500 border border-slate-800/40 rounded-xl bg-slate-950/20">
+          <div className="text-center py-10 text-zinc-500 border border-zinc-200/40 rounded-xl bg-zinc-100/20">
             No referrals found
           </div>
         ) : (
@@ -5082,21 +5364,21 @@ function ReferralsSection() {
               <tbody>
                 {referrals.map((r) => (
                   <tr key={r.id}>
-                    <td className="font-medium text-white">{r.referrerName}</td>
+                    <td className="font-medium text-zinc-900">{r.referrerName}</td>
                     <td>{r.referredName}</td>
                     <td className="text-right text-amber-300 font-bold">{r.rewardCoins} coins</td>
                     <td className="text-center">
                       {r.rewardGranted ? (
-                        <span className="inline-block rounded bg-emerald-500/20 px-2 py-0.5 text-xs text-emerald-400 font-medium">
+                        <span className="inline-block rounded bg-emerald-500/20 px-2 py-0.5 text-xs text-zinc-900 font-medium">
                           Granted
                         </span>
                       ) : (
-                        <span className="inline-block rounded bg-slate-600/20 px-2 py-0.5 text-xs text-slate-400 font-medium">
+                        <span className="inline-block rounded bg-slate-600/20 px-2 py-0.5 text-xs text-zinc-500 font-medium">
                           Pending
                         </span>
                       )}
                     </td>
-                    <td className="text-slate-500">{new Date(r.createdAt).toLocaleString()}</td>
+                    <td className="text-zinc-500">{new Date(r.createdAt).toLocaleString()}</td>
                   </tr>
                 ))}
               </tbody>
