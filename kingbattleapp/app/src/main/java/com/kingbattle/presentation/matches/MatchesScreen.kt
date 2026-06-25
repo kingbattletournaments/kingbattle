@@ -45,6 +45,7 @@ import com.kingbattle.domain.model.Match
 import com.kingbattle.presentation.home.ThemeDarkBg
 import com.kingbattle.presentation.home.ThemeCardBg
 import com.kingbattle.presentation.home.ThemeBorderColor
+import com.kingbattle.presentation.components.MatchListSkeleton
 import com.kingbattle.presentation.home.AccentOrange
 import com.kingbattle.presentation.home.AccentGold
 import com.kingbattle.presentation.home.TextWhite
@@ -215,10 +216,14 @@ fun MatchesScreen(
                         .background(Color(0xFF030D1E)) // Dark blue/navy page background
                 ) {
                     if (isLoadingState.value && matchesState.value.isEmpty()) {
-                        CircularProgressIndicator(
-                            modifier = Modifier.align(Alignment.Center),
-                            color = AccentOrange
-                        )
+                        Column(
+                            modifier = Modifier
+                                .align(Alignment.TopCenter)
+                                .fillMaxWidth()
+                                .padding(16.dp),
+                        ) {
+                            MatchListSkeleton(count = 4)
+                        }
                     } else if (filteredMatches.isEmpty()) {
                         Column(
                             modifier = Modifier
@@ -665,7 +670,7 @@ fun MatchCard(
                         else -> "JOIN"
                     }
 
-                    val joinButtonColor = if (isJoined) Color(0xFF10B981) else Color(0xFF7C3AED)
+                    val joinButtonColor = if (isJoined) Color(0xFF0099FF) else Color(0xFF7C3AED)
 
 
                     Button(
@@ -674,7 +679,7 @@ fun MatchCard(
                         colors = ButtonDefaults.buttonColors(
                             containerColor = joinButtonColor,
                             contentColor = Color.White,
-                            disabledContainerColor = if (isJoined) Color(0xFF10B981) else Color(0xFFCBD5E1),
+                            disabledContainerColor = if (isJoined) Color(0xFF0099FF) else Color(0xFFCBD5E1),
                             disabledContentColor = if (isJoined) Color.White else Color(0xFF94A3B8)
                         ),
                         shape = RoundedCornerShape(6.dp),

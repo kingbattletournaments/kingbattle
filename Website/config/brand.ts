@@ -79,8 +79,8 @@ export const brand = {
 
   colors: {
     dark: "#363636",
-    accent: "#22c55e",
-    accentHover: "#16a34a",
+    accent: "#0099ff",
+    accentHover: "#007acc",
     accentAlt: "#f07873",
   },
 } as const;

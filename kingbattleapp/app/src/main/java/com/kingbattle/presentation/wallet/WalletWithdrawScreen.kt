@@ -249,7 +249,7 @@ fun WalletWithdrawScreen(
                                     horizontalArrangement = Arrangement.SpaceBetween
                                 ) {
                                     Text("You Will Receive:", color = Color.White, fontSize = 12.sp, fontWeight = FontWeight.Bold)
-                                    Text("$payout coins", color = Color.Green, fontSize = 12.sp, fontWeight = FontWeight.Bold)
+                                    Text("$payout coins", color = AccentOrange, fontSize = 12.sp, fontWeight = FontWeight.Bold)
                                 }
                             }
                         }

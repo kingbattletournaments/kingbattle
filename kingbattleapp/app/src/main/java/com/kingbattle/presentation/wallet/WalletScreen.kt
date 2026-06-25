@@ -30,6 +30,7 @@ import androidx.hilt.navigation.compose.hiltViewModel
 import androidx.lifecycle.Lifecycle
 import androidx.lifecycle.LifecycleEventObserver
 import com.kingbattle.domain.model.Transaction
+import com.kingbattle.presentation.components.WalletSkeleton
 import com.kingbattle.presentation.home.AccentGold
 import com.kingbattle.presentation.home.AccentOrange
 import com.kingbattle.presentation.home.TextMuted
@@ -109,10 +110,7 @@ fun WalletScreen(
                 .padding(paddingValues)
         ) {
             if (isLoadingState.value && userState.value == null) {
-                CircularProgressIndicator(
-                    modifier = Modifier.align(Alignment.Center),
-                    color = AccentOrange
-                )
+                WalletSkeleton()
             } else {
                 LazyColumn(
                     modifier = Modifier
@@ -252,8 +250,8 @@ fun TransactionHistoryItem(tx: Transaction) {
     val isCredit = tx.amount > 0
     val amountAbs = kotlin.math.abs(tx.amount)
 
-    val iconBgColor = if (isCredit) Color(0xFF10B981).copy(alpha = 0.15f) else Color(0xFFEF4444).copy(alpha = 0.15f)
-    val iconTint = if (isCredit) Color(0xFF10B981) else Color(0xFFEF4444)
+    val iconBgColor = if (isCredit) Color(0xFF0099FF).copy(alpha = 0.15f) else Color(0xFFEF4444).copy(alpha = 0.15f)
+    val iconTint = if (isCredit) Color(0xFF0099FF) else Color(0xFFEF4444)
 
     Card(
         modifier = Modifier
@@ -313,7 +311,7 @@ fun TransactionHistoryItem(tx: Transaction) {
                         }
                         val statusColor = when (tx.status) {
                             "pending" -> AccentGold
-                            "successful", "accepted" -> Color(0xFF10B981)
+                            "successful", "accepted" -> Color(0xFF0099FF)
                             "failed", "rejected" -> Color(0xFFEF4444)
                             "refunded" -> Color(0xFF8B5CF6)
                             else -> AccentGold
@@ -349,7 +347,7 @@ fun TransactionHistoryItem(tx: Transaction) {
             ) {
                 Text(
                     text = if (isCredit) "+$amountAbs" else "-$amountAbs",
-                    color = if (isCredit) Color(0xFF10B981) else Color(0xFFEF4444),
+                    color = if (isCredit) Color(0xFF0099FF) else Color(0xFFEF4444),
                     fontSize = 16.sp,
                     fontWeight = FontWeight.Bold
                 )

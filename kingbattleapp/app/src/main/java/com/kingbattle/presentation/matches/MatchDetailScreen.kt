@@ -39,6 +39,7 @@ import com.kingbattle.domain.model.Match
 import com.kingbattle.domain.model.Participant
 import com.kingbattle.domain.model.PrizePool
 import com.kingbattle.domain.model.RankReward
+import com.kingbattle.presentation.components.MatchDetailSkeleton
 import com.kingbattle.presentation.home.AccentOrange
 import com.kingbattle.presentation.home.ThemeBorderColor
 import com.kingbattle.presentation.home.ThemeCardBg
@@ -142,7 +143,7 @@ fun MatchDetailScreen(
                             Button(
                                 onClick = {},
                                 modifier = Modifier.fillMaxWidth().height(48.dp),
-                                colors = ButtonDefaults.buttonColors(containerColor = Color(0xFF10B981)),
+                                colors = ButtonDefaults.buttonColors(containerColor = Color(0xFF0099FF)),
                                 enabled = false,
                                 shape = RoundedCornerShape(8.dp)
                             ) {
@@ -202,11 +203,8 @@ fun MatchDetailScreen(
                 .fillMaxSize()
                 .padding(paddingValues)
         ) {
-            if (isLoadingState.value) {
-                CircularProgressIndicator(
-                    modifier = Modifier.align(Alignment.Center),
-                    color = AccentOrange
-                )
+            if (isLoadingState.value && matchDetailState.value?.match == null) {
+                MatchDetailSkeleton()
             } else if (errorMessageState.value != null) {
                 Text(
                     text = errorMessageState.value ?: "An error occurred",
@@ -221,13 +219,7 @@ fun MatchDetailScreen(
                 matchDetailState.value?.let { detail ->
                     val match = detail.match
                     if (match == null) {
-                        // Show loading while match data is being fetched
-                        Box(
-                            modifier = Modifier.fillMaxSize(),
-                            contentAlignment = Alignment.Center
-                        ) {
-                            CircularProgressIndicator(color = AccentOrange)
-                        }
+                        MatchDetailSkeleton()
                         return@let
                     }
                     // Determine if image is a URL or local resource
@@ -601,7 +593,7 @@ fun DescriptionTabContent(match: Match, isJoined: Boolean = false) {
                             )
                             Text(
                                 text = "💵 ${reward.coins} coins",
-                                color = Color(0xFF10B981),
+                                color = Color(0xFF0099FF),
                                 fontSize = 13.sp,
                                 fontWeight = FontWeight.Bold
                             )
@@ -832,7 +824,7 @@ fun JoinedMemberTabContent(
                         if (isCompleted && coinsWon > 0) {
                             Text(
                                 text = "💵 $coinsWon",
-                                color = Color(0xFF10B981),
+                                color = Color(0xFF0099FF),
                                 fontSize = 13.sp,
                                 fontWeight = FontWeight.Bold
                             )

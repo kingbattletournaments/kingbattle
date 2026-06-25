@@ -63,19 +63,22 @@ import androidx.hilt.navigation.compose.hiltViewModel
 import com.kingbattle.domain.model.GameMode
 import com.kingbattle.domain.model.LeaderboardUser
 import com.kingbattle.presentation.auth.AuthViewModel
-import kotlinx.coroutines.Dispatchers
-import kotlinx.coroutines.withContext
-import okhttp3.OkHttpClient
-import okhttp3.Request
+import com.kingbattle.presentation.components.BannerSkeleton
+import com.kingbattle.presentation.components.CachedNetworkImage
+import com.kingbattle.presentation.components.LeaderboardSkeleton
+import com.kingbattle.presentation.components.ModesGridSkeleton
 import androidx.compose.foundation.pager.HorizontalPager
+import androidx.compose.runtime.snapshotFlow
 import androidx.compose.foundation.pager.rememberPagerState
 
-// Color Palette for Premium Pitch Black & Green Theme
+// Color Palette for Premium Pitch Black & Blue Theme
 val ThemeDarkBg = Color(0xFF000000)      // Pitch black background
 val ThemeCardBg = Color(0xFF121212)      // Very dark grey card background
 val ThemeBorderColor = Color(0xFF1C1C1E)  // Dark border color
 val ThemeFooterBg = Color(0xFF000000)    // Pitch black footer for mode cards
-val AccentOrange = Color(0xFF22C55E)     // Vibrant green accent
+val AccentOrange = Color(0xFF0099FF)     // Vibrant blue accent (#0099ff)
+val AccentBlueLight = Color(0xFF66C2FF)    // Light blue highlight
+val AccentBlueDark = Color(0xFF007ACC)     // Darker blue for hover/depth
 val AccentGold = Color(0xFFFFB000)       // Gold color for coins
 val TextWhite = Color(0xFFF8FAFC)        // Slate-50 main text
 val TextMuted = Color(0xFF94A3B8)        // Slate-400 secondary text
@@ -311,8 +314,6 @@ fun HomeScreen(
     LaunchedEffect(activeTab) {
         if (activeTab == HomeTab.ACCOUNT) {
             homeViewModel.refreshSupportUrl()
-        } else {
-            homeViewModel.loadData()
         }
     }
 
@@ -431,7 +432,8 @@ fun PlayTabContent(
             // Banner Carousel Section
             BannerSection(
                 banners = banners.filter { it.displayPlayCarousel },
-                isOffline = isOffline
+                isOffline = isOffline,
+                isLoading = isLoading && banners.none { it.displayPlayCarousel },
             )
 
             // My Matches Section
@@ -451,14 +453,7 @@ fun PlayTabContent(
             // Available Modes Content
             when {
                 isLoading && modes.isEmpty() -> {
-                    Box(
-                        modifier = Modifier
-                            .fillMaxWidth()
-                            .height(150.dp),
-                        contentAlignment = Alignment.Center
-                    ) {
-                        CircularProgressIndicator(color = AccentOrange)
-                    }
+                    ModesGridSkeleton(itemCount = 6)
                 }
                 errorMessage != null && modes.isEmpty() -> {
                     Column(
@@ -633,7 +628,8 @@ fun AnnouncementSection(text: String) {
 @Composable
 fun BannerSection(
     banners: List<com.kingbattle.domain.model.AppBanner> = emptyList(),
-    isOffline: Boolean = false
+    isOffline: Boolean = false,
+    isLoading: Boolean = false,
 ) {
     val context = LocalContext.current
     val carouselBanners = banners.filter { it.imageUrl.isNotBlank() }
@@ -664,6 +660,9 @@ fun BannerSection(
     }
 
     if (carouselBanners.isEmpty()) {
+        if (isLoading) {
+            BannerSkeleton()
+        }
         return
     }
 
@@ -678,11 +677,17 @@ fun BannerSection(
     ) {
         Box(modifier = Modifier.fillMaxSize()) {
             val pagerState = rememberPagerState(pageCount = { carouselBanners.size })
+            var pauseAutoScroll by remember { mutableStateOf(false) }
 
-            LaunchedEffect(Unit) {
+            LaunchedEffect(pagerState) {
+                snapshotFlow { pagerState.isScrollInProgress }
+                    .collect { scrolling -> pauseAutoScroll = scrolling }
+            }
+
+            LaunchedEffect(carouselBanners.size, pauseAutoScroll) {
                 while (true) {
                     kotlinx.coroutines.delay(5000)
-                    if (carouselBanners.size > 1) {
+                    if (!pauseAutoScroll && carouselBanners.size > 1) {
                         val nextPage = (pagerState.currentPage + 1) % carouselBanners.size
                         pagerState.animateScrollToPage(nextPage)
                     }
@@ -711,7 +716,7 @@ fun BannerSection(
                     shape = RoundedCornerShape(12.dp),
                     colors = CardDefaults.cardColors(containerColor = ThemeCardBg)
                 ) {
-                    AsyncImage(
+                    CachedNetworkImage(
                         url = banner.imageUrl,
                         contentDescription = "App Home Banner",
                         modifier = Modifier.fillMaxSize(),
@@ -757,7 +762,7 @@ fun ReferralBannerCard(
         colors = CardDefaults.cardColors(containerColor = ThemeCardBg)
     ) {
         if (bannerUrl.isNotBlank()) {
-            AsyncImage(
+            CachedNetworkImage(
                 url = bannerUrl,
                 contentDescription = "Refer & Earn Banner",
                 modifier = Modifier
@@ -920,7 +925,7 @@ fun ModeCardItem(
                         contentScale = ContentScale.Crop
                     )
                 } else if (!mode.image_url.isNullOrBlank()) {
-                    AsyncImage(
+                    CachedNetworkImage(
                         url = mode.image_url,
                         contentDescription = mode.name,
                         modifier = Modifier.fillMaxSize(),
@@ -999,6 +1004,10 @@ fun EarnTabContent(
             verticalArrangement = Arrangement.spacedBy(16.dp),
             contentPadding = PaddingValues(bottom = 24.dp)
         ) {
+            if (isLoading && earnBanners.isEmpty() && referralBannerUrl.isBlank()) {
+                item { BannerSkeleton() }
+                items(2) { BannerSkeleton() }
+            } else {
             // 1. Referral banner from admin panel (Referrals tab → banner upload)
             item {
                 ReferralBannerCard(
@@ -1038,7 +1047,7 @@ fun EarnTabContent(
                             contentScale = ContentScale.Crop
                         )
                     } else {
-                        AsyncImage(
+                        CachedNetworkImage(
                             url = imageUrl,
                             contentDescription = "Earn Offer Banner",
                             modifier = Modifier
@@ -1048,6 +1057,7 @@ fun EarnTabContent(
                         )
                     }
                 }
+            }
             }
         }
     }
@@ -1109,7 +1119,7 @@ fun AccountTabContent(
                         .clip(CircleShape)
                         .background(
                             Brush.linearGradient(
-                                colors = listOf(Color(0xFF15803D), Color(0xFF22C55E), Color(0xFF4ADE80)) // Beautiful green gradient
+                                colors = listOf(Color(0xFF004488), Color(0xFF0099FF), Color(0xFF66C2FF)) // Blue gradient
                             )
                         ),
                     contentAlignment = Alignment.Center
@@ -1490,90 +1500,6 @@ fun BottomNavigationBar(
     }
 }
 
-// ==================== CUSTOM ASYNC IMAGE LOADER ====================
-@Composable
-fun AsyncImage(
-    url: String,
-    contentDescription: String?,
-    modifier: Modifier = Modifier,
-    contentScale: ContentScale = ContentScale.Crop
-) {
-    var imageBitmap by remember(url) {
-        mutableStateOf<androidx.compose.ui.graphics.ImageBitmap?>(null)
-    }
-    var isLoading by remember(url) {
-        mutableStateOf(true)
-    }
-
-    LaunchedEffect(url) {
-        if (url.isBlank()) {
-            isLoading = false
-            return@LaunchedEffect
-        }
-        isLoading = true
-        withContext(Dispatchers.IO) {
-            try {
-                val client = OkHttpClient()
-                val request = Request.Builder().url(url).build()
-                client.newCall(request).execute().use { response ->
-                    if (response.isSuccessful) {
-                        val bytes = response.body?.bytes()
-                        if (bytes != null) {
-                            val bitmap = android.graphics.BitmapFactory.decodeByteArray(bytes, 0, bytes.size)
-                            if (bitmap != null) {
-                                imageBitmap = bitmap.asImageBitmap()
-                            }
-                        }
-                    }
-                }
-            } catch (e: Exception) {
-                e.printStackTrace()
-            } finally {
-                isLoading = false
-            }
-        }
-    }
-
-    Box(modifier = modifier, contentAlignment = Alignment.Center) {
-        val bitmap = imageBitmap
-        if (bitmap != null) {
-            Image(
-                bitmap = bitmap,
-                contentDescription = contentDescription,
-                modifier = Modifier.fillMaxSize(),
-                contentScale = contentScale
-            )
-        } else if (isLoading) {
-            Box(
-                modifier = Modifier
-                    .fillMaxSize()
-                    .background(ThemeCardBg),
-                contentAlignment = Alignment.Center
-            ) {
-                CircularProgressIndicator(
-                    color = AccentOrange,
-                    modifier = Modifier.size(24.dp)
-                )
-            }
-        } else {
-            // Fallback placeholder card
-            Box(
-                modifier = Modifier
-                    .fillMaxSize()
-                    .background(ThemeCardBg),
-                contentAlignment = Alignment.Center
-            ) {
-                Text(
-                    text = "KING BATTLE",
-                    color = TextMuted.copy(alpha = 0.3f),
-                    fontWeight = FontWeight.Bold,
-                    fontSize = 14.sp
-                )
-            }
-        }
-    }
-}
-
 // ==================== REFER SCREEN (DEDICATED PAGE) ====================
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable
@@ -1626,7 +1552,7 @@ fun ReferScreen(
             horizontalAlignment = Alignment.CenterHorizontally,
             verticalArrangement = Arrangement.spacedBy(20.dp)
         ) {
-            // 1. Header Title: REFER MORE TO EARN MORE (Green themed)
+            // 1. Header Title: REFER MORE TO EARN MORE (Blue themed)
             Text(
                 text = "REFER MORE TO EARN MORE",
                 color = AccentOrange,
@@ -1734,7 +1660,7 @@ fun ReferScreen(
 
             Spacer(modifier = Modifier.height(8.dp))
 
-            // 6. Green themed share button
+            // 6. Blue themed share button
             Button(
                 onClick = {
                     val code = user?.username
@@ -1814,10 +1740,7 @@ fun LeaderboardScreen(
                 .padding(paddingValues)
         ) {
             if (isLoading) {
-                CircularProgressIndicator(
-                    modifier = Modifier.align(Alignment.Center),
-                    color = AccentOrange
-                )
+                LeaderboardSkeleton()
             } else if (errorMessage != null) {
                 Column(
                     modifier = Modifier
@@ -2037,7 +1960,7 @@ fun LeaderboardItem(rankString: String, player: com.kingbattle.domain.model.Lead
                 Text(text = "🪙", fontSize = 14.sp)
                 Text(
                     text = "${player.coins}",
-                    color = Color(0xFF22C55E),
+                    color = Color(0xFF0099FF),
                     fontSize = 14.sp,
                     fontWeight = FontWeight.Bold
                 )

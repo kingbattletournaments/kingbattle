@@ -14,16 +14,16 @@
   --border: #f0e6d3;
   --border-hover: #f5dca7;
 
-  /* Accent - Pitch black & Green theme */
-  --accent: #22c55e;
-  --accent-muted: #16a34a;
-  --accent-glow: rgba(34, 197, 94, 0.15);
+  /* Accent - Pitch black & Blue theme */
+  --accent: #0099ff;
+  --accent-muted: #007acc;
+  --accent-glow: rgba(0, 153, 255, 0.15);
 
   /* Semantic colors */
   --yellow: #eab308;
   --yellow-muted: #ca8a04;
-  --orange: #22c55e;
-  --orange-muted: #16a34a;
+  --orange: #0099ff;
+  --orange-muted: #007acc;
 
   /* Text */
   --text: #1c1917;

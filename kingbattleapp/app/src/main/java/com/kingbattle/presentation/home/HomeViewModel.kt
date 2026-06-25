@@ -7,11 +7,14 @@ import android.widget.Toast
 import androidx.lifecycle.ViewModel
 import androidx.lifecycle.viewModelScope
 import com.kingbattle.data.api.KingBattleApi
+import com.kingbattle.data.local.HomeCacheStore
 import com.kingbattle.domain.model.GameMode
 import com.kingbattle.domain.model.User
 import com.kingbattle.util.NetworkUtils
 import dagger.hilt.android.lifecycle.HiltViewModel
 import dagger.hilt.android.qualifiers.ApplicationContext
+import kotlinx.coroutines.async
+import kotlinx.coroutines.coroutineScope
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.asStateFlow
@@ -21,7 +24,8 @@ import javax.inject.Inject
 @HiltViewModel
 class HomeViewModel @Inject constructor(
     @ApplicationContext private val context: Context,
-    private val api: KingBattleApi
+    private val api: KingBattleApi,
+    private val homeCacheStore: HomeCacheStore,
 ) : ViewModel() {
 
     private val _modes = MutableStateFlow<List<GameMode>>(emptyList())
@@ -48,6 +52,9 @@ class HomeViewModel @Inject constructor(
     private val _isLoading = MutableStateFlow(false)
     val isLoading: StateFlow<Boolean> = _isLoading.asStateFlow()
 
+    private val _isRefreshing = MutableStateFlow(false)
+    val isRefreshing: StateFlow<Boolean> = _isRefreshing.asStateFlow()
+
     private val _isOffline = MutableStateFlow(false)
     val isOffline: StateFlow<Boolean> = _isOffline.asStateFlow()
 
@@ -55,109 +62,152 @@ class HomeViewModel @Inject constructor(
     val errorMessage: StateFlow<String?> = _errorMessage.asStateFlow()
 
     init {
-        loadData()
+        applyCacheFromStore()
+        loadData(force = false)
     }
 
-    fun loadData() {
+    fun loadData(force: Boolean = false) {
         viewModelScope.launch {
-            _isLoading.value = true
+            if (!force && homeCacheStore.hasCachedContent() && homeCacheStore.isContentFresh()) {
+                refreshDynamicContent(showLoading = false)
+                return@launch
+            }
+
+            val showBlockingLoader = _modes.value.isEmpty() && _banners.value.isEmpty()
+            if (showBlockingLoader) {
+                _isLoading.value = true
+            } else {
+                _isRefreshing.value = true
+            }
             _errorMessage.value = null
 
             if (!NetworkUtils.isOnline(context)) {
                 _isOffline.value = true
-                _modes.value = emptyList()
-                _banners.value = emptyList()
-                _errorMessage.value = "No internet connection. Connect to load live tournaments and wallet data."
+                if (!homeCacheStore.hasCachedContent()) {
+                    _errorMessage.value =
+                        "No internet connection. Connect to load live tournaments and wallet data."
+                }
                 _isLoading.value = false
+                _isRefreshing.value = false
                 return@launch
             }
 
             _isOffline.value = false
-            var hadSuccessfulFetch = false
-
-            try {
-                try {
-                    val userRes = api.getCurrentUser()
-                    if (userRes.isSuccessful && userRes.body() != null) {
-                        _user.value = userRes.body()!!
-                        hadSuccessfulFetch = true
-                    }
-                } catch (e: Exception) {
-                    e.printStackTrace()
-                }
-
-                try {
-                    val response = api.getGameModes(null)
-                    if (response.isSuccessful && response.body() != null) {
-                        _modes.value = response.body()!!
-                        hadSuccessfulFetch = true
-                    }
-                } catch (e: Exception) {
-                    e.printStackTrace()
-                }
-
-                try {
-                    val annRes = api.getAnnouncement()
-                    if (annRes.isSuccessful && annRes.body() != null) {
-                        val text = annRes.body()!!["announcementText"]
-                        if (!text.isNullOrBlank()) {
-                            _announcementText.value = text
-                            hadSuccessfulFetch = true
-                        }
-                    }
-                } catch (e: Exception) {
-                    e.printStackTrace()
-                }
-
-                try {
-                    val banRes = api.getBanners()
-                    if (banRes.isSuccessful && banRes.body() != null) {
-                        _banners.value = banRes.body()!!
-                        hadSuccessfulFetch = true
-                    }
-                } catch (e: Exception) {
-                    e.printStackTrace()
-                }
-
-                try {
-                    val leadRes = api.getLeaderboard()
-                    if (leadRes.isSuccessful && leadRes.body() != null) {
-                        _leaderboard.value = leadRes.body()!!
-                        hadSuccessfulFetch = true
-                    }
-                } catch (e: Exception) {
-                    e.printStackTrace()
-                }
-
-                try {
-                    fetchSupportUrlFromApi()?.let {
-                        _supportUrl.value = it
-                        hadSuccessfulFetch = true
-                    }
-                } catch (e: Exception) {
-                    e.printStackTrace()
-                }
-
-                try {
-                    val refRes = api.getReferralSettings()
-                    if (refRes.isSuccessful && refRes.body() != null) {
-                        _referralSettings.value = refRes.body()!!
-                        hadSuccessfulFetch = true
-                    }
-                } catch (e: Exception) {
-                    e.printStackTrace()
-                }
-
-                if (!hadSuccessfulFetch) {
-                    _errorMessage.value = "Unable to reach the server. Check your connection and try again."
-                }
-            } catch (e: Exception) {
-                _errorMessage.value = "Network error: ${e.localizedMessage}"
-                e.printStackTrace()
-            } finally {
-                _isLoading.value = false
-            }
+            fetchFromNetwork()
+            _isLoading.value = false
+            _isRefreshing.value = false
         }
+    }
+
+    private suspend fun refreshDynamicContent(showLoading: Boolean) {
+        if (showLoading) _isRefreshing.value = true
+        if (!NetworkUtils.isOnline(context)) {
+            _isOffline.value = true
+            _isRefreshing.value = false
+            return
+        }
+        _isOffline.value = false
+        try {
+            coroutineScope {
+                val userDef = async { runCatching { api.getCurrentUser() } }
+                val leaderboardDef = async { runCatching { api.getLeaderboard() } }
+                val supportDef = async { runCatching { fetchSupportUrlFromApi() } }
+
+                userDef.await().getOrNull()?.takeIf { it.isSuccessful }?.body()?.let {
+                    _user.value = it
+                }
+                leaderboardDef.await().getOrNull()?.takeIf { it.isSuccessful }?.body()?.let {
+                    _leaderboard.value = it
+                }
+                supportDef.await().getOrNull()?.let { _supportUrl.value = it }
+            }
+        } finally {
+            _isRefreshing.value = false
+        }
+    }
+
+    private suspend fun fetchFromNetwork() {
+        var fetchedModes = _modes.value
+        var fetchedBanners = _banners.value
+        var fetchedAnnouncement = _announcementText.value
+        var fetchedReferral = _referralSettings.value
+        var hadSuccessfulFetch = false
+
+        try {
+            coroutineScope {
+                val userDef = async { runCatching { api.getCurrentUser() } }
+                val modesDef = async { runCatching { api.getGameModes(null) } }
+                val announcementDef = async { runCatching { api.getAnnouncement() } }
+                val bannersDef = async { runCatching { api.getBanners() } }
+                val leaderboardDef = async { runCatching { api.getLeaderboard() } }
+                val supportDef = async { runCatching { fetchSupportUrlFromApi() } }
+                val referralDef = async { runCatching { api.getReferralSettings() } }
+
+                userDef.await().getOrNull()?.takeIf { it.isSuccessful }?.body()?.let {
+                    _user.value = it
+                    hadSuccessfulFetch = true
+                }
+
+                modesDef.await().getOrNull()?.takeIf { it.isSuccessful }?.body()?.let {
+                    fetchedModes = it
+                    _modes.value = it
+                    hadSuccessfulFetch = true
+                }
+
+                announcementDef.await().getOrNull()?.takeIf { it.isSuccessful }?.body()?.let { body ->
+                    body["announcementText"]?.takeIf { it.isNotBlank() }?.let {
+                        fetchedAnnouncement = it
+                        _announcementText.value = it
+                        hadSuccessfulFetch = true
+                    }
+                }
+
+                bannersDef.await().getOrNull()?.takeIf { it.isSuccessful }?.body()?.let {
+                    fetchedBanners = it
+                    _banners.value = it
+                    hadSuccessfulFetch = true
+                }
+
+                leaderboardDef.await().getOrNull()?.takeIf { it.isSuccessful }?.body()?.let {
+                    _leaderboard.value = it
+                    hadSuccessfulFetch = true
+                }
+
+                supportDef.await().getOrNull()?.let {
+                    _supportUrl.value = it
+                    hadSuccessfulFetch = true
+                }
+
+                referralDef.await().getOrNull()?.takeIf { it.isSuccessful }?.body()?.let {
+                    fetchedReferral = it
+                    _referralSettings.value = it
+                    hadSuccessfulFetch = true
+                }
+            }
+
+            if (hadSuccessfulFetch) {
+                homeCacheStore.saveHomeContent(
+                    modes = fetchedModes,
+                    banners = fetchedBanners,
+                    announcementText = fetchedAnnouncement,
+                    referralSettings = fetchedReferral,
+                )
+            } else if (!homeCacheStore.hasCachedContent()) {
+                _errorMessage.value = "Unable to reach the server. Check your connection and try again."
+            }
+        } catch (e: Exception) {
+            if (!homeCacheStore.hasCachedContent()) {
+                _errorMessage.value = "Network error: ${e.localizedMessage}"
+            }
+            e.printStackTrace()
+        }
+    }
+
+    private fun applyCacheFromStore() {
+        homeCacheStore.getCachedModes()?.let { _modes.value = it }
+        homeCacheStore.getCachedBanners()?.let { _banners.value = it }
+        homeCacheStore.getCachedAnnouncement()?.let { _announcementText.value = it }
+        homeCacheStore.getCachedReferralSettings()?.let { _referralSettings.value = it }
     }
 
     fun refreshSupportUrl() {

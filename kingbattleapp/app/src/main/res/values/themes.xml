@@ -2,9 +2,9 @@
 <resources xmlns:tools="http://schemas.android.com/tools">
     <!-- Base application theme -->
     <style name="Theme.KingBattle" parent="android:Theme.Material.Light.NoActionBar">
-        <item name="android:colorPrimary">@color/purple_500</item>
-        <item name="android:colorPrimaryDark">@color/purple_700</item>
-        <item name="android:colorAccent">@color/teal_200</item>
+        <item name="android:colorPrimary">@color/brand_blue</item>
+        <item name="android:colorPrimaryDark">@color/brand_blue_dark</item>
+        <item name="android:colorAccent">@color/brand_blue_light</item>
         <item name="android:textColorPrimary">@color/black</item>
         <item name="android:textColorSecondary">@color/gray_600</item>
         <item name="android:windowBackground">@color/white</item>

@@ -2,9 +2,9 @@ package com.kingbattle.ui.theme
 
 import androidx.compose.ui.graphics.Color
 
-val PrimaryColor = Color(0xFF6200EE)
-val SecondaryColor = Color(0xFF03DAC6)
-val TertiaryColor = Color(0xFF018786)
+val PrimaryColor = Color(0xFF0099FF)
+val SecondaryColor = Color(0xFF66C2FF)
+val TertiaryColor = Color(0xFF007ACC)
 val ErrorColor = Color(0xFFB00020)
 
 // Light Theme

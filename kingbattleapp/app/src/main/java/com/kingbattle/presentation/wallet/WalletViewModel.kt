@@ -43,7 +43,9 @@ class WalletViewModel @Inject constructor(
 
     fun loadData() {
         viewModelScope.launch {
-            _isLoading.value = true
+            if (_user.value == null) {
+                _isLoading.value = true
+            }
             _errorMessage.value = null
             try {
                 // 1. Fetch current user to get latest coins
