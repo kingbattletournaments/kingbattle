@@ -39,6 +39,9 @@ class MatchesViewModel @Inject constructor(
     private val _isLoading = MutableStateFlow(false)
     val isLoading: StateFlow<Boolean> = _isLoading.asStateFlow()
 
+    private val _isRefreshing = MutableStateFlow(false)
+    val isRefreshing: StateFlow<Boolean> = _isRefreshing.asStateFlow()
+
     private val _errorMessage = MutableStateFlow<String?>(null)
     val errorMessage: StateFlow<String?> = _errorMessage.asStateFlow()
 
@@ -49,10 +52,16 @@ class MatchesViewModel @Inject constructor(
         _joinedMatches.value = tokenManager.getJoinedMatches()
     }
 
-    fun loadData(modeId: String) {
+    fun refreshData(modeId: String) {
+        loadData(modeId, force = true)
+    }
+
+    fun loadData(modeId: String, force: Boolean = false) {
         viewModelScope.launch {
-            if (_matches.value.isEmpty()) {
+            if (!force && _matches.value.isEmpty()) {
                 _isLoading.value = true
+            } else if (force) {
+                _isRefreshing.value = true
             }
             _errorMessage.value = null
             try {
@@ -138,6 +147,7 @@ class MatchesViewModel @Inject constructor(
                 _matches.value = emptyList()
             } finally {
                 _isLoading.value = false
+                _isRefreshing.value = false
             }
         }
     }

@@ -12,6 +12,7 @@ import androidx.compose.foundation.verticalScroll
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.filled.ArrowBack
 import androidx.compose.material3.*
+import androidx.compose.material3.pulltorefresh.PullToRefreshBox
 import androidx.compose.runtime.*
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.graphics.Color
@@ -42,6 +43,7 @@ fun WalletWithdrawScreen(
     val context = LocalContext.current
     val userState = viewModel.user.collectAsState()
     val withdrawalChargeState = viewModel.withdrawalCharge.collectAsState()
+    val isRefreshingState = viewModel.isRefreshing.collectAsState()
     var isSubmitting by remember { mutableStateOf(false) }
 
     var amountText by remember { mutableStateOf("") }
@@ -78,10 +80,16 @@ fun WalletWithdrawScreen(
         },
         containerColor = ThemeDarkBg
     ) { padding ->
+        PullToRefreshBox(
+            isRefreshing = isRefreshingState.value,
+            onRefresh = { viewModel.refreshData() },
+            modifier = Modifier
+                .fillMaxSize()
+                .padding(padding),
+        ) {
         Column(
             modifier = Modifier
                 .fillMaxSize()
-                .padding(padding)
                 .verticalScroll(rememberScrollState())
                 .padding(16.dp),
             verticalArrangement = Arrangement.spacedBy(16.dp)
@@ -314,6 +322,7 @@ fun WalletWithdrawScreen(
                     }
                 }
             }
+        }
         }
     }
 }

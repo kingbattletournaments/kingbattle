@@ -6,9 +6,13 @@ import android.net.Uri
 import android.widget.Toast
 import androidx.lifecycle.ViewModel
 import androidx.lifecycle.viewModelScope
+import coil.Coil
+import coil.annotation.ExperimentalCoilApi
 import com.kingbattle.data.api.KingBattleApi
 import com.kingbattle.data.local.HomeCacheStore
+import com.kingbattle.domain.model.AppBanner
 import com.kingbattle.domain.model.GameMode
+import com.kingbattle.domain.model.ReferralSettings
 import com.kingbattle.domain.model.User
 import com.kingbattle.util.NetworkUtils
 import dagger.hilt.android.lifecycle.HiltViewModel
@@ -34,8 +38,8 @@ class HomeViewModel @Inject constructor(
     private val _announcementText = MutableStateFlow("")
     val announcementText: StateFlow<String> = _announcementText.asStateFlow()
 
-    private val _banners = MutableStateFlow<List<com.kingbattle.domain.model.AppBanner>>(emptyList())
-    val banners: StateFlow<List<com.kingbattle.domain.model.AppBanner>> = _banners.asStateFlow()
+    private val _banners = MutableStateFlow<List<AppBanner>>(emptyList())
+    val banners: StateFlow<List<AppBanner>> = _banners.asStateFlow()
 
     private val _leaderboard = MutableStateFlow<List<com.kingbattle.domain.model.LeaderboardUser>>(emptyList())
     val leaderboard: StateFlow<List<com.kingbattle.domain.model.LeaderboardUser>> = _leaderboard.asStateFlow()
@@ -46,8 +50,12 @@ class HomeViewModel @Inject constructor(
     private val _supportUrl = MutableStateFlow("")
     val supportUrl: StateFlow<String> = _supportUrl.asStateFlow()
 
-    private val _referralSettings = MutableStateFlow<com.kingbattle.domain.model.ReferralSettings?>(null)
-    val referralSettings: StateFlow<com.kingbattle.domain.model.ReferralSettings?> = _referralSettings.asStateFlow()
+    private val _referralSettings = MutableStateFlow<ReferralSettings?>(null)
+    val referralSettings: StateFlow<ReferralSettings?> = _referralSettings.asStateFlow()
+
+    /** True once cached Play/Earn content has been applied — UI can skip skeletons. */
+    private val _hasCachedHomeContent = MutableStateFlow(false)
+    val hasCachedHomeContent: StateFlow<Boolean> = _hasCachedHomeContent.asStateFlow()
 
     private val _isLoading = MutableStateFlow(false)
     val isLoading: StateFlow<Boolean> = _isLoading.asStateFlow()
@@ -58,6 +66,10 @@ class HomeViewModel @Inject constructor(
     private val _isOffline = MutableStateFlow(false)
     val isOffline: StateFlow<Boolean> = _isOffline.asStateFlow()
 
+    /** Bumps only when banner/referral images change or user force-refreshes. */
+    private val _contentRefreshEpoch = MutableStateFlow(0L)
+    val contentRefreshEpoch: StateFlow<Long> = _contentRefreshEpoch.asStateFlow()
+
     private val _errorMessage = MutableStateFlow<String?>(null)
     val errorMessage: StateFlow<String?> = _errorMessage.asStateFlow()
 
@@ -66,24 +78,25 @@ class HomeViewModel @Inject constructor(
         loadData(force = false)
     }
 
+    fun refreshHomeContent() {
+        loadData(force = true)
+    }
+
     fun loadData(force: Boolean = false) {
         viewModelScope.launch {
-            if (!force && homeCacheStore.hasCachedContent() && homeCacheStore.isContentFresh()) {
-                refreshDynamicContent(showLoading = false)
-                return@launch
-            }
+            val hasCache = _hasCachedHomeContent.value || homeCacheStore.hasCachedPlayOrEarnContent()
+            val showBlockingLoader = !force && !hasCache
 
-            val showBlockingLoader = _modes.value.isEmpty() && _banners.value.isEmpty()
             if (showBlockingLoader) {
                 _isLoading.value = true
-            } else {
+            } else if (force) {
                 _isRefreshing.value = true
             }
             _errorMessage.value = null
 
             if (!NetworkUtils.isOnline(context)) {
                 _isOffline.value = true
-                if (!homeCacheStore.hasCachedContent()) {
+                if (!hasCache) {
                     _errorMessage.value =
                         "No internet connection. Connect to load live tournaments and wallet data."
                 }
@@ -93,44 +106,22 @@ class HomeViewModel @Inject constructor(
             }
 
             _isOffline.value = false
-            fetchFromNetwork()
+            if (force) {
+                _contentRefreshEpoch.value = System.currentTimeMillis()
+                clearImageCaches()
+            }
+            fetchFromNetwork(force = force)
             _isLoading.value = false
             _isRefreshing.value = false
         }
     }
 
-    private suspend fun refreshDynamicContent(showLoading: Boolean) {
-        if (showLoading) _isRefreshing.value = true
-        if (!NetworkUtils.isOnline(context)) {
-            _isOffline.value = true
-            _isRefreshing.value = false
-            return
-        }
-        _isOffline.value = false
-        try {
-            coroutineScope {
-                val userDef = async { runCatching { api.getCurrentUser() } }
-                val leaderboardDef = async { runCatching { api.getLeaderboard() } }
-                val supportDef = async { runCatching { fetchSupportUrlFromApi() } }
-
-                userDef.await().getOrNull()?.takeIf { it.isSuccessful }?.body()?.let {
-                    _user.value = it
-                }
-                leaderboardDef.await().getOrNull()?.takeIf { it.isSuccessful }?.body()?.let {
-                    _leaderboard.value = it
-                }
-                supportDef.await().getOrNull()?.let { _supportUrl.value = it }
-            }
-        } finally {
-            _isRefreshing.value = false
-        }
-    }
-
-    private suspend fun fetchFromNetwork() {
+    private suspend fun fetchFromNetwork(force: Boolean) {
         var fetchedModes = _modes.value
         var fetchedBanners = _banners.value
         var fetchedAnnouncement = _announcementText.value
         var fetchedReferral = _referralSettings.value
+        var fetchedUser = _user.value
         var hadSuccessfulFetch = false
 
         try {
@@ -143,44 +134,70 @@ class HomeViewModel @Inject constructor(
                 val supportDef = async { runCatching { fetchSupportUrlFromApi() } }
                 val referralDef = async { runCatching { api.getReferralSettings() } }
 
-                userDef.await().getOrNull()?.takeIf { it.isSuccessful }?.body()?.let {
-                    _user.value = it
+                userDef.await().getOrNull()?.takeIf { it.isSuccessful }?.body()?.let { user ->
+                    if (user != fetchedUser) {
+                        _user.value = user
+                    }
+                    fetchedUser = user
                     hadSuccessfulFetch = true
                 }
 
-                modesDef.await().getOrNull()?.takeIf { it.isSuccessful }?.body()?.let {
-                    fetchedModes = it
-                    _modes.value = it
+                modesDef.await().getOrNull()?.takeIf { it.isSuccessful }?.body()?.let { modes ->
+                    if (HomeCacheStore.modesFingerprint(modes) != HomeCacheStore.modesFingerprint(_modes.value)) {
+                        _modes.value = modes
+                    }
+                    fetchedModes = modes
                     hadSuccessfulFetch = true
                 }
 
                 announcementDef.await().getOrNull()?.takeIf { it.isSuccessful }?.body()?.let { body ->
-                    body["announcementText"]?.takeIf { it.isNotBlank() }?.let {
-                        fetchedAnnouncement = it
-                        _announcementText.value = it
+                    val text = body["announcementText"]?.trim().orEmpty()
+                    if (text.isNotBlank() && text != _announcementText.value) {
+                        _announcementText.value = text
+                    }
+                    if (text.isNotBlank()) {
+                        fetchedAnnouncement = text
                         hadSuccessfulFetch = true
                     }
                 }
 
-                bannersDef.await().getOrNull()?.takeIf { it.isSuccessful }?.body()?.let {
-                    fetchedBanners = it
-                    _banners.value = it
+                bannersDef.await().getOrNull()?.takeIf { it.isSuccessful }?.body()?.let { banners ->
+                    val previousKey = HomeCacheStore.bannersFingerprint(_banners.value)
+                    val newKey = HomeCacheStore.bannersFingerprint(banners)
+                    if (newKey != previousKey) {
+                        if (force || bannerImagesChanged(_banners.value, banners)) {
+                            _contentRefreshEpoch.value = System.currentTimeMillis()
+                        }
+                        _banners.value = banners
+                    }
+                    fetchedBanners = banners
                     hadSuccessfulFetch = true
                 }
 
-                leaderboardDef.await().getOrNull()?.takeIf { it.isSuccessful }?.body()?.let {
-                    _leaderboard.value = it
+                leaderboardDef.await().getOrNull()?.takeIf { it.isSuccessful }?.body()?.let { board ->
+                    if (board != _leaderboard.value) {
+                        _leaderboard.value = board
+                    }
                     hadSuccessfulFetch = true
                 }
 
-                supportDef.await().getOrNull()?.let {
-                    _supportUrl.value = it
+                supportDef.await().getOrNull()?.let { url ->
+                    if (url != _supportUrl.value) {
+                        _supportUrl.value = url
+                    }
                     hadSuccessfulFetch = true
                 }
 
-                referralDef.await().getOrNull()?.takeIf { it.isSuccessful }?.body()?.let {
-                    fetchedReferral = it
-                    _referralSettings.value = it
+                referralDef.await().getOrNull()?.takeIf { it.isSuccessful }?.body()?.let { referral ->
+                    val previousKey = HomeCacheStore.referralFingerprint(_referralSettings.value)
+                    val newKey = HomeCacheStore.referralFingerprint(referral)
+                    if (newKey != previousKey) {
+                        if (force || _referralSettings.value?.bannerUrl != referral.bannerUrl) {
+                            _contentRefreshEpoch.value = System.currentTimeMillis()
+                        }
+                        _referralSettings.value = referral
+                    }
+                    fetchedReferral = referral
                     hadSuccessfulFetch = true
                 }
             }
@@ -191,12 +208,14 @@ class HomeViewModel @Inject constructor(
                     banners = fetchedBanners,
                     announcementText = fetchedAnnouncement,
                     referralSettings = fetchedReferral,
+                    user = fetchedUser,
                 )
-            } else if (!homeCacheStore.hasCachedContent()) {
+                _hasCachedHomeContent.value = true
+            } else if (!_hasCachedHomeContent.value) {
                 _errorMessage.value = "Unable to reach the server. Check your connection and try again."
             }
         } catch (e: Exception) {
-            if (!homeCacheStore.hasCachedContent()) {
+            if (!_hasCachedHomeContent.value) {
                 _errorMessage.value = "Network error: ${e.localizedMessage}"
             }
             e.printStackTrace()
@@ -204,10 +223,49 @@ class HomeViewModel @Inject constructor(
     }
 
     private fun applyCacheFromStore() {
-        homeCacheStore.getCachedModes()?.let { _modes.value = it }
-        homeCacheStore.getCachedBanners()?.let { _banners.value = it }
-        homeCacheStore.getCachedAnnouncement()?.let { _announcementText.value = it }
-        homeCacheStore.getCachedReferralSettings()?.let { _referralSettings.value = it }
+        var applied = false
+
+        homeCacheStore.getCachedModes()?.takeIf { it.isNotEmpty() }?.let {
+            _modes.value = it
+            applied = true
+        }
+        homeCacheStore.getCachedBanners()?.takeIf { it.isNotEmpty() }?.let {
+            _banners.value = it
+            applied = true
+        }
+        homeCacheStore.getCachedAnnouncement()?.let {
+            _announcementText.value = it
+            applied = true
+        }
+        homeCacheStore.getCachedReferralSettings()?.let {
+            _referralSettings.value = it
+            applied = true
+        }
+        homeCacheStore.getCachedUser()?.let {
+            _user.value = it
+        }
+
+        val cachedAt = homeCacheStore.getCachedAtMs()
+        if (cachedAt > 0L) {
+            _contentRefreshEpoch.value = cachedAt
+        }
+
+        _hasCachedHomeContent.value = applied || homeCacheStore.hasCachedPlayOrEarnContent()
+    }
+
+    private fun bannerImagesChanged(old: List<AppBanner>, new: List<AppBanner>): Boolean {
+        val oldImages = old.associate { it.id to it.imageUrl }
+        val newImages = new.associate { it.id to it.imageUrl }
+        return oldImages != newImages
+    }
+
+    @OptIn(ExperimentalCoilApi::class)
+    private fun clearImageCaches() {
+        runCatching {
+            val loader = Coil.imageLoader(context)
+            loader.memoryCache?.clear()
+            loader.diskCache?.clear()
+        }
     }
 
     fun refreshSupportUrl() {

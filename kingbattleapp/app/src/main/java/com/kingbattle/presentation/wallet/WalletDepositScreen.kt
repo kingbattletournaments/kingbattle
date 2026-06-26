@@ -17,6 +17,7 @@ import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.filled.ArrowBack
 import androidx.compose.material.icons.filled.Close
 import androidx.compose.material3.*
+import androidx.compose.material3.pulltorefresh.PullToRefreshBox
 import androidx.compose.runtime.*
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
@@ -42,6 +43,7 @@ fun WalletDepositScreen(
     viewModel: WalletViewModel = hiltViewModel()
 ) {
     val context = LocalContext.current
+    val isRefreshingState = viewModel.isRefreshing.collectAsState()
     var amountText by remember { mutableStateOf("") }
     var activePaymentUrl by remember { mutableStateOf<String?>(null) }
     var activePaymentOrderId by remember { mutableStateOf<String?>(null) }
@@ -159,10 +161,16 @@ fun WalletDepositScreen(
                 },
                 containerColor = ThemeDarkBg
             ) { padding ->
+                PullToRefreshBox(
+                    isRefreshing = isRefreshingState.value,
+                    onRefresh = { viewModel.refreshData() },
+                    modifier = Modifier
+                        .fillMaxSize()
+                        .padding(padding),
+                ) {
                 Column(
                     modifier = Modifier
                         .fillMaxSize()
-                        .padding(padding)
                         .verticalScroll(rememberScrollState())
                         .padding(16.dp),
                     verticalArrangement = Arrangement.spacedBy(16.dp)
@@ -231,6 +239,7 @@ fun WalletDepositScreen(
                             }
                         }
                     }
+                }
                 }
             }
         }

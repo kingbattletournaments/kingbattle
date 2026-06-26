@@ -33,6 +33,9 @@ class MatchDetailViewModel @Inject constructor(
     private val _isLoading = MutableStateFlow(false)
     val isLoading: StateFlow<Boolean> = _isLoading.asStateFlow()
 
+    private val _isRefreshing = MutableStateFlow(false)
+    val isRefreshing: StateFlow<Boolean> = _isRefreshing.asStateFlow()
+
     private val _errorMessage = MutableStateFlow<String?>(null)
     val errorMessage: StateFlow<String?> = _errorMessage.asStateFlow()
 
@@ -45,30 +48,27 @@ class MatchDetailViewModel @Inject constructor(
         _joinedMatches.value = tokenManager.getJoinedMatches()
     }
 
+    fun refreshMatchDetail(matchId: String) {
+        viewModelScope.launch {
+            _isRefreshing.value = true
+            _errorMessage.value = null
+            try {
+                fetchUserProfile()
+                fetchMatchDetail(matchId)
+                fetchParticipants(matchId)
+            } finally {
+                _isRefreshing.value = false
+            }
+        }
+    }
+
     fun loadData(matchId: String) {
         viewModelScope.launch {
             _isLoading.value = true
             _errorMessage.value = null
             try {
-                try {
-                    val userRes = api.getCurrentUser()
-                    if (userRes.isSuccessful && userRes.body() != null) {
-                        _user.value = userRes.body()!!
-                    }
-                } catch (_: Exception) {}
-
-                try {
-                    val detailRes = kotlinx.coroutines.withTimeoutOrNull(5000L) {
-                        api.getMatchDetail(matchId)
-                    }
-                    if (detailRes != null && detailRes.isSuccessful && detailRes.body() != null) {
-                        _matchDetail.value = detailRes.body()!!
-                    } else {
-                        _errorMessage.value = if (detailRes == null) "Match detail request timed out" else "Failed to fetch match details"
-                    }
-                } catch (e: Exception) {
-                    _errorMessage.value = "Failed to load match: ${e.localizedMessage}"
-                }
+                fetchUserProfile()
+                fetchMatchDetail(matchId)
             } catch (e: Exception) {
                 _errorMessage.value = "Failed to load match: ${e.localizedMessage}"
             } finally {
@@ -84,28 +84,52 @@ class MatchDetailViewModel @Inject constructor(
      */
     fun fetchExtras(matchId: String) {
         viewModelScope.launch {
-            // 1. Fetch user profile silently (for coin balance)
-            try {
-                val userRes = api.getCurrentUser()
-                if (userRes.isSuccessful && userRes.body() != null) {
-                    _user.value = userRes.body()!!
-                }
-            } catch (_: Exception) {}
-
-            // 2. Fetch participants from dedicated endpoint
-            try {
-                val participantsRes = kotlinx.coroutines.withTimeoutOrNull(5000L) {
-                    api.getMatchParticipants(matchId)
-                }
-                if (participantsRes != null && participantsRes.isSuccessful && participantsRes.body() != null) {
-                    val participants = participantsRes.body()!!
-                    val current = _matchDetail.value
-                    if (current != null) {
-                        _matchDetail.value = current.copy(participants = participants)
-                    }
-                }
-            } catch (_: Exception) {}
+            fetchUserProfile()
+            fetchParticipants(matchId)
         }
+    }
+
+    private suspend fun fetchUserProfile() {
+        try {
+            val userRes = api.getCurrentUser()
+            if (userRes.isSuccessful && userRes.body() != null) {
+                _user.value = userRes.body()!!
+            }
+        } catch (_: Exception) {}
+    }
+
+    private suspend fun fetchMatchDetail(matchId: String) {
+        try {
+            val detailRes = kotlinx.coroutines.withTimeoutOrNull(5000L) {
+                api.getMatchDetail(matchId)
+            }
+            if (detailRes != null && detailRes.isSuccessful && detailRes.body() != null) {
+                _matchDetail.value = detailRes.body()!!
+            } else {
+                _errorMessage.value = if (detailRes == null) {
+                    "Match detail request timed out"
+                } else {
+                    "Failed to fetch match details"
+                }
+            }
+        } catch (e: Exception) {
+            _errorMessage.value = "Failed to load match: ${e.localizedMessage}"
+        }
+    }
+
+    private suspend fun fetchParticipants(matchId: String) {
+        try {
+            val participantsRes = kotlinx.coroutines.withTimeoutOrNull(5000L) {
+                api.getMatchParticipants(matchId)
+            }
+            if (participantsRes != null && participantsRes.isSuccessful && participantsRes.body() != null) {
+                val participants = participantsRes.body()!!
+                val current = _matchDetail.value
+                if (current != null) {
+                    _matchDetail.value = current.copy(participants = participants)
+                }
+            }
+        } catch (_: Exception) {}
     }
 
     fun joinMatch(

@@ -34,6 +34,9 @@ class WalletViewModel @Inject constructor(
     private val _isLoading = MutableStateFlow(false)
     val isLoading: StateFlow<Boolean> = _isLoading.asStateFlow()
 
+    private val _isRefreshing = MutableStateFlow(false)
+    val isRefreshing: StateFlow<Boolean> = _isRefreshing.asStateFlow()
+
     private val _errorMessage = MutableStateFlow<String?>(null)
     val errorMessage: StateFlow<String?> = _errorMessage.asStateFlow()
 
@@ -41,10 +44,16 @@ class WalletViewModel @Inject constructor(
         loadData()
     }
 
-    fun loadData() {
+    fun refreshData() {
+        loadData(force = true)
+    }
+
+    fun loadData(force: Boolean = false) {
         viewModelScope.launch {
-            if (_user.value == null) {
+            if (!force && _user.value == null) {
                 _isLoading.value = true
+            } else if (force) {
+                _isRefreshing.value = true
             }
             _errorMessage.value = null
             try {
@@ -98,6 +107,7 @@ class WalletViewModel @Inject constructor(
                 e.printStackTrace()
             } finally {
                 _isLoading.value = false
+                _isRefreshing.value = false
             }
         }
     }

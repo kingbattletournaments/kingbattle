@@ -16,6 +16,7 @@ import androidx.compose.foundation.verticalScroll
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.filled.ArrowBack
 import androidx.compose.material3.*
+import androidx.compose.material3.pulltorefresh.PullToRefreshBox
 import androidx.compose.runtime.*
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
@@ -59,6 +60,7 @@ fun MatchDetailScreen(
     val matchDetailState = viewModel.matchDetail.collectAsState()
     val userState = viewModel.user.collectAsState()
     val isLoadingState = viewModel.isLoading.collectAsState()
+    val isRefreshingState = viewModel.isRefreshing.collectAsState()
     val errorMessageState = viewModel.errorMessage.collectAsState()
 
     var selectedTabIndex by remember { mutableStateOf(0) }
@@ -198,10 +200,15 @@ fun MatchDetailScreen(
         },
         containerColor = ThemeDarkBg
     ) { paddingValues ->
-        Box(
+        PullToRefreshBox(
+            isRefreshing = isRefreshingState.value,
+            onRefresh = { viewModel.refreshMatchDetail(matchId) },
             modifier = Modifier
                 .fillMaxSize()
-                .padding(paddingValues)
+                .padding(paddingValues),
+        ) {
+        Box(
+            modifier = Modifier.fillMaxSize()
         ) {
             if (isLoadingState.value && matchDetailState.value?.match == null) {
                 MatchDetailSkeleton()
@@ -326,6 +333,7 @@ fun MatchDetailScreen(
                     }
                 }
             }
+        }
         }
     }
 

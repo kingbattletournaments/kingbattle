@@ -42,6 +42,7 @@ import androidx.compose.ui.graphics.vector.ImageVector
 import androidx.compose.ui.graphics.vector.path
 import androidx.compose.ui.graphics.SolidColor
 import androidx.compose.material3.*
+import androidx.compose.material3.pulltorefresh.PullToRefreshBox
 import androidx.compose.runtime.*
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
@@ -290,6 +291,9 @@ enum class HomeTab {
     EARN, PLAY, ACCOUNT
 }
 
+private fun bannerImageCacheKey(id: String, imageUrl: String, refreshEpoch: Long): String =
+    "banner_${id}_${imageUrl.hashCode()}_$refreshEpoch"
+
 @Composable
 fun HomeScreen(
     onLogout: () -> Unit,
@@ -308,7 +312,10 @@ fun HomeScreen(
     val bannersState = homeViewModel.banners.collectAsState()
     val modesState = homeViewModel.modes.collectAsState()
     val isLoadingState = homeViewModel.isLoading.collectAsState()
+    val isRefreshingState = homeViewModel.isRefreshing.collectAsState()
     val isOfflineState = homeViewModel.isOffline.collectAsState()
+    val contentRefreshEpochState = homeViewModel.contentRefreshEpoch.collectAsState()
+    val hasCachedHomeContentState = homeViewModel.hasCachedHomeContent.collectAsState()
     val errorState = homeViewModel.errorMessage.collectAsState()
 
     LaunchedEffect(activeTab) {
@@ -321,15 +328,19 @@ fun HomeScreen(
         ReferScreen(
             user = userState.value,
             referralSettings = homeViewModel.referralSettings.collectAsState().value,
+            isRefreshing = isRefreshingState.value,
+            onRefresh = { homeViewModel.refreshHomeContent() },
             onBack = { showReferScreen = false }
         )
     } else if (showLeaderboard) {
         LeaderboardScreen(
             leaderboard = homeViewModel.leaderboard.collectAsState().value,
             isLoading = homeViewModel.isLoading.collectAsState().value,
+            isRefreshing = isRefreshingState.value,
             errorMessage = homeViewModel.errorMessage.collectAsState().value,
             onBack = { showLeaderboard = false },
-            onRetry = { homeViewModel.loadData() }
+            onRefresh = { homeViewModel.refreshHomeContent() },
+            onRetry = { homeViewModel.refreshHomeContent() }
         )
     } else {
         Scaffold(
@@ -354,11 +365,15 @@ fun HomeScreen(
                             banners = bannersState.value,
                             modes = modesState.value,
                             isLoading = isLoadingState.value,
+                            isRefreshing = isRefreshingState.value,
+                            hasCachedContent = hasCachedHomeContentState.value,
                             isOffline = isOfflineState.value,
+                            contentRefreshEpoch = contentRefreshEpochState.value,
                             errorMessage = errorState.value,
                             onModeClick = { modeId -> onNavigateToMatches(modeId, 1) },
                             onNavigateToMatches = onNavigateToMatches,
-                            onRetry = { homeViewModel.loadData() },
+                            onRefresh = { homeViewModel.refreshHomeContent() },
+                            onRetry = { homeViewModel.refreshHomeContent() },
                             onBalanceClick = onNavigateToWallet
                         )
                     }
@@ -367,8 +382,12 @@ fun HomeScreen(
                             banners = bannersState.value,
                             referralSettings = homeViewModel.referralSettings.collectAsState().value,
                             isLoading = isLoadingState.value,
+                            isRefreshing = isRefreshingState.value,
+                            hasCachedContent = hasCachedHomeContentState.value,
+                            contentRefreshEpoch = contentRefreshEpochState.value,
                             errorMessage = errorState.value,
-                            onRetry = { homeViewModel.loadData() },
+                            onRefresh = { homeViewModel.refreshHomeContent() },
+                            onRetry = { homeViewModel.refreshHomeContent() },
                             onReferClick = { showReferScreen = true }
                         )
                     }
@@ -376,6 +395,8 @@ fun HomeScreen(
                         AccountTabContent(
                             user = userState.value,
                             referralSettings = homeViewModel.referralSettings.collectAsState().value,
+                            isRefreshing = isRefreshingState.value,
+                            onRefresh = { homeViewModel.refreshHomeContent() },
                             onCustomerSupportClick = { homeViewModel.openCustomerSupport(context) },
                             onLogoutClick = {
                                 authViewModel.logout()
@@ -393,7 +414,7 @@ fun HomeScreen(
 }
 
 // ==================== PLAY TAB CONTENT ====================
-@OptIn(ExperimentalFoundationApi::class)
+@OptIn(ExperimentalFoundationApi::class, ExperimentalMaterial3Api::class)
 @Composable
 fun PlayTabContent(
     user: com.kingbattle.domain.model.User?,
@@ -401,10 +422,14 @@ fun PlayTabContent(
     banners: List<com.kingbattle.domain.model.AppBanner>,
     modes: List<GameMode>,
     isLoading: Boolean,
+    isRefreshing: Boolean = false,
+    hasCachedContent: Boolean = false,
     isOffline: Boolean,
+    contentRefreshEpoch: Long = 0L,
     errorMessage: String?,
     onModeClick: (String) -> Unit,
     onNavigateToMatches: (String, Int) -> Unit,
+    onRefresh: () -> Unit = {},
     onRetry: () -> Unit,
     onBalanceClick: () -> Unit
 ) {
@@ -413,89 +438,89 @@ fun PlayTabContent(
     Column(
         modifier = Modifier.fillMaxSize()
     ) {
-        // Sticky Header: stays fixed at the top
         HeaderSection(user = user, onBalanceClick = onBalanceClick)
 
-        // Sticky Announcement Bar: stays fixed below the header
         if (announcementText.isNotBlank()) {
             AnnouncementSection(text = announcementText)
         }
 
-        // Scrollable Body
-        Column(
-            modifier = Modifier
-                .fillMaxSize()
-                .verticalScroll(scrollState)
-                .padding(horizontal = 16.dp, vertical = 12.dp),
-            verticalArrangement = Arrangement.spacedBy(16.dp)
+        PullToRefreshBox(
+            isRefreshing = isRefreshing,
+            onRefresh = onRefresh,
+            modifier = Modifier.fillMaxSize(),
         ) {
-            // Banner Carousel Section
-            BannerSection(
-                banners = banners.filter { it.displayPlayCarousel },
-                isOffline = isOffline,
-                isLoading = isLoading && banners.none { it.displayPlayCarousel },
-            )
+            Column(
+                modifier = Modifier
+                    .fillMaxSize()
+                    .verticalScroll(scrollState)
+                    .padding(horizontal = 16.dp, vertical = 12.dp),
+                verticalArrangement = Arrangement.spacedBy(16.dp)
+            ) {
+                BannerSection(
+                    banners = banners.filter { it.displayPlayCarousel },
+                    isOffline = isOffline,
+                    isLoading = isLoading && !hasCachedContent,
+                    contentRefreshEpoch = contentRefreshEpoch,
+                )
 
-            // My Matches Section
-            MyMatchesSection(onNavigateToMatches = onNavigateToMatches)
+                MyMatchesSection(onNavigateToMatches = onNavigateToMatches)
 
-            // Available Modes Grid Title
-            Text(
-                text = "AVAILABLE MODES",
-                color = TextWhite,
-                fontSize = 15.sp,
-                fontWeight = FontWeight.Bold,
-                letterSpacing = 1.sp,
-                textAlign = TextAlign.Center,
-                modifier = Modifier.fillMaxWidth()
-            )
+                Text(
+                    text = "AVAILABLE MODES",
+                    color = TextWhite,
+                    fontSize = 15.sp,
+                    fontWeight = FontWeight.Bold,
+                    letterSpacing = 1.sp,
+                    textAlign = TextAlign.Center,
+                    modifier = Modifier.fillMaxWidth()
+                )
 
-            // Available Modes Content
-            when {
-                isLoading && modes.isEmpty() -> {
-                    ModesGridSkeleton(itemCount = 6)
-                }
-                errorMessage != null && modes.isEmpty() -> {
-                    Column(
-                        modifier = Modifier
-                            .fillMaxWidth()
-                            .padding(vertical = 24.dp),
-                        horizontalAlignment = Alignment.CenterHorizontally
-                    ) {
-                        Text(
-                            text = errorMessage,
-                            color = MaterialTheme.colorScheme.error,
-                            textAlign = TextAlign.Center,
-                            modifier = Modifier.padding(bottom = 12.dp)
-                        )
-                        Button(
-                            onClick = onRetry,
-                            colors = ButtonDefaults.buttonColors(containerColor = AccentOrange)
+                when {
+                    isLoading && modes.isEmpty() && !hasCachedContent -> {
+                        ModesGridSkeleton(itemCount = 6)
+                    }
+                    errorMessage != null && modes.isEmpty() -> {
+                        Column(
+                            modifier = Modifier
+                                .fillMaxWidth()
+                                .padding(vertical = 24.dp),
+                            horizontalAlignment = Alignment.CenterHorizontally
                         ) {
-                            Text("Retry")
+                            Text(
+                                text = errorMessage,
+                                color = MaterialTheme.colorScheme.error,
+                                textAlign = TextAlign.Center,
+                                modifier = Modifier.padding(bottom = 12.dp)
+                            )
+                            Button(
+                                onClick = onRetry,
+                                colors = ButtonDefaults.buttonColors(containerColor = AccentOrange)
+                            ) {
+                                Text("Retry")
+                            }
                         }
                     }
-                }
-                modes.isEmpty() -> {
-                    Box(
-                        modifier = Modifier
-                            .fillMaxWidth()
-                            .padding(vertical = 40.dp),
-                        contentAlignment = Alignment.Center
-                    ) {
-                        Text(
-                            text = "No active game modes available.",
-                            color = TextMuted,
-                            fontSize = 14.sp
-                        )
+                    modes.isEmpty() -> {
+                        Box(
+                            modifier = Modifier
+                                .fillMaxWidth()
+                                .padding(vertical = 40.dp),
+                            contentAlignment = Alignment.Center
+                        ) {
+                            Text(
+                                text = "No active game modes available.",
+                                color = TextMuted,
+                                fontSize = 14.sp
+                            )
+                        }
+                    }
+                    else -> {
+                        ModesGrid(modes = modes, onModeClick = onModeClick)
                     }
                 }
-                else -> {
-                    ModesGrid(modes = modes, onModeClick = onModeClick)
-                }
-            }
 
-            Spacer(modifier = Modifier.height(16.dp))
+                Spacer(modifier = Modifier.height(16.dp))
+            }
         }
     }
 }
@@ -630,11 +655,12 @@ fun BannerSection(
     banners: List<com.kingbattle.domain.model.AppBanner> = emptyList(),
     isOffline: Boolean = false,
     isLoading: Boolean = false,
+    contentRefreshEpoch: Long = 0L,
 ) {
     val context = LocalContext.current
     val carouselBanners = banners.filter { it.imageUrl.isNotBlank() }
 
-    if (isOffline) {
+    if (isOffline && carouselBanners.isEmpty()) {
         Card(
             modifier = Modifier
                 .fillMaxWidth()
@@ -720,7 +746,8 @@ fun BannerSection(
                         url = banner.imageUrl,
                         contentDescription = "App Home Banner",
                         modifier = Modifier.fillMaxSize(),
-                        contentScale = ContentScale.Crop
+                        contentScale = ContentScale.Crop,
+                        cacheKey = bannerImageCacheKey(banner.id, banner.imageUrl, contentRefreshEpoch),
                     )
                 }
             }
@@ -751,7 +778,8 @@ fun BannerSection(
 @Composable
 fun ReferralBannerCard(
     bannerUrl: String,
-    onClick: () -> Unit
+    onClick: () -> Unit,
+    cacheKey: String? = null,
 ) {
     Card(
         modifier = Modifier
@@ -768,7 +796,8 @@ fun ReferralBannerCard(
                 modifier = Modifier
                     .fillMaxWidth()
                     .aspectRatio(16f / 9f),
-                contentScale = ContentScale.Crop
+                contentScale = ContentScale.Crop,
+                cacheKey = cacheKey,
             )
         } else {
             Image(
@@ -965,12 +994,17 @@ fun ModeCardItem(
 }
 
 // ==================== EARN TAB CONTENT ====================
+@OptIn(ExperimentalMaterial3Api::class)
 @Composable
 fun EarnTabContent(
     banners: List<com.kingbattle.domain.model.AppBanner>,
     referralSettings: com.kingbattle.domain.model.ReferralSettings?,
     isLoading: Boolean,
+    isRefreshing: Boolean = false,
+    hasCachedContent: Boolean = false,
+    contentRefreshEpoch: Long = 0L,
     errorMessage: String?,
+    onRefresh: () -> Unit = {},
     onRetry: () -> Unit,
     onReferClick: () -> Unit
 ) {
@@ -983,7 +1017,7 @@ fun EarnTabContent(
     Column(
         modifier = Modifier
             .fillMaxSize()
-            .padding(16.dp)
+            .padding(horizontal = 16.dp, vertical = 16.dp)
     ) {
         Text(
             text = "EARN REWARDS",
@@ -999,75 +1033,84 @@ fun EarnTabContent(
             modifier = Modifier.padding(bottom = 16.dp)
         )
 
-        LazyColumn(
+        PullToRefreshBox(
+            isRefreshing = isRefreshing,
+            onRefresh = onRefresh,
             modifier = Modifier.fillMaxSize(),
-            verticalArrangement = Arrangement.spacedBy(16.dp),
-            contentPadding = PaddingValues(bottom = 24.dp)
         ) {
-            if (isLoading && earnBanners.isEmpty() && referralBannerUrl.isBlank()) {
-                item { BannerSkeleton() }
-                items(2) { BannerSkeleton() }
-            } else {
-            // 1. Referral banner from admin panel (Referrals tab → banner upload)
-            item {
-                ReferralBannerCard(
-                    bannerUrl = referralBannerUrl,
-                    onClick = onReferClick
-                )
-            }
-
-            // 2. Dynamic Earn Banners (remote from server)
-            itemsIndexed(earnBanners) { _, banner ->
-                Card(
-                    modifier = Modifier
-                        .fillMaxWidth()
-                        .clickable {
-                            val url = banner.linkUrl
-                            if (url.isNotBlank()) {
-                                try {
-                                    val intent = Intent(Intent.ACTION_VIEW, Uri.parse(url))
-                                    context.startActivity(intent)
-                                } catch (e: Exception) {
-                                    Toast.makeText(context, "Could not open link", Toast.LENGTH_SHORT).show()
-                                }
-                            }
-                        }
-                        .border(1.dp, ThemeBorderColor, RoundedCornerShape(12.dp)),
-                    shape = RoundedCornerShape(12.dp),
-                    colors = CardDefaults.cardColors(containerColor = ThemeCardBg)
-                ) {
-                    val imageUrl = banner.imageUrl
-                    if (imageUrl.startsWith("local://") || imageUrl == "local_banner" || imageUrl.contains("unsplash") || imageUrl.isBlank()) {
-                        Image(
-                            painter = androidx.compose.ui.res.painterResource(id = com.kingbattle.R.drawable.banner_image),
-                            contentDescription = "Earn Offer Banner",
-                            modifier = Modifier
-                                .fillMaxWidth()
-                                .aspectRatio(16f / 9f),
-                            contentScale = ContentScale.Crop
-                        )
-                    } else {
-                        CachedNetworkImage(
-                            url = imageUrl,
-                            contentDescription = "Earn Offer Banner",
-                            modifier = Modifier
-                                .fillMaxWidth()
-                                .aspectRatio(16f / 9f),
-                            contentScale = ContentScale.Crop
+            LazyColumn(
+                modifier = Modifier.fillMaxSize(),
+                verticalArrangement = Arrangement.spacedBy(16.dp),
+                contentPadding = PaddingValues(bottom = 24.dp)
+            ) {
+                if (isLoading && !hasCachedContent && earnBanners.isEmpty() && referralBannerUrl.isBlank()) {
+                    item { BannerSkeleton() }
+                    items(2) { BannerSkeleton() }
+                } else {
+                    item {
+                        ReferralBannerCard(
+                            bannerUrl = referralBannerUrl,
+                            onClick = onReferClick,
+                            cacheKey = bannerImageCacheKey("referral", referralBannerUrl, contentRefreshEpoch),
                         )
                     }
+
+                    itemsIndexed(earnBanners) { _, banner ->
+                        Card(
+                            modifier = Modifier
+                                .fillMaxWidth()
+                                .clickable {
+                                    val url = banner.linkUrl
+                                    if (url.isNotBlank()) {
+                                        try {
+                                            val intent = Intent(Intent.ACTION_VIEW, Uri.parse(url))
+                                            context.startActivity(intent)
+                                        } catch (e: Exception) {
+                                            Toast.makeText(context, "Could not open link", Toast.LENGTH_SHORT).show()
+                                        }
+                                    }
+                                }
+                                .border(1.dp, ThemeBorderColor, RoundedCornerShape(12.dp)),
+                            shape = RoundedCornerShape(12.dp),
+                            colors = CardDefaults.cardColors(containerColor = ThemeCardBg)
+                        ) {
+                            val imageUrl = banner.imageUrl
+                            if (imageUrl.startsWith("local://") || imageUrl == "local_banner" || imageUrl.contains("unsplash") || imageUrl.isBlank()) {
+                                Image(
+                                    painter = androidx.compose.ui.res.painterResource(id = com.kingbattle.R.drawable.banner_image),
+                                    contentDescription = "Earn Offer Banner",
+                                    modifier = Modifier
+                                        .fillMaxWidth()
+                                        .aspectRatio(16f / 9f),
+                                    contentScale = ContentScale.Crop
+                                )
+                            } else {
+                                CachedNetworkImage(
+                                    url = imageUrl,
+                                    contentDescription = "Earn Offer Banner",
+                                    modifier = Modifier
+                                        .fillMaxWidth()
+                                        .aspectRatio(16f / 9f),
+                                    contentScale = ContentScale.Crop,
+                                    cacheKey = bannerImageCacheKey(banner.id, imageUrl, contentRefreshEpoch),
+                                )
+                            }
+                        }
+                    }
                 }
-            }
             }
         }
     }
 }
 
 // ==================== ACCOUNT TAB CONTENT ====================
+@OptIn(ExperimentalMaterial3Api::class)
 @Composable
 fun AccountTabContent(
     user: com.kingbattle.domain.model.User?,
     referralSettings: com.kingbattle.domain.model.ReferralSettings?,
+    isRefreshing: Boolean = false,
+    onRefresh: () -> Unit = {},
     onCustomerSupportClick: () -> Unit,
     onLogoutClick: () -> Unit,
     onWalletClick: () -> Unit,
@@ -1094,6 +1137,11 @@ fun AccountTabContent(
                 .background(ThemeDarkBg)
         )
 
+        PullToRefreshBox(
+            isRefreshing = isRefreshing,
+            onRefresh = onRefresh,
+            modifier = Modifier.fillMaxSize(),
+        ) {
         Column(
             modifier = Modifier
                 .fillMaxSize()
@@ -1375,6 +1423,7 @@ fun AccountTabContent(
 
             Spacer(modifier = Modifier.height(24.dp))
         }
+        }
     }
 
 
@@ -1506,6 +1555,8 @@ fun BottomNavigationBar(
 fun ReferScreen(
     user: com.kingbattle.domain.model.User?,
     referralSettings: com.kingbattle.domain.model.ReferralSettings?,
+    isRefreshing: Boolean = false,
+    onRefresh: () -> Unit = {},
     onBack: () -> Unit
 ) {
     val context = LocalContext.current
@@ -1542,10 +1593,16 @@ fun ReferScreen(
         },
         containerColor = ThemeDarkBg
     ) { paddingValues ->
+        PullToRefreshBox(
+            isRefreshing = isRefreshing,
+            onRefresh = onRefresh,
+            modifier = Modifier
+                .fillMaxSize()
+                .padding(paddingValues),
+        ) {
         Column(
             modifier = Modifier
                 .fillMaxSize()
-                .padding(paddingValues)
                 .background(ThemeDarkBg)
                 .verticalScroll(scrollState)
                 .padding(horizontal = 16.dp, vertical = 20.dp),
@@ -1696,6 +1753,7 @@ fun ReferScreen(
                 )
             }
         }
+        }
     }
 }
 
@@ -1705,8 +1763,10 @@ fun ReferScreen(
 fun LeaderboardScreen(
     leaderboard: List<com.kingbattle.domain.model.LeaderboardUser>,
     isLoading: Boolean,
+    isRefreshing: Boolean = false,
     errorMessage: String?,
     onBack: () -> Unit,
+    onRefresh: () -> Unit = {},
     onRetry: () -> Unit
 ) {
     Scaffold(
@@ -1734,10 +1794,15 @@ fun LeaderboardScreen(
         },
         containerColor = ThemeDarkBg
     ) { paddingValues ->
-        Box(
+        PullToRefreshBox(
+            isRefreshing = isRefreshing,
+            onRefresh = onRefresh,
             modifier = Modifier
                 .fillMaxSize()
-                .padding(paddingValues)
+                .padding(paddingValues),
+        ) {
+        Box(
+            modifier = Modifier.fillMaxSize()
         ) {
             if (isLoading) {
                 LeaderboardSkeleton()
@@ -1781,6 +1846,7 @@ fun LeaderboardScreen(
                     }
                 }
             }
+        }
         }
     }
 }

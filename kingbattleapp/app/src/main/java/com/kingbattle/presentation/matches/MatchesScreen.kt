@@ -20,6 +20,7 @@ import androidx.compose.material.icons.filled.ArrowBack
 import androidx.compose.material.icons.filled.KeyboardArrowDown
 import androidx.compose.material.icons.filled.KeyboardArrowUp
 import androidx.compose.material3.*
+import androidx.compose.material3.pulltorefresh.PullToRefreshBox
 import androidx.compose.material3.TabRowDefaults.tabIndicatorOffset
 import androidx.compose.runtime.*
 import androidx.compose.ui.Alignment
@@ -65,6 +66,7 @@ fun MatchesScreen(
     val matchesState = viewModel.matches.collectAsState()
     val userState = viewModel.user.collectAsState()
     val isLoadingState = viewModel.isLoading.collectAsState()
+    val isRefreshingState = viewModel.isRefreshing.collectAsState()
     val errorMessageState = viewModel.errorMessage.collectAsState()
     val modeNameState = viewModel.modeName.collectAsState()
     val joinedMatchesState = viewModel.joinedMatches.collectAsState()
@@ -169,11 +171,16 @@ fun MatchesScreen(
                 }
             }
 
-                HorizontalPager(
-                state = pagerState,
+            PullToRefreshBox(
+                isRefreshing = isRefreshingState.value,
+                onRefresh = { viewModel.refreshData(modeId) },
                 modifier = Modifier
                     .fillMaxSize()
-                    .weight(1f)
+                    .weight(1f),
+            ) {
+                HorizontalPager(
+                state = pagerState,
+                modifier = Modifier.fillMaxSize()
             ) { page ->
                 fun canonicalStatus(raw: String?): String {
                     return raw
@@ -281,6 +288,7 @@ fun MatchesScreen(
                         }
                     }
                 }
+            }
             }
         }
     }

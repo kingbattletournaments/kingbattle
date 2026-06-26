@@ -14,6 +14,7 @@ import androidx.compose.material.icons.filled.KeyboardArrowDown
 import androidx.compose.material.icons.filled.KeyboardArrowUp
 import androidx.compose.material.icons.filled.Refresh
 import androidx.compose.material3.*
+import androidx.compose.material3.pulltorefresh.PullToRefreshBox
 import androidx.compose.runtime.*
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
@@ -50,6 +51,7 @@ fun WalletScreen(
     val userState = viewModel.user.collectAsState()
     val transactionsState = viewModel.transactions.collectAsState()
     val isLoadingState = viewModel.isLoading.collectAsState()
+    val isRefreshingState = viewModel.isRefreshing.collectAsState()
 
     val allTransactions = transactionsState.value
 
@@ -89,7 +91,7 @@ fun WalletScreen(
                     }
                 },
                 actions = {
-                    IconButton(onClick = { viewModel.loadData() }) {
+                    IconButton(onClick = { viewModel.refreshData() }) {
                         Icon(
                             imageVector = Icons.Default.Refresh,
                             contentDescription = "Refresh",
@@ -104,10 +106,15 @@ fun WalletScreen(
         },
         containerColor = ThemeDarkBg
     ) { paddingValues ->
-        Box(
+        PullToRefreshBox(
+            isRefreshing = isRefreshingState.value,
+            onRefresh = { viewModel.refreshData() },
             modifier = Modifier
                 .fillMaxSize()
-                .padding(paddingValues)
+                .padding(paddingValues),
+        ) {
+        Box(
+            modifier = Modifier.fillMaxSize()
         ) {
             if (isLoadingState.value && userState.value == null) {
                 WalletSkeleton()
@@ -147,6 +154,7 @@ fun WalletScreen(
                     }
                 }
             }
+        }
         }
     }
 }
