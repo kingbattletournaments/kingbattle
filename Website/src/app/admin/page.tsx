@@ -17,7 +17,7 @@ import {
   type AdminPanelTab,
 } from "@/lib/admin-tabs";
 import { AdminTabIcon } from "@/components/admin/AdminTabIcon";
-import { AdminMatchCard } from "@/components/admin/AdminMatchCard";
+import { AdminMatchCard, getAdminMatchBanner } from "@/components/admin/AdminMatchCard";
 import type { DashboardStats } from "@/lib/dashboard-stats";
 
 type Tab = "dashboard" | "modes" | "presets" | "moneyorders" | "withdrawals" | "admins" | "notifications" | "appsettings" | "banners" | "referrals" | "users";
@@ -2552,6 +2552,145 @@ function MatchPresetsSection({
   );
 }
 
+function MatchParticipantsPanel({
+  match,
+  participants,
+  isOngoing,
+  localKills,
+  setLocalKills,
+  localRank,
+  setLocalRank,
+  updatingParticipant,
+  onUpdateParticipant,
+  getKills,
+}: {
+  match: MatchWithParticipants;
+  participants: ParticipantWithStats[];
+  isOngoing: boolean;
+  localKills: Record<string, number[]>;
+  setLocalKills: React.Dispatch<React.SetStateAction<Record<string, number[]>>>;
+  localRank: Record<string, number | "">;
+  setLocalRank: React.Dispatch<React.SetStateAction<Record<string, number | "">>>;
+  updatingParticipant: string | null;
+  onUpdateParticipant: (p: ParticipantWithStats) => void;
+  getKills: (p: ParticipantWithStats) => number[];
+}) {
+  return (
+    <div className="rounded-xl border border-zinc-200 bg-zinc-50/30 p-4 sm:p-6">
+      <div className="mb-3 flex flex-col gap-1 sm:flex-row sm:items-baseline">
+        <h3 className="text-sm font-medium text-zinc-600">
+          Players Joined ({participants.length})
+        </h3>
+        {isOngoing && (
+          <span className="text-xs font-normal text-zinc-900">
+            Edit kills/rank, then click Update to save. Changes apply only after Update.
+          </span>
+        )}
+      </div>
+      {participants.length === 0 ? (
+        <p className="text-sm text-zinc-500">No players registered yet</p>
+      ) : (
+        <ul className="space-y-3">
+          {participants.map((p, i) => {
+            const killsArr = getKills(p);
+            const totalKills = killsArr.reduce((sum, k) => sum + k, 0);
+            const rankVal = localRank[p.id] ?? "";
+            const serverKills = (p.teamMembers ?? []).map((t) => t.kills ?? 0);
+            const killsChanged = JSON.stringify(killsArr) !== JSON.stringify(serverKills);
+            const rankChanged = typeof rankVal === "number" && rankVal >= 1 && rankVal !== p.rank;
+            const hasChanges = killsChanged || rankChanged;
+            const hasBeenUpdated =
+              (typeof p.rank === "number" && p.rank >= 1) ||
+              (p.teamMembers ?? []).some((t) => (t.kills ?? 0) > 0);
+            const position = typeof p.rank === "number" && p.rank >= 1 ? p.rank : i + 1;
+            const coins = calcCoinsForPosition(position, totalKills, match.prizePool);
+            return (
+              <li
+                key={p.id}
+                className="flex flex-col gap-3 rounded-lg bg-zinc-100/30 p-4 transition sm:flex-row sm:flex-wrap sm:items-center sm:gap-3"
+              >
+                {hasBeenUpdated && (
+                  <span className="shrink-0 text-sm font-bold text-zinc-500">#{position}</span>
+                )}
+                <div className="min-w-0 flex-1 space-y-2">
+                  {p.userId && (
+                    <div className="break-all text-xs font-mono text-zinc-500">
+                      User ID: {p.userId}
+                    </div>
+                  )}
+                  {(p.teamMembers ?? []).map((t, ti) => (
+                    <div key={ti} className="flex flex-wrap items-center gap-2">
+                      <div>
+                        <div className="text-base font-bold text-zinc-900">{t.inGameName}</div>
+                        <div className="text-xs opacity-60 text-zinc-500">{t.inGameUid}</div>
+                      </div>
+                      {isOngoing && (
+                        <div className="flex items-center gap-1">
+                          <label className="text-xs text-zinc-500">Kills</label>
+                          <input
+                            type="number"
+                            min={0}
+                            value={killsArr[ti] ?? 0}
+                            onChange={(e) => {
+                              const v = Number(e.target.value) || 0;
+                              setLocalKills((prev) => ({
+                                ...prev,
+                                [p.id]: (prev[p.id] ?? killsArr).map((k, j) => (j === ti ? v : k)),
+                              }));
+                            }}
+                            className="admin-input w-14 rounded-lg px-2 py-1.5 text-center text-sm"
+                          />
+                        </div>
+                      )}
+                    </div>
+                  ))}
+                </div>
+                {isOngoing && (
+                  <>
+                    <div className="flex items-center gap-1">
+                      <label className="text-xs text-zinc-500">Rank</label>
+                      <input
+                        type="number"
+                        min={1}
+                        max={participants.length}
+                        value={rankVal === "" ? "" : rankVal}
+                        onChange={(e) => {
+                          const v = e.target.value;
+                          setLocalRank((prev) => ({
+                            ...prev,
+                            [p.id]: v === "" ? "" : Math.min(participants.length, Math.max(1, Number(v) || 1)),
+                          }));
+                        }}
+                        placeholder="—"
+                        className="admin-input w-14 rounded-lg px-2 py-1.5 text-center text-sm"
+                      />
+                    </div>
+                    {hasChanges && (
+                      <button
+                        type="button"
+                        onClick={() => onUpdateParticipant(p)}
+                        disabled={!!updatingParticipant}
+                        className="shrink-0 rounded-lg admin-btn-primary px-3 py-1.5 text-xs font-medium disabled:opacity-50"
+                      >
+                        {updatingParticipant === p.id ? "Updating..." : "Update"}
+                      </button>
+                    )}
+                  </>
+                )}
+                {hasBeenUpdated && (
+                  <span className="shrink-0 self-start rounded-lg bg-amber-500/20 px-3 py-1 font-medium text-amber-300 sm:self-center">
+                    {coins} coins
+                  </span>
+                )}
+              </li>
+            );
+          })}
+        </ul>
+      )}
+    </div>
+  );
+}
+
 function MatchDetailView({
   matchId,
   games,
@@ -2578,6 +2717,7 @@ function MatchDetailView({
   const [updatingParticipant, setUpdatingParticipant] = useState<string | null>(null);
   const [localKills, setLocalKills] = useState<Record<string, number[]>>({});
   const [localRank, setLocalRank] = useState<Record<string, number | "">>({});
+  const [subView, setSubView] = useState<"overview" | "players">("overview");
 
   useEffect(() => {
     let cancelled = false;
@@ -2709,6 +2849,8 @@ function MatchDetailView({
   const isOngoing = match.status === "ongoing";
   const hasRoomInfo = !!(match.roomCode && match.roomPassword);
   const canStartMatch = hasRoomInfo || (!!roomCode && !!roomPassword);
+  const maxParticipants = match.maxParticipants ?? 100;
+  const spotsLeft = Math.max(0, maxParticipants - participants.length);
   const getKills = (p: ParticipantWithStats) =>
     localKills[p.id] ?? (p.teamMembers ?? []).map((t) => t.kills ?? 0);
 
@@ -2738,6 +2880,75 @@ function MatchDetailView({
     }
   };
 
+  const statusLabel =
+    match.status === "ongoing"
+      ? "Ongoing"
+      : match.status === "cancelled"
+        ? "Cancelled"
+        : match.status === "ended" || match.status === "completed"
+          ? "Finished"
+          : "Upcoming";
+
+  const statusClass =
+    match.status === "ongoing"
+      ? "bg-emerald-100 text-emerald-800 border-emerald-200"
+      : match.status === "cancelled"
+        ? "bg-rose-100 text-rose-800 border-rose-200"
+        : match.status === "ended" || match.status === "completed"
+          ? "bg-zinc-200 text-zinc-700 border-zinc-300"
+          : "bg-amber-100 text-amber-800 border-amber-200";
+
+  if (subView === "players") {
+    return (
+      <div className="space-y-6">
+        <button
+          type="button"
+          onClick={() => setSubView("overview")}
+          className="flex items-center gap-2 text-sm text-zinc-500 transition hover:text-zinc-900"
+        >
+          ← Back to match
+        </button>
+
+        <div className="rounded-xl border border-zinc-200 bg-white p-4 sm:p-5">
+          <h2 className="text-lg font-bold text-zinc-900">{match.title}</h2>
+          <p className="mt-1 text-sm text-zinc-500">
+            {participants.length} player{participants.length === 1 ? "" : "s"} registered
+          </p>
+        </div>
+
+        <MatchParticipantsPanel
+          match={match}
+          participants={participants}
+          isOngoing={isOngoing}
+          localKills={localKills}
+          setLocalKills={setLocalKills}
+          localRank={localRank}
+          setLocalRank={setLocalRank}
+          updatingParticipant={updatingParticipant}
+          onUpdateParticipant={handleUpdateParticipant}
+          getKills={getKills}
+        />
+
+        {isOngoing && (
+          <div className="rounded-xl border border-emerald-500/20 bg-emerald-500/5 p-6">
+            <h3 className="mb-4 text-sm font-medium text-emerald-700">Finish Match</h3>
+            <p className="mb-4 text-xs text-zinc-500">
+              After updating rank and kills for all participants, click Finish to complete the match.
+            </p>
+            <button
+              type="button"
+              onClick={handleFinish}
+              disabled={finishing}
+              className="rounded-xl admin-btn-primary px-4 py-2 text-sm font-medium disabled:opacity-50"
+            >
+              {finishing ? "Finishing..." : "Finish Match"}
+            </button>
+          </div>
+        )}
+      </div>
+    );
+  }
+
   return (
     <div className="space-y-6">
       <button
@@ -2748,179 +2959,163 @@ function MatchDetailView({
         ← Back to matches
       </button>
 
-      <div className="rounded-xl border border-zinc-200 bg-zinc-50/30 p-6">
-        <h2 className="text-lg font-semibold text-zinc-900">{match.title}</h2>
-        <div className="mt-2 flex flex-wrap gap-2">
-          <span className={`rounded-lg px-3 py-1 text-xs font-medium ${
-            match.status === "ongoing" ? "bg-emerald-500/20 text-emerald-300" :
-            match.status === "cancelled" ? "bg-rose-500/20 text-rose-300" :
-            match.status === "ended" || match.status === "completed" ? "bg-slate-600/30 text-zinc-500" :
-            "bg-amber-500/20 text-amber-300"
-          }`}>
-            {match.status}
-          </span>
-          <span className="rounded bg-zinc-100 px-3 py-1 text-xs text-zinc-500">{match.matchType}</span>
-          <span className="rounded bg-zinc-100 px-3 py-1 text-xs text-amber-400">{match.entryFee} coins</span>
-        </div>
-        <p className="mt-2 text-sm text-zinc-500">
-          {gameName} • Scheduled: {formatMatchDateTime(match.scheduledAt)}
-        </p>
-      </div>
-
-      <div className="rounded-xl border border-zinc-200 bg-zinc-50/30 p-6">
-        <h3 className="mb-3 text-sm font-medium text-zinc-600">Prize Pool</h3>
-        <div className="space-y-2 text-sm">
-          <p className="text-zinc-700">Coins per kill: {match.prizePool?.coinsPerKill ?? 0}</p>
-          {(match.prizePool?.rankRewards ?? []).map((r: RankReward, i: number) => (
-            <p key={i} className="text-zinc-700">
-              {r.fromRank === r.toRank
-                ? `Rank ${r.fromRank}`
-                : `Ranks ${r.fromRank}–${r.toRank}`}
-              : {r.coins} coins
+      {/* Hero */}
+      <div className="admin-content-card overflow-hidden rounded-2xl border border-zinc-200">
+        <div className="relative aspect-[16/9] w-full max-h-56 bg-zinc-100">
+          <img
+            src={getAdminMatchBanner(match)}
+            alt=""
+            className="h-full w-full object-cover"
+          />
+          <div className="absolute inset-0 bg-gradient-to-t from-black/70 via-black/20 to-transparent" />
+          <div className="absolute bottom-0 left-0 right-0 p-5 sm:p-6">
+            <div className="flex flex-wrap gap-2 mb-2">
+              <span className={`rounded-full border px-3 py-1 text-xs font-semibold ${statusClass}`}>
+                {statusLabel}
+              </span>
+              <span className="rounded-full border border-white/20 bg-white/10 px-3 py-1 text-xs font-medium text-white capitalize backdrop-blur-sm">
+                {match.matchType ?? "solo"}
+              </span>
+            </div>
+            <h2 className="text-xl sm:text-2xl font-bold text-white">{match.title}</h2>
+            <p className="mt-1 text-sm text-white/80">
+              {gameName} · {mode?.name ?? "Mode"} · {formatMatchDateTime(match.scheduledAt)}
             </p>
-          ))}
+          </div>
         </div>
       </div>
 
-      <div className="rounded-xl border border-zinc-200 bg-zinc-50/30 p-4 sm:p-6">
-        <div className="mb-3 flex flex-col gap-1 sm:flex-row sm:items-baseline">
-          <h3 className="text-sm font-medium text-zinc-600">
-            Players Joined ({participants.length})
+      <div className="grid gap-6 lg:grid-cols-3">
+        {/* Match stats */}
+        <section className="lg:col-span-2 rounded-xl border border-zinc-200 bg-white p-5 sm:p-6">
+          <h3 className="mb-4 text-xs font-bold uppercase tracking-wider text-zinc-500">
+            Match Overview
           </h3>
-          {isOngoing && (
-            <span className="text-xs font-normal text-zinc-900">
-              Edit kills/rank, then click Update to save. Changes apply only after Update.
-            </span>
-          )}
-        </div>
-        {participants.length === 0 ? (
-          <p className="text-sm text-zinc-500">No players registered yet</p>
-        ) : (
-          <ul className="space-y-3">
-            {participants.map((p, i) => {
-              const killsArr = getKills(p);
-              const totalKills = killsArr.reduce((sum, k) => sum + k, 0);
-              const rankVal = localRank[p.id] ?? "";
-              const serverKills = (p.teamMembers ?? []).map((t) => t.kills ?? 0);
-              const killsChanged = JSON.stringify(killsArr) !== JSON.stringify(serverKills);
-              const rankChanged = typeof rankVal === "number" && rankVal >= 1 && rankVal !== p.rank;
-              const hasChanges = killsChanged || rankChanged;
-              const hasBeenUpdated =
-                (typeof p.rank === "number" && p.rank >= 1) ||
-                (p.teamMembers ?? []).some((t) => (t.kills ?? 0) > 0);
-              const position = typeof p.rank === "number" && p.rank >= 1 ? p.rank : i + 1;
-              const coins = calcCoinsForPosition(position, totalKills, match.prizePool);
-              return (
-                <li
-                  key={p.id}
-                  className="flex flex-col gap-3 rounded-lg bg-zinc-100/30 p-4 transition sm:flex-row sm:flex-wrap sm:items-center sm:gap-3"
-                >
-                  {hasBeenUpdated && (
-                    <span className="shrink-0 text-sm font-bold text-zinc-500">#{position}</span>
-                  )}
-                  <div className="min-w-0 flex-1 space-y-2">
-                    {p.userId && (
-                      <div className="break-all text-xs font-mono text-zinc-500">
-                        User ID: {p.userId}
-                      </div>
-                    )}
-                    {(p.teamMembers ?? []).map((t, ti) => (
-                      <div key={ti} className="flex flex-wrap items-center gap-2">
-                        <div>
-                          <div className="text-base font-bold text-zinc-900">{t.inGameName}</div>
-                          <div className="text-xs opacity-60 text-zinc-500">{t.inGameUid}</div>
-                        </div>
-                        {isOngoing && (
-                          <div className="flex items-center gap-1">
-                            <label className="text-xs text-zinc-500">Kills</label>
-                            <input
-                              type="number"
-                              min={0}
-                              value={killsArr[ti] ?? 0}
-                              onChange={(e) => {
-                                const v = Number(e.target.value) || 0;
-                                setLocalKills((prev) => ({
-                                  ...prev,
-                                  [p.id]: (prev[p.id] ?? killsArr).map((k, j) => (j === ti ? v : k)),
-                                }));
-                              }}
-                              className="admin-input w-14 rounded-lg px-2 py-1.5 text-center text-sm"
-                            />
-                          </div>
-                        )}
-                      </div>
-                    ))}
-                  </div>
-                  {isOngoing && (
-                    <>
-                      <div className="flex items-center gap-1">
-                        <label className="text-xs text-zinc-500">Rank</label>
-                        <input
-                          type="number"
-                          min={1}
-                          max={participants.length}
-                          value={rankVal === "" ? "" : rankVal}
-                          onChange={(e) => {
-                            const v = e.target.value;
-                            setLocalRank((prev) => ({
-                              ...prev,
-                              [p.id]: v === "" ? "" : Math.min(participants.length, Math.max(1, Number(v) || 1)),
-                            }));
-                          }}
-                          placeholder="—"
-                          className="admin-input w-14 rounded-lg px-2 py-1.5 text-center text-sm"
-                        />
-                      </div>
-                      {hasChanges && (
-                        <button
-                          type="button"
-                          onClick={() => handleUpdateParticipant(p)}
-                          disabled={!!updatingParticipant}
-                          className="shrink-0 rounded-lg admin-btn-primary px-3 py-1.5 text-xs font-medium disabled:opacity-50"
-                        >
-                          {updatingParticipant === p.id ? "Updating..." : "Update"}
-                        </button>
-                      )}
-                    </>
-                  )}
-                  {hasBeenUpdated && (
-                    <span className="shrink-0 self-start rounded-lg bg-amber-500/20 px-3 py-1 font-medium text-amber-300 sm:self-center">
-                      {coins} coins
+          <div className="grid grid-cols-2 sm:grid-cols-3 gap-4">
+            {[
+              { label: "Entry Fee", value: `💵 ${match.entryFee}` },
+              { label: "Prize Pool", value: `💵 ${match.prizePool?.totalPrizePool ?? 0}` },
+              { label: "Per Kill", value: `💵 ${match.prizePool?.coinsPerKill ?? 0}` },
+              { label: "Max Players", value: String(maxParticipants) },
+              { label: "Joined", value: String(participants.length) },
+              { label: "Spots Left", value: String(spotsLeft) },
+              { label: "Map", value: (match.map ?? "BERMUDA").toUpperCase() },
+              { label: "Type", value: (match.matchType ?? "solo").toUpperCase() },
+              { label: "Version", value: "TPP" },
+            ].map((stat) => (
+              <div
+                key={stat.label}
+                className="rounded-xl border border-zinc-100 bg-zinc-50/80 px-4 py-3 text-center"
+              >
+                <p className="text-[10px] font-bold uppercase tracking-wider text-zinc-500">
+                  {stat.label}
+                </p>
+                <p className="mt-1 text-sm font-bold text-zinc-900">{stat.value}</p>
+              </div>
+            ))}
+          </div>
+
+          <div className="mt-5 w-full h-2 bg-zinc-100 rounded-full overflow-hidden">
+            <div
+              className="h-full bg-zinc-900 transition-all"
+              style={{ width: `${Math.min(100, (participants.length / maxParticipants) * 100)}%` }}
+            />
+          </div>
+          <p className="mt-2 text-xs text-zinc-500 text-center">
+            Registration: {participants.length} / {maxParticipants}
+          </p>
+        </section>
+
+        {/* Side panel */}
+        <aside className="space-y-4">
+          <button
+            type="button"
+            onClick={() => setSubView("players")}
+            className="w-full rounded-xl border border-zinc-200 bg-white p-5 text-left transition hover:border-zinc-400 hover:shadow-sm"
+          >
+            <div className="flex items-center justify-between gap-3">
+              <div>
+                <p className="text-sm font-semibold text-zinc-900">See players</p>
+                <p className="mt-1 text-xs text-zinc-500">
+                  {participants.length === 0
+                    ? "No registrations yet"
+                    : `${participants.length} player${participants.length === 1 ? "" : "s"} joined`}
+                </p>
+              </div>
+              <span className="text-lg text-zinc-400" aria-hidden>
+                →
+              </span>
+            </div>
+          </button>
+
+          {(match.prizePool?.rankRewards ?? []).length > 0 && (
+            <section className="rounded-xl border border-zinc-200 bg-white p-5">
+              <h3 className="mb-3 text-xs font-bold uppercase tracking-wider text-zinc-500">
+                Rank Rewards
+              </h3>
+              <ul className="space-y-2">
+                {(match.prizePool?.rankRewards ?? []).map((r: RankReward, i: number) => (
+                  <li
+                    key={i}
+                    className="flex items-center justify-between text-sm text-zinc-700 border-b border-zinc-100 pb-2 last:border-0 last:pb-0"
+                  >
+                    <span>
+                      {r.fromRank === r.toRank
+                        ? `Rank ${r.fromRank}`
+                        : `Ranks ${r.fromRank}–${r.toRank}`}
                     </span>
-                  )}
-                </li>
-              );
-            })}
-          </ul>
-        )}
+                    <span className="font-semibold text-zinc-900">💵 {r.coins}</span>
+                  </li>
+                ))}
+              </ul>
+            </section>
+          )}
+
+          {hasRoomInfo && (
+            <section className="rounded-xl border border-zinc-200 bg-white p-5">
+              <h3 className="mb-3 text-xs font-bold uppercase tracking-wider text-zinc-500">
+                Room Details
+              </h3>
+              <dl className="space-y-2 text-sm">
+                <div className="flex justify-between gap-2">
+                  <dt className="text-zinc-500">Room ID</dt>
+                  <dd className="font-mono font-semibold text-zinc-900">{match.roomCode}</dd>
+                </div>
+                <div className="flex justify-between gap-2">
+                  <dt className="text-zinc-500">Password</dt>
+                  <dd className="font-mono font-semibold text-zinc-900">{match.roomPassword}</dd>
+                </div>
+              </dl>
+            </section>
+          )}
+        </aside>
       </div>
 
       {isOngoing && (
-        <div className="rounded-xl border border-emerald-500/20 bg-emerald-500/5 p-6">
-          <h3 className="mb-4 text-sm font-medium text-emerald-200">Finish Match</h3>
-          <p className="mb-4 text-xs text-zinc-500">
-            After updating rank and kills for all participants, click Finish to complete the match. Coins will be transferred to winners.
+        <div className="rounded-xl border border-emerald-200 bg-emerald-50 p-6">
+          <h3 className="mb-2 text-sm font-semibold text-emerald-800">Match in progress</h3>
+          <p className="mb-4 text-xs text-zinc-600">
+            Open the players list to update kills and ranks, then finish the match when ready.
           </p>
           <button
             type="button"
-            onClick={handleFinish}
-            disabled={finishing}
-            className="rounded-xl admin-btn-primary px-4 py-2 text-sm font-medium disabled:opacity-50"
+            onClick={() => setSubView("players")}
+            className="rounded-xl admin-btn-primary px-4 py-2 text-sm font-medium"
           >
-            {finishing ? "Finishing..." : "Finish Match"}
+            See players
           </button>
         </div>
       )}
 
       {isUpcoming && (
-        <div className="rounded-xl border border-amber-500/20 bg-amber-500/5 p-6">
-          <h3 className="mb-4 text-sm font-medium text-amber-200">Room Info</h3>
-          <p className="mb-4 text-xs text-zinc-500">
+        <div className="rounded-xl border border-amber-200 bg-amber-50/50 p-6">
+          <h3 className="mb-1 text-sm font-semibold text-amber-900">Room &amp; Start</h3>
+          <p className="mb-4 text-xs text-zinc-600">
             Set room code and password, then start the match. Joined players receive both via push notification.
           </p>
           <div className="mb-4 grid gap-4 sm:grid-cols-2">
             <div>
-              <label className="mb-1 block text-xs text-zinc-500">Room Code</label>
+              <label className="mb-1 block text-xs font-medium text-zinc-600">Room Code</label>
               <input
                 type="text"
                 value={roomCode}
@@ -2930,7 +3125,7 @@ function MatchDetailView({
               />
             </div>
             <div>
-              <label className="mb-1 block text-xs text-zinc-500">Room Password</label>
+              <label className="mb-1 block text-xs font-medium text-zinc-600">Room Password</label>
               <input
                 type="text"
                 value={roomPassword}
@@ -2945,7 +3140,7 @@ function MatchDetailView({
               type="button"
               onClick={handleSaveRoom}
               disabled={saving}
-              className="rounded-xl bg-slate-600 px-4 py-2 text-sm font-medium text-zinc-900 hover:bg-slate-500 disabled:opacity-50"
+              className="rounded-xl border border-zinc-300 bg-white px-4 py-2 text-sm font-medium text-zinc-800 hover:bg-zinc-50 disabled:opacity-50"
             >
               {saving ? "Saving..." : "Save Room Info"}
             </button>
@@ -2963,7 +3158,7 @@ function MatchDetailView({
               type="button"
               onClick={handleCancel}
               disabled={cancelling}
-              className="rounded-xl bg-rose-600 px-4 py-2 text-sm font-medium text-zinc-900 hover:bg-rose-500 disabled:opacity-50"
+              className="rounded-xl bg-rose-600 px-4 py-2 text-sm font-medium text-white hover:bg-rose-500 disabled:opacity-50"
             >
               {cancelling ? "Cancelling..." : "Cancel Match"}
             </button>
