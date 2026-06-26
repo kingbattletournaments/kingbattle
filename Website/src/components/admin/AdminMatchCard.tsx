@@ -49,6 +49,8 @@ type AdminMatchCardProps = {
   onLongPressEnd?: () => void;
   onContextMenu?: (e: React.MouseEvent) => void;
   onManage?: () => void;
+  onStart?: () => void;
+  onSeePlayers?: () => void;
   onEdit?: () => void;
   onDelete?: () => void;
   manageLabel?: string;
@@ -65,6 +67,8 @@ export function AdminMatchCard({
   onLongPressEnd,
   onContextMenu,
   onManage,
+  onStart,
+  onSeePlayers,
   onEdit,
   onDelete,
   manageLabel = "Manage Match",
@@ -229,7 +233,30 @@ export function AdminMatchCard({
           </button>
         ) : (
           <div className="space-y-2">
-            {onManage && (
+            {onStart && onSeePlayers ? (
+              <>
+                <button
+                  type="button"
+                  onClick={(e) => {
+                    e.stopPropagation();
+                    onStart();
+                  }}
+                  className="w-full rounded-xl bg-emerald-600 hover:bg-emerald-500 text-white py-2.5 text-xs font-semibold transition"
+                >
+                  Start Match
+                </button>
+                <button
+                  type="button"
+                  onClick={(e) => {
+                    e.stopPropagation();
+                    onSeePlayers();
+                  }}
+                  className="w-full rounded-xl border border-zinc-300 bg-white py-2.5 text-xs font-semibold text-zinc-800 hover:bg-zinc-50 transition"
+                >
+                  See Players
+                </button>
+              </>
+            ) : onManage ? (
               <button
                 type="button"
                 onClick={(e) => {
@@ -240,7 +267,7 @@ export function AdminMatchCard({
               >
                 {manageLabel}
               </button>
-            )}
+            ) : null}
             {(onEdit || onDelete) && (
               <div className="flex gap-2">
                 {onEdit && (

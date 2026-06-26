@@ -1367,6 +1367,11 @@ function MatchesSection({
   const [selectionMode, setSelectionMode] = useState(false);
   const [selectedMatchIds, setSelectedMatchIds] = useState<Set<string>>(new Set());
   const [bulkCancelling, setBulkCancelling] = useState(false);
+  const [startMatchTarget, setStartMatchTarget] = useState<Match | null>(null);
+  const [startRoomCode, setStartRoomCode] = useState("");
+  const [startRoomPassword, setStartRoomPassword] = useState("");
+  const [startingMatch, setStartingMatch] = useState(false);
+  const [playersMatchId, setPlayersMatchId] = useState<string | null>(null);
 
   const presetSchedulePreview =
     selectedPresetId && presetMatchDate && presetStartingTime && presetEndingTime && Number(presetGapMinutes) > 0
@@ -1501,7 +1506,7 @@ function MatchesSection({
       toggleMatchSelection(matchId);
       return;
     }
-    if (!selectionMode) {
+    if (!selectionMode && matchTab !== "upcoming") {
       setSelectedMatchId(matchId);
     }
   };
@@ -1584,6 +1589,7 @@ function MatchesSection({
       }
     }
     if (selectedMatchId === m.id) setSelectedMatchId(null);
+    if (playersMatchId === m.id) setPlayersMatchId(null);
     onSuccess({ silent: true });
   };
 
@@ -1591,6 +1597,52 @@ function MatchesSection({
     populateMatchForm(m);
     setView("edit");
     setSelectedMatchId(null);
+    setPlayersMatchId(null);
+  };
+
+  const openStartMatchModal = (m: Match) => {
+    setStartMatchTarget(m);
+    setStartRoomCode(m.roomCode ?? "");
+    setStartRoomPassword(m.roomPassword ?? "");
+  };
+
+  const closeStartMatchModal = () => {
+    if (startingMatch) return;
+    setStartMatchTarget(null);
+    setStartRoomCode("");
+    setStartRoomPassword("");
+  };
+
+  const handleStartMatchFromModal = async () => {
+    if (!startMatchTarget) return;
+    if (!startRoomCode.trim() || !startRoomPassword.trim()) {
+      alert("Please enter room ID and password");
+      return;
+    }
+    setStartingMatch(true);
+    try {
+      const res = await fetch(`/api/admin/matches/${startMatchTarget.id}/start`, {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          roomCode: startRoomCode.trim(),
+          roomPassword: startRoomPassword.trim(),
+        }),
+      });
+      if (!res.ok) {
+        const err = await res.json().catch(() => ({}));
+        throw new Error(err.error || "Failed to start match");
+      }
+      setStartMatchTarget(null);
+      setStartRoomCode("");
+      setStartRoomPassword("");
+      setMatchTab("ongoing");
+      onSuccess({ silent: true });
+    } catch (err) {
+      alert(err instanceof Error ? err.message : "Failed to start match");
+    } finally {
+      setStartingMatch(false);
+    }
   };
 
   const handleSubmit = async (e: React.FormEvent) => {
@@ -1735,7 +1787,7 @@ function MatchesSection({
                 <p className="text-zinc-500 text-sm">Review players registration, details and map parameters.</p>
               </div>
             </div>
-            {!selectedMatchId && !selectionMode && (
+            {!selectedMatchId && !playersMatchId && !selectionMode && (
               <div className="flex flex-col gap-2 shrink-0">
                 <button
                   type="button"
@@ -1769,6 +1821,16 @@ function MatchesSection({
                 onBack={() => setSelectedMatchId(null)}
                 onSuccess={onSuccess}
               />
+            ) : playersMatchId ? (
+              <MatchDetailView
+                matchId={playersMatchId}
+                games={games}
+                modes={modes}
+                users={users}
+                playersOnly
+                onBack={() => setPlayersMatchId(null)}
+                onSuccess={onSuccess}
+              />
             ) : (
               <>
                 <div className="mb-6 grid w-full grid-cols-3 gap-2 sm:flex">
@@ -1779,6 +1841,7 @@ function MatchesSection({
                       onClick={() => {
                         setMatchTab(t);
                         setSelectedMatchId(null);
+                        setPlayersMatchId(null);
                         exitSelectionMode();
                       }}
                       className={`rounded-full px-3.5 py-2 text-xs font-semibold sm:px-5 sm:text-sm ${
@@ -1845,7 +1908,21 @@ function MatchesSection({
                           }}
                           onLongPressStart={() => canSelect && !selectionMode && startLongPress(m.id)}
                           onLongPressEnd={clearLongPressTimer}
-                          onManage={() => setSelectedMatchId(m.id)}
+                          onStart={
+                            matchTab === "upcoming" && m.status === "upcoming"
+                              ? () => openStartMatchModal(m)
+                              : undefined
+                          }
+                          onSeePlayers={
+                            matchTab === "upcoming" && m.status === "upcoming"
+                              ? () => setPlayersMatchId(m.id)
+                              : undefined
+                          }
+                          onManage={
+                            matchTab !== "upcoming"
+                              ? () => setSelectedMatchId(m.id)
+                              : undefined
+                          }
                           onEdit={m.status === "upcoming" ? () => handleOpenEditMatch(m) : undefined}
                           onDelete={() => handleDeleteMatch(m)}
                         />
@@ -2107,6 +2184,117 @@ function MatchesSection({
           </section>
         </>
       ) : null}
+
+      {startMatchTarget && (
+        <StartMatchModal
+          matchTitle={startMatchTarget.title}
+          roomCode={startRoomCode}
+          roomPassword={startRoomPassword}
+          onRoomCodeChange={setStartRoomCode}
+          onRoomPasswordChange={setStartRoomPassword}
+          onClose={closeStartMatchModal}
+          onStart={handleStartMatchFromModal}
+          starting={startingMatch}
+        />
+      )}
+    </div>
+  );
+}
+
+function StartMatchModal({
+  matchTitle,
+  roomCode,
+  roomPassword,
+  onRoomCodeChange,
+  onRoomPasswordChange,
+  onClose,
+  onStart,
+  starting,
+}: {
+  matchTitle: string;
+  roomCode: string;
+  roomPassword: string;
+  onRoomCodeChange: (v: string) => void;
+  onRoomPasswordChange: (v: string) => void;
+  onClose: () => void;
+  onStart: () => void;
+  starting: boolean;
+}) {
+  const ref = useRef<HTMLDivElement>(null);
+
+  useEffect(() => {
+    const esc = (e: KeyboardEvent) => {
+      if (e.key === "Escape" && !starting) onClose();
+    };
+    document.addEventListener("keydown", esc);
+    return () => document.removeEventListener("keydown", esc);
+  }, [onClose, starting]);
+
+  return (
+    <div className="fixed inset-0 z-50 flex items-end justify-center sm:items-center sm:p-4">
+      <div
+        className="absolute inset-0 bg-black/60 backdrop-blur-sm"
+        onClick={() => !starting && onClose()}
+        aria-hidden
+      />
+      <div
+        ref={ref}
+        className="relative z-10 w-full max-w-md overflow-hidden rounded-t-2xl sm:rounded-2xl border border-zinc-200 bg-white shadow-xl"
+        onClick={(e) => e.stopPropagation()}
+      >
+        <div className="flex items-start justify-between gap-3 border-b border-zinc-100 px-5 py-4 sm:px-6">
+          <div className="min-w-0">
+            <h2 className="text-lg font-bold text-zinc-900">Start Match</h2>
+            <p className="mt-0.5 truncate text-sm text-zinc-500">{matchTitle}</p>
+          </div>
+          <button
+            type="button"
+            onClick={onClose}
+            disabled={starting}
+            className="shrink-0 rounded-lg p-2 text-zinc-400 transition hover:bg-zinc-100 hover:text-zinc-700 disabled:opacity-50"
+            aria-label="Close"
+          >
+            <svg className="h-5 w-5" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+              <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M6 18L18 6M6 6l12 12" />
+            </svg>
+          </button>
+        </div>
+
+        <div className="space-y-4 px-5 py-5 sm:px-6">
+          <p className="text-xs text-zinc-500">
+            Enter room details. Joined players will receive the room ID and password via push notification.
+          </p>
+          <div>
+            <label className="mb-1.5 block text-xs font-medium text-zinc-600">Room ID</label>
+            <input
+              type="text"
+              value={roomCode}
+              onChange={(e) => onRoomCodeChange(e.target.value)}
+              className="admin-input w-full rounded-xl px-4 py-2.5 text-sm text-zinc-900 outline-none"
+              placeholder="ROOM123"
+              autoFocus
+            />
+          </div>
+          <div>
+            <label className="mb-1.5 block text-xs font-medium text-zinc-600">Password</label>
+            <input
+              type="text"
+              value={roomPassword}
+              onChange={(e) => onRoomPasswordChange(e.target.value)}
+              className="admin-input w-full rounded-xl px-4 py-2.5 text-sm text-zinc-900 outline-none"
+              placeholder="pass123"
+            />
+          </div>
+          <button
+            type="button"
+            onClick={onStart}
+            disabled={starting || !roomCode.trim() || !roomPassword.trim()}
+            className="w-full rounded-xl bg-emerald-600 py-3 text-sm font-semibold text-white transition hover:bg-emerald-500 disabled:cursor-not-allowed disabled:opacity-50"
+          >
+            {starting ? "Starting..." : "Start Match"}
+          </button>
+        </div>
+      </div>
     </div>
   );
 }
@@ -2698,6 +2886,7 @@ function MatchDetailView({
   users,
   onBack,
   onSuccess,
+  playersOnly = false,
 }: {
   matchId: string;
   games: Game[];
@@ -2705,19 +2894,15 @@ function MatchDetailView({
   users: User[];
   onBack: () => void;
   onSuccess: (opts?: { silent?: boolean }) => void;
+  playersOnly?: boolean;
 }) {
   const [match, setMatch] = useState<MatchWithParticipants | null>(null);
   const [loading, setLoading] = useState(true);
-  const [roomCode, setRoomCode] = useState("");
-  const [roomPassword, setRoomPassword] = useState("");
-  const [saving, setSaving] = useState(false);
-  const [starting, setStarting] = useState(false);
-  const [cancelling, setCancelling] = useState(false);
   const [finishing, setFinishing] = useState(false);
   const [updatingParticipant, setUpdatingParticipant] = useState<string | null>(null);
   const [localKills, setLocalKills] = useState<Record<string, number[]>>({});
   const [localRank, setLocalRank] = useState<Record<string, number | "">>({});
-  const [subView, setSubView] = useState<"overview" | "players">("overview");
+  const [subView, setSubView] = useState<"overview" | "players">(playersOnly ? "players" : "overview");
 
   useEffect(() => {
     let cancelled = false;
@@ -2726,8 +2911,6 @@ function MatchDetailView({
       .then((data) => {
         if (!cancelled) {
           setMatch(data);
-          setRoomCode(data.roomCode ?? "");
-          setRoomPassword(data.roomPassword ?? "");
         }
       })
       .catch(() => setMatch(null))
@@ -2749,63 +2932,6 @@ function MatchDetailView({
 
   const mode = modes.find((m) => m.id === match?.gameModeId);
   const gameName = mode ? games.find((g) => g.id === mode.gameId)?.name ?? "?" : "?";
-
-  const handleSaveRoom = async () => {
-    setSaving(true);
-    try {
-      const res = await fetch(`/api/admin/matches/${matchId}`, {
-        method: "PATCH",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ roomCode, roomPassword }),
-      });
-      if (!res.ok) throw new Error(await res.text());
-      const data = await res.json();
-      setMatch(data);
-      onSuccess({ silent: true });
-    } catch (err) {
-      alert(err instanceof Error ? err.message : "Failed to save room info");
-    } finally {
-      setSaving(false);
-    }
-  };
-
-  const handleStart = async () => {
-    setStarting(true);
-    try {
-      const res = await fetch(`/api/admin/matches/${matchId}/start`, {
-        method: "POST",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ roomCode, roomPassword }),
-      });
-      if (!res.ok) {
-        const err = await res.json().catch(() => ({}));
-        throw new Error(err.error || "Failed to start match");
-      }
-      const data = await res.json();
-      setMatch(data);
-      onSuccess({ silent: true });
-    } catch (err) {
-      alert(err instanceof Error ? err.message : "Failed to start match");
-    } finally {
-      setStarting(false);
-    }
-  };
-
-  const handleCancel = async () => {
-    if (!confirm("Cancel this match? All registered players will receive a refund.")) return;
-    setCancelling(true);
-    try {
-      const res = await fetch(`/api/admin/matches/${matchId}/cancel`, { method: "POST" });
-      if (!res.ok) throw new Error(await res.text());
-      setMatch(null);
-      onBack();
-      onSuccess({ silent: true });
-    } catch (err) {
-      alert(err instanceof Error ? err.message : "Failed to cancel match");
-    } finally {
-      setCancelling(false);
-    }
-  };
 
   const handleFinish = async () => {
     if (!match) return;
@@ -2845,10 +2971,8 @@ function MatchDetailView({
   }
 
   const participants = match.participants ?? [];
-  const isUpcoming = match.status === "upcoming";
   const isOngoing = match.status === "ongoing";
   const hasRoomInfo = !!(match.roomCode && match.roomPassword);
-  const canStartMatch = hasRoomInfo || (!!roomCode && !!roomPassword);
   const maxParticipants = match.maxParticipants ?? 100;
   const spotsLeft = Math.max(0, maxParticipants - participants.length);
   const getKills = (p: ParticipantWithStats) =>
@@ -2898,15 +3022,15 @@ function MatchDetailView({
           ? "bg-zinc-200 text-zinc-700 border-zinc-300"
           : "bg-amber-100 text-amber-800 border-amber-200";
 
-  if (subView === "players") {
+  if (playersOnly || subView === "players") {
     return (
       <div className="space-y-6">
         <button
           type="button"
-          onClick={() => setSubView("overview")}
+          onClick={playersOnly ? onBack : () => setSubView("overview")}
           className="flex items-center gap-2 text-sm text-zinc-500 transition hover:text-zinc-900"
         >
-          ← Back to match
+          {playersOnly ? "← Back to matches" : "← Back to match"}
         </button>
 
         <div className="rounded-xl border border-zinc-200 bg-white p-4 sm:p-5">
@@ -3104,65 +3228,6 @@ function MatchDetailView({
           >
             See players
           </button>
-        </div>
-      )}
-
-      {isUpcoming && (
-        <div className="rounded-xl border border-amber-200 bg-amber-50/50 p-6">
-          <h3 className="mb-1 text-sm font-semibold text-amber-900">Room &amp; Start</h3>
-          <p className="mb-4 text-xs text-zinc-600">
-            Set room code and password, then start the match. Joined players receive both via push notification.
-          </p>
-          <div className="mb-4 grid gap-4 sm:grid-cols-2">
-            <div>
-              <label className="mb-1 block text-xs font-medium text-zinc-600">Room Code</label>
-              <input
-                type="text"
-                value={roomCode}
-                onChange={(e) => setRoomCode(e.target.value)}
-                className="admin-input w-full rounded-lg px-4 py-2.5 text-sm text-zinc-900 outline-none"
-                placeholder="ROOM123"
-              />
-            </div>
-            <div>
-              <label className="mb-1 block text-xs font-medium text-zinc-600">Room Password</label>
-              <input
-                type="text"
-                value={roomPassword}
-                onChange={(e) => setRoomPassword(e.target.value)}
-                className="admin-input w-full rounded-lg px-4 py-2.5 text-sm text-zinc-900 outline-none"
-                placeholder="pass123"
-              />
-            </div>
-          </div>
-          <div className="flex flex-wrap gap-3">
-            <button
-              type="button"
-              onClick={handleSaveRoom}
-              disabled={saving}
-              className="rounded-xl border border-zinc-300 bg-white px-4 py-2 text-sm font-medium text-zinc-800 hover:bg-zinc-50 disabled:opacity-50"
-            >
-              {saving ? "Saving..." : "Save Room Info"}
-            </button>
-            {canStartMatch && (
-              <button
-                type="button"
-                onClick={handleStart}
-                disabled={starting}
-                className="rounded-xl admin-btn-primary px-4 py-2 text-sm font-medium disabled:opacity-50"
-              >
-                {starting ? "Starting..." : "Start Match"}
-              </button>
-            )}
-            <button
-              type="button"
-              onClick={handleCancel}
-              disabled={cancelling}
-              className="rounded-xl bg-rose-600 px-4 py-2 text-sm font-medium text-white hover:bg-rose-500 disabled:opacity-50"
-            >
-              {cancelling ? "Cancelling..." : "Cancel Match"}
-            </button>
-          </div>
         </div>
       )}
     </div>
@@ -5202,61 +5267,92 @@ function BannersSection() {
                 No banners configured yet.
               </div>
             ) : (
-              <div className="grid gap-6 sm:grid-cols-2 lg:grid-cols-3">
+              <div className="grid gap-6 sm:grid-cols-2 xl:grid-cols-3">
                 {banners.map((b) => (
-                  <div key={b.id} className="admin-content-card overflow-hidden flex flex-col justify-between">
-                    <div>
-                      <div className="aspect-[16/9] w-full overflow-hidden rounded-lg bg-zinc-100/50 relative">
-                        {b.imageUrl ? (
-                          <img src={b.imageUrl} alt="Banner" className="h-full w-full object-cover" />
-                        ) : (
-                          <div className="flex h-full items-center justify-center text-xs text-slate-600">No Image</div>
-                        )}
-                      </div>
-                      
-                      <div className="mt-4 space-y-3">
-                        <div>
-                          <span className="text-xs font-semibold uppercase tracking-wider text-zinc-500">Link URL</span>
-                          <a
-                            href={b.linkUrl}
-                            target="_blank"
-                            rel="noreferrer"
-                            className="block truncate font-mono text-xs text-zinc-900 hover:underline mt-0.5"
-                            title={b.linkUrl}
-                          >
-                            {b.linkUrl}
-                          </a>
+                  <article
+                    key={b.id}
+                    className="admin-content-card group overflow-hidden rounded-2xl border border-zinc-200 transition hover:border-zinc-300 hover:shadow-md"
+                  >
+                    <div className="relative aspect-[16/9] w-full overflow-hidden bg-zinc-100">
+                      {b.imageUrl ? (
+                        <img
+                          src={b.imageUrl}
+                          alt="App banner"
+                          className="h-full w-full object-cover transition duration-300 group-hover:scale-[1.02]"
+                        />
+                      ) : (
+                        <div className="flex h-full items-center justify-center text-sm text-zinc-400">
+                          No image
                         </div>
-
-                        <div className="flex gap-2">
-                          <span className={`rounded-full px-2 py-0.5 text-2xs font-semibold ${b.displayPlayCarousel ? "bg-green-500/10 text-zinc-900 border border-green-500/20" : "bg-zinc-50 text-zinc-500 border border-zinc-200/20"}`}>
-                            Play Carousel
-                          </span>
-                          <span className={`rounded-full px-2 py-0.5 text-2xs font-semibold ${b.displayEarn ? "bg-green-500/10 text-zinc-900 border border-green-500/20" : "bg-zinc-50 text-zinc-500 border border-zinc-200/20"}`}>
-                            Earn Tab
-                          </span>
-                        </div>
+                      )}
+                      <div className="absolute inset-0 bg-gradient-to-t from-black/50 via-transparent to-transparent" />
+                      <div className="absolute bottom-3 left-3 right-3 flex flex-wrap gap-1.5">
+                        <span
+                          className={`rounded-full px-2.5 py-1 text-[10px] font-semibold uppercase tracking-wide backdrop-blur-sm ${
+                            b.displayPlayCarousel
+                              ? "bg-emerald-500/90 text-white"
+                              : "bg-black/40 text-white/80"
+                          }`}
+                        >
+                          Play Carousel
+                        </span>
+                        <span
+                          className={`rounded-full px-2.5 py-1 text-[10px] font-semibold uppercase tracking-wide backdrop-blur-sm ${
+                            b.displayEarn
+                              ? "bg-emerald-500/90 text-white"
+                              : "bg-black/40 text-white/80"
+                          }`}
+                        >
+                          Earn Tab
+                        </span>
                       </div>
                     </div>
 
-                    <div className="mt-4 flex gap-2 border-t border-zinc-200/60 pt-4">
-                      <button
-                        type="button"
-                        onClick={() => startEdit(b)}
-                        className="flex-1 rounded-lg bg-zinc-50/60 py-2 text-xs font-semibold text-zinc-600 hover:bg-zinc-100 transition"
-                      >
-                        Edit
-                      </button>
-                      <button
-                        type="button"
-                        disabled={deletingId === b.id}
-                        onClick={() => handleDeleteBanner(b.id)}
-                        className="rounded-lg bg-red-950/20 border border-red-900/30 px-3 py-2 text-xs font-semibold text-red-400 hover:bg-red-950/40 transition disabled:opacity-50"
-                      >
-                        {deletingId === b.id ? "..." : "Delete"}
-                      </button>
+                    <div className="space-y-3 p-4 sm:p-5">
+                      <div>
+                        <p className="text-[10px] font-bold uppercase tracking-wider text-zinc-500">
+                          Destination Link
+                        </p>
+                        <a
+                          href={b.linkUrl}
+                          target="_blank"
+                          rel="noreferrer"
+                          className="mt-1 block truncate text-sm font-medium text-zinc-900 hover:text-zinc-600 hover:underline"
+                          title={b.linkUrl}
+                        >
+                          {b.linkUrl}
+                        </a>
+                      </div>
+
+                      {b.createdAt && (
+                        <p className="text-xs text-zinc-400">
+                          Added {new Date(b.createdAt).toLocaleDateString(undefined, {
+                            day: "numeric",
+                            month: "short",
+                            year: "numeric",
+                          })}
+                        </p>
+                      )}
+
+                      <div className="flex gap-2 border-t border-zinc-100 pt-4">
+                        <button
+                          type="button"
+                          onClick={() => startEdit(b)}
+                          className="flex-1 rounded-xl border border-zinc-300 bg-white py-2.5 text-xs font-semibold text-zinc-800 transition hover:bg-zinc-50"
+                        >
+                          Edit
+                        </button>
+                        <button
+                          type="button"
+                          disabled={deletingId === b.id}
+                          onClick={() => handleDeleteBanner(b.id)}
+                          className="rounded-xl bg-rose-600 px-4 py-2.5 text-xs font-semibold text-white transition hover:bg-rose-500 disabled:opacity-50"
+                        >
+                          {deletingId === b.id ? "..." : "Delete"}
+                        </button>
+                      </div>
                     </div>
-                  </div>
+                  </article>
                 ))}
               </div>
             )}
