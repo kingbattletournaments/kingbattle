@@ -56,6 +56,23 @@ export function getStore() {
       finishMatch: (id: string) => db.finishMatch(id),
       deleteMatch: (id: string) => db.deleteMatch(id),
       renameMatch: (id: string, title: string) => db.renameMatch(id, title),
+      updateMatch: (
+        id: string,
+        updates: {
+          title?: string;
+          entryFee?: number;
+          maxParticipants?: number;
+          scheduledAt?: string;
+          matchType?: string;
+          map?: string;
+          image?: string | null;
+          prizePool?: {
+            coinsPerKill: number;
+            totalPrizePool?: number;
+            rankRewards: { fromRank: number; toRank: number; coins: number }[];
+          };
+        },
+      ) => db.updateMatch(id, updates),
       updateParticipantKills: (matchId: string, participantId: string, kills: number[]) =>
         db.updateParticipantKills(matchId, participantId, kills),
       updateParticipantRank: (matchId: string, participantId: string, rank: number) =>
@@ -189,6 +206,25 @@ export function getStore() {
     finishMatch: (id: string) => Promise.resolve(adminStore.finishMatch(id)).then((m) => (m ? { ...m, participants: adminStore.getParticipantsForMatch(id) } : null)),
     deleteMatch: (id: string) => Promise.resolve(adminStore.deleteMatch(id)),
     renameMatch: (id: string, title: string) => Promise.resolve(adminStore.renameMatch(id, title)),
+    updateMatch: (
+      id: string,
+      updates: Partial<{
+        title: string;
+        entryFee: number;
+        maxParticipants: number;
+        scheduledAt: string;
+        matchType: string;
+        map: string;
+        image: string | null;
+        prizePool: { coinsPerKill: number; totalPrizePool?: number; rankRewards: { fromRank: number; toRank: number; coins: number }[] };
+      }>,
+    ) =>
+      Promise.resolve(
+        adminStore.updateMatch(id, {
+          ...updates,
+          matchType: updates.matchType as "solo" | "duo" | "squad" | undefined,
+        }),
+      ),
     updateParticipantKills: (matchId: string, participantId: string, kills: number[]) =>
       Promise.resolve(adminStore.updateParticipantKills(matchId, participantId, kills)),
     updateParticipantRank: (matchId: string, participantId: string, rank: number) =>

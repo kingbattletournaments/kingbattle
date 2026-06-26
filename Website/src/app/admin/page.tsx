@@ -17,6 +17,7 @@ import {
   type AdminPanelTab,
 } from "@/lib/admin-tabs";
 import { AdminTabIcon } from "@/components/admin/AdminTabIcon";
+import { AdminMatchCard } from "@/components/admin/AdminMatchCard";
 import type { DashboardStats } from "@/lib/dashboard-stats";
 
 type Tab = "dashboard" | "modes" | "presets" | "moneyorders" | "withdrawals" | "admins" | "notifications" | "appsettings" | "banners" | "referrals" | "users";
@@ -1341,7 +1342,8 @@ function MatchesSection({
 }) {
   const longPressTimerRef = useRef<number | null>(null);
   const longPressTriggeredRef = useRef(false);
-  const [view, setView] = useState<"list" | "create" | "createFromPreset">("list");
+  const [view, setView] = useState<"list" | "create" | "createFromPreset" | "edit">("list");
+  const [editingMatchId, setEditingMatchId] = useState<string | null>(null);
   const [title, setTitle] = useState("");
   const [entryFee, setEntryFee] = useState("");
   const [maxParticipants, setMaxParticipants] = useState("16");
@@ -1519,30 +1521,131 @@ function MatchesSection({
     return "/images/ff_image.jpg";
   };
 
+  const toDatetimeLocalValue = (iso?: string) => {
+    if (!iso) return "";
+    const d = new Date(iso);
+    if (Number.isNaN(d.getTime())) return "";
+    const pad = (n: number) => String(n).padStart(2, "0");
+    return `${d.getFullYear()}-${pad(d.getMonth() + 1)}-${pad(d.getDate())}T${pad(d.getHours())}:${pad(d.getMinutes())}`;
+  };
+
+  const populateMatchForm = (m: Match) => {
+    setTitle(m.title);
+    setEntryFee(String(m.entryFee));
+    setMaxParticipants(String(m.maxParticipants ?? 16));
+    setMatchType(m.matchType ?? "solo");
+    setCoinsPerKill(String(m.prizePool?.coinsPerKill ?? 5));
+    setTotalPrizePool(m.prizePool?.totalPrizePool != null ? String(m.prizePool.totalPrizePool) : "");
+    setRankRewards(m.prizePool?.rankRewards?.length ? m.prizePool.rankRewards : [...DEFAULT_RANK_REWARDS]);
+    setScheduledAt(toDatetimeLocalValue(m.scheduledAt));
+    setImageFile(null);
+    if (imagePreview) URL.revokeObjectURL(imagePreview);
+    setImagePreview(getMatchBanner(m));
+    setEditingMatchId(m.id);
+  };
+
+  const resetMatchForm = () => {
+    setTitle("");
+    setEntryFee("");
+    setMaxParticipants("16");
+    setScheduledAt("");
+    setMatchType("solo");
+    setCoinsPerKill("5");
+    setTotalPrizePool("");
+    setRankRewards([...DEFAULT_RANK_REWARDS]);
+    setImageFile(null);
+    if (imagePreview) URL.revokeObjectURL(imagePreview);
+    setImagePreview(null);
+    setEditingMatchId(null);
+  };
+
+  const handleDeleteMatch = async (m: Match) => {
+    const spots = m.participantCount ?? 0;
+    if (m.status === "upcoming" && spots > 0) {
+      if (
+        !confirm(
+          `Cancel "${m.title}" and refund ${spots} registered player${spots === 1 ? "" : "s"}?`,
+        )
+      ) {
+        return;
+      }
+      const res = await fetch(`/api/admin/matches/${m.id}/cancel`, { method: "POST" });
+      if (!res.ok) {
+        alert("Failed to cancel match");
+        return;
+      }
+    } else {
+      if (!confirm(`Delete "${m.title}" permanently? This cannot be undone.`)) return;
+      const res = await fetch(`/api/admin/matches/${m.id}`, { method: "DELETE" });
+      if (!res.ok) {
+        const errData = await res.json().catch(() => ({}));
+        alert(errData?.error || "Failed to delete match");
+        return;
+      }
+    }
+    if (selectedMatchId === m.id) setSelectedMatchId(null);
+    onSuccess({ silent: true });
+  };
+
+  const handleOpenEditMatch = (m: Match) => {
+    populateMatchForm(m);
+    setView("edit");
+    setSelectedMatchId(null);
+  };
+
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
     setSubmitting(true);
     try {
-      let imageUrl: string | null = null;
+      let imageUrl: string | null | undefined = undefined;
       if (imageFile) {
         imageUrl = await uploadImage(imageFile);
       }
+
+      const payload = {
+        title,
+        entryFee: Number(entryFee),
+        maxParticipants: Number(maxParticipants) || 16,
+        scheduledAt: scheduledAt || new Date().toISOString(),
+        matchType,
+        prizePool: {
+          coinsPerKill: Number(coinsPerKill) || 0,
+          totalPrizePool: totalPrizePool ? Number(totalPrizePool) : 0,
+          rankRewards: rankRewards.filter((r) => r.fromRank > 0 && r.toRank >= r.fromRank && r.coins >= 0),
+        },
+        ...(imageUrl !== undefined ? { image: imageUrl } : {}),
+      };
+
+      if (view === "edit" && editingMatchId) {
+        const res = await fetch(`/api/admin/matches/${editingMatchId}`, {
+          method: "PATCH",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify(payload),
+        });
+        if (!res.ok) {
+          const text = await res.text();
+          let errMsg = "Failed to update match";
+          try {
+            const errData = JSON.parse(text);
+            if (errData?.error) errMsg = errData.error;
+          } catch {
+            if (text) errMsg = text;
+          }
+          throw new Error(errMsg);
+        }
+        resetMatchForm();
+        setView("list");
+        onSuccess({ silent: true });
+        return;
+      }
+
       const res = await fetch("/api/admin/matches", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({
           gameModeId: modeId,
-          title,
-          entryFee: Number(entryFee),
-          maxParticipants: Number(maxParticipants) || 16,
-          scheduledAt: scheduledAt || new Date().toISOString(),
-          matchType,
+          ...payload,
           image: imageUrl,
-          prizePool: {
-            coinsPerKill: Number(coinsPerKill) || 0,
-            totalPrizePool: totalPrizePool ? Number(totalPrizePool) : 0,
-            rankRewards: rankRewards.filter((r) => r.fromRank > 0 && r.toRank >= r.fromRank && r.coins >= 0),
-          },
         }),
       });
       if (!res.ok) {
@@ -1714,175 +1817,38 @@ function MatchesSection({
 
                     <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-6">
                     {tabMatches.map((m) => {
-                      const spotsTaken = m.participantCount ?? 0;
-                      const maxParticipants = m.maxParticipants ?? 100;
-                      const spotsLeft = Math.max(0, maxParticipants - spotsTaken);
                       const isSelected = selectedMatchIds.has(m.id);
                       const canSelect = matchTab === "upcoming" && m.status === "upcoming";
                       return (
-                        <div
+                        <AdminMatchCard
                           key={m.id}
-                          className={`admin-content-card relative rounded-2xl overflow-hidden transition flex flex-col cursor-pointer ${
-                            isSelected
-                              ? "ring-2 ring-zinc-900 border-zinc-400"
-                              : "hover:border-zinc-300"
-                          }`}
-                          onClick={() => handleMatchCardClick(m.id, canSelect)}
+                          item={{
+                            id: m.id,
+                            title: m.title,
+                            entryFee: m.entryFee,
+                            maxParticipants: m.maxParticipants ?? 100,
+                            matchType: m.matchType,
+                            prizePool: m.prizePool,
+                            image: m.image,
+                            map: m.map,
+                            scheduledAt: m.scheduledAt,
+                            participantCount: m.participantCount,
+                          }}
+                          isSelected={isSelected}
+                          selectionMode={selectionMode}
+                          canSelect={canSelect}
+                          onCardClick={() => handleMatchCardClick(m.id, canSelect)}
                           onContextMenu={(e) => {
                             if (!canSelect) return;
                             e.preventDefault();
                             enterSelectionMode(m.id);
                           }}
-                          onMouseDown={() => canSelect && !selectionMode && startLongPress(m.id)}
-                          onMouseUp={clearLongPressTimer}
-                          onMouseLeave={clearLongPressTimer}
-                          onTouchStart={() => canSelect && !selectionMode && startLongPress(m.id)}
-                          onTouchEnd={clearLongPressTimer}
-                          onTouchCancel={clearLongPressTimer}
-                        >
-                          {isSelected && (
-                            <div className="absolute top-3 right-3 z-10 flex h-7 w-7 items-center justify-center rounded-full bg-zinc-900 text-white text-sm font-bold shadow-lg">
-                              ✓
-                            </div>
-                          )}
-                          {/* 1. Banner image */}
-                          <div className="relative aspect-[16/9] w-full bg-zinc-100 overflow-hidden">
-                            <img
-                              src={getMatchBanner(m)}
-                              alt="Match Banner"
-                              className="w-full h-full object-cover"
-                            />
-                          </div>
-
-                          {/* 2. Info Row */}
-                          <div className="flex items-center gap-3 p-4 border-b border-zinc-200/60">
-                            <img
-                              src="/images/app-icon.png"
-                              alt="Logo"
-                              className="w-10 h-10 object-cover rounded-lg border border-zinc-200 shrink-0"
-                            />
-                            <div className="min-w-0 flex-1">
-                              <h4 className="font-bold text-zinc-900 text-sm truncate" title={m.title}>{m.title}</h4>
-                              <p className="text-xs text-zinc-500 font-medium mt-0.5">
-                                Starts: {formatMatchDateTime(m.scheduledAt)}
-                              </p>
-                            </div>
-                          </div>
-
-                          {/* 3. Stats Grid */}
-                          <div className="p-4 grid grid-cols-3 gap-y-4 gap-x-2 text-center border-b border-zinc-200/60 bg-white/10">
-                            {/* Prize Pool */}
-                            <div className="cursor-pointer select-none" onClick={(e) => { e.stopPropagation(); setExpandedMatchId(expandedMatchId === m.id ? null : m.id); }}>
-                              <p className="text-[10px] text-zinc-500 font-bold uppercase tracking-wider">Prize Pool</p>
-                              <div className="flex items-center justify-center gap-1 mt-1">
-                                <span className="text-xs">💵</span>
-                                <span className="text-xs font-bold text-zinc-900">{m.prizePool?.totalPrizePool ?? 0}</span>
-                                <span className="text-[10px] text-zinc-500">{expandedMatchId === m.id ? "▲" : "▼"}</span>
-                              </div>
-                            </div>
-
-                            {/* Per Kill */}
-                            <div>
-                              <p className="text-[10px] text-zinc-500 font-bold uppercase tracking-wider">Per Kill</p>
-                              <div className="flex items-center justify-center gap-1 mt-1">
-                                <span className="text-xs">💵</span>
-                                <span className="text-xs font-bold text-zinc-900">{m.prizePool?.coinsPerKill ?? 0}</span>
-                              </div>
-                            </div>
-
-                            {/* Entry Fee */}
-                            <div>
-                              <p className="text-[10px] text-zinc-500 font-bold uppercase tracking-wider">Entry Fee</p>
-                              <div className="flex items-center justify-center gap-1 mt-1">
-                                <span className="text-xs">💵</span>
-                                <span className="text-xs font-bold text-zinc-900">{m.entryFee}</span>
-                              </div>
-                            </div>
-
-                            {/* Type */}
-                            <div>
-                              <p className="text-[10px] text-zinc-500 font-bold uppercase tracking-wider">Type</p>
-                              <p className="text-xs font-bold text-zinc-600 mt-1 capitalize">{m.matchType ?? "Solo"}</p>
-                            </div>
-
-                            {/* Version */}
-                            <div>
-                              <p className="text-[10px] text-zinc-500 font-bold uppercase tracking-wider">Version</p>
-                              <p className="text-xs font-bold text-zinc-600 mt-1">TPP</p>
-                            </div>
-
-                            {/* Map */}
-                            <div>
-                              <p className="text-[10px] text-zinc-500 font-bold uppercase tracking-wider">Map</p>
-                              <p className="text-xs font-bold text-zinc-600 mt-1 uppercase truncate">{m.map ?? "BERMUDA"}</p>
-                            </div>
-                          </div>
-
-                          {/* Expandable rewards */}
-                          {expandedMatchId === m.id && (
-                            <div className="p-4 bg-zinc-100/40 border-b border-zinc-200/60 text-xs">
-                              <p className="font-bold text-zinc-500 text-[10px] uppercase tracking-wider mb-2">Rank Rewards</p>
-                              {(!m.prizePool?.rankRewards || m.prizePool.rankRewards.length === 0) ? (
-                                <p className="text-zinc-500 text-xs">All prizes distributed via per-kill earnings.</p>
-                              ) : (
-                                <div className="space-y-1 max-h-32 overflow-y-auto pr-1">
-                                  {m.prizePool.rankRewards.map((reward, ri) => (
-                                    <div key={ri} className="flex justify-between items-center text-zinc-600 py-0.5 border-b border-zinc-200 last:border-0">
-                                      <span>Rank {reward.fromRank === reward.toRank ? reward.fromRank : `${reward.fromRank} - ${reward.toRank}`}</span>
-                                      <span className="font-semibold text-zinc-900">💵 {reward.coins} coins</span>
-                                    </div>
-                                  ))}
-                                </div>
-                              )}
-                            </div>
-                          )}
-
-                          {/* 4. Progress and Button */}
-                          <div className="p-4 flex-1 flex flex-col justify-end space-y-3 bg-white/5">
-                            {/* Progress */}
-                            <div>
-                              <div className="flex justify-between items-center text-xs text-zinc-500 mb-1">
-                                <span>Joined: {spotsTaken} / {maxParticipants}</span>
-                                <span>{spotsLeft} spots left</span>
-                              </div>
-                              <div className="w-full h-1.5 bg-zinc-50 rounded-full overflow-hidden">
-                                <div
-                                  className="h-full bg-zinc-900 transition-all"
-                                  style={{ width: `${Math.min(100, (spotsTaken / maxParticipants) * 100)}%` }}
-                                />
-                              </div>
-                            </div>
-
-                            {/* Button */}
-                            {!selectionMode ? (
-                              <button
-                                type="button"
-                                onClick={(e) => {
-                                  e.stopPropagation();
-                                  setSelectedMatchId(m.id);
-                                }}
-                                className="w-full bg-zinc-900 hover:bg-zinc-800 text-zinc-900 rounded-xl py-2.5 text-xs font-semibold transition"
-                              >
-                                Manage Match
-                              </button>
-                            ) : canSelect ? (
-                              <button
-                                type="button"
-                                onClick={(e) => {
-                                  e.stopPropagation();
-                                  toggleMatchSelection(m.id);
-                                }}
-                                className={`w-full rounded-xl py-2.5 text-xs font-semibold transition ${
-                                  isSelected
-                                    ? "bg-zinc-100 text-zinc-800 border border-zinc-300"
-                                    : "bg-zinc-50 text-zinc-600 border border-zinc-200"
-                                }`}
-                              >
-                                {isSelected ? "Selected" : "Select"}
-                              </button>
-                            ) : null}
-                          </div>
-                        </div>
+                          onLongPressStart={() => canSelect && !selectionMode && startLongPress(m.id)}
+                          onLongPressEnd={clearLongPressTimer}
+                          onManage={() => setSelectedMatchId(m.id)}
+                          onEdit={m.status === "upcoming" ? () => handleOpenEditMatch(m) : undefined}
+                          onDelete={() => handleDeleteMatch(m)}
+                        />
                       );
                     })}
                     </div>
@@ -2006,19 +1972,28 @@ function MatchesSection({
             )}
           </section>
         </>
-      ) : (
+      ) : view === "create" || view === "edit" ? (
         <>
           <button
             type="button"
-            onClick={() => setView("list")}
+            onClick={() => {
+              resetMatchForm();
+              setView("list");
+            }}
             className="flex items-center gap-2 text-sm text-zinc-500 transition hover:text-zinc-900"
           >
             ← Back to Matches List
           </button>
 
           <section className="admin-form-section w-full">
-            <h2 className="mb-1 text-lg font-bold text-zinc-900">Create New Match</h2>
-            <p className="mb-6 text-sm text-zinc-500">Setup matches and reward parameters under {modeName}.</p>
+            <h2 className="mb-1 text-lg font-bold text-zinc-900">
+              {view === "edit" ? "Edit Match" : "Create New Match"}
+            </h2>
+            <p className="mb-6 text-sm text-zinc-500">
+              {view === "edit"
+                ? "Update match details for upcoming matches under " + modeName + "."
+                : "Setup matches and reward parameters under " + modeName + "."}
+            </p>
 
             <form onSubmit={handleSubmit} className="space-y-5">
               <div>
@@ -2109,11 +2084,20 @@ function MatchesSection({
                   disabled={submitting}
                   className="admin-btn-primary rounded-xl px-6 py-3 font-medium disabled:opacity-50"
                 >
-                  {submitting ? "Creating..." : "Create Match"}
+                  {submitting
+                    ? view === "edit"
+                      ? "Saving..."
+                      : "Creating..."
+                    : view === "edit"
+                      ? "Save Changes"
+                      : "Create Match"}
                 </button>
                 <button
                   type="button"
-                  onClick={() => setView("list")}
+                  onClick={() => {
+                    resetMatchForm();
+                    setView("list");
+                  }}
                   className="bg-zinc-50 border border-zinc-200 hover:bg-zinc-100 text-zinc-900 rounded-xl px-6 py-3 font-medium transition"
                 >
                   Cancel
@@ -2122,7 +2106,7 @@ function MatchesSection({
             </form>
           </section>
         </>
-      )}
+      ) : null}
     </div>
   );
 }
@@ -2138,7 +2122,8 @@ function MatchPresetsSection({
   presets: MatchPreset[];
   onSuccess: () => void;
 }) {
-  const [view, setView] = useState<"list" | "create">("list");
+  const [view, setView] = useState<"list" | "create" | "edit">("list");
+  const [editingPresetId, setEditingPresetId] = useState<string | null>(null);
   const [filterGameId, setFilterGameId] = useState(games[0]?.id ?? "");
   const [filterModeId, setFilterModeId] = useState("");
   const [gameModeId, setGameModeId] = useState("");
@@ -2196,6 +2181,32 @@ function MatchPresetsSection({
     if (imagePreview) URL.revokeObjectURL(imagePreview);
     setImageFile(null);
     setImagePreview(null);
+    setEditingPresetId(null);
+  };
+
+  const populatePresetForm = (p: MatchPreset) => {
+    setGameModeId(p.gameModeId);
+    setName(p.name);
+    setTitle(p.title);
+    setEntryFee(String(p.entryFee));
+    setMaxParticipants(String(p.maxParticipants));
+    setMatchType(p.matchType ?? "solo");
+    setMap(p.map ?? "BERMUDA");
+    setCoinsPerKill(String(p.prizePool?.coinsPerKill ?? 5));
+    setTotalPrizePool(p.prizePool?.totalPrizePool != null ? String(p.prizePool.totalPrizePool) : "");
+    setRankRewards(p.prizePool?.rankRewards?.length ? p.prizePool.rankRewards : [...DEFAULT_RANK_REWARDS]);
+    setImageFile(null);
+    if (imagePreview) URL.revokeObjectURL(imagePreview);
+    setImagePreview(getPresetBanner(p));
+    setEditingPresetId(p.id);
+  };
+
+  const getPresetBanner = (p: MatchPreset) => {
+    if (p.image && (p.image.startsWith("http") || p.image.startsWith("/"))) return p.image;
+    const t = p.title.toLowerCase();
+    if (t.includes("duo")) return "/images/bgmi_image.jpg";
+    if (t.includes("squad")) return "/images/cod_image.jpg";
+    return "/images/ff_image.jpg";
   };
 
   const handleImageChange = (file: File) => {
@@ -2217,26 +2228,45 @@ function MatchPresetsSection({
     }
     setSubmitting(true);
     try {
-      let imageUrl: string | null = null;
+      let imageUrl: string | null | undefined = undefined;
       if (imageFile) imageUrl = await uploadImage(imageFile);
+
+      const payload = {
+        gameModeId,
+        name,
+        title,
+        entryFee: Number(entryFee),
+        maxParticipants: Number(maxParticipants) || 16,
+        matchType,
+        map,
+        prizePool: {
+          coinsPerKill: Number(coinsPerKill) || 0,
+          totalPrizePool: totalPrizePool ? Number(totalPrizePool) : 0,
+          rankRewards: rankRewards.filter((r) => r.fromRank > 0 && r.toRank >= r.fromRank && r.coins >= 0),
+        },
+        ...(imageUrl !== undefined ? { image: imageUrl } : {}),
+      };
+
+      if (view === "edit" && editingPresetId) {
+        const res = await fetch(`/api/admin/match-presets/${editingPresetId}`, {
+          method: "PATCH",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify(payload),
+        });
+        if (!res.ok) {
+          const errData = await res.json().catch(() => ({}));
+          throw new Error(errData?.error || "Failed to update preset");
+        }
+        resetForm();
+        setView("list");
+        onSuccess();
+        return;
+      }
+
       const res = await fetch("/api/admin/match-presets", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({
-          gameModeId,
-          name,
-          title,
-          entryFee: Number(entryFee),
-          maxParticipants: Number(maxParticipants) || 16,
-          matchType,
-          map,
-          image: imageUrl,
-          prizePool: {
-            coinsPerKill: Number(coinsPerKill) || 0,
-            totalPrizePool: totalPrizePool ? Number(totalPrizePool) : 0,
-            rankRewards: rankRewards.filter((r) => r.fromRank > 0 && r.toRank >= r.fromRank && r.coins >= 0),
-          },
-        }),
+        body: JSON.stringify(payload),
       });
       if (!res.ok) {
         const errData = await res.json().catch(() => ({}));
@@ -2323,7 +2353,7 @@ function MatchPresetsSection({
             />
           </div>
 
-          <section className="admin-table-panel w-full">
+          <section className="w-full">
             {filteredPresets.length === 0 ? (
               <p className="py-12 text-center text-sm text-zinc-500">
                 {visiblePresets.length === 0
@@ -2331,48 +2361,30 @@ function MatchPresetsSection({
                   : "No presets match your search."}
               </p>
             ) : (
-              <div className="excel-table-container">
-                <table className="excel-table">
-                  <thead>
-                    <tr>
-                      <th className="text-left">Preset Name</th>
-                      <th className="text-left">Game / Mode</th>
-                      <th className="text-left">Match Title</th>
-                      <th className="text-right">Entry Fee</th>
-                      <th className="text-right">Max Players</th>
-                      <th className="text-center">Type</th>
-                      <th className="text-right">Action</th>
-                    </tr>
-                  </thead>
-                  <tbody>
-                    {filteredPresets.map((p) => (
-                      <tr key={p.id}>
-                        <td className="font-semibold text-zinc-900">{p.name}</td>
-                        <td>
-                          <p className="font-medium text-zinc-600">{modeLabel(p.gameModeId)}</p>
-                          <p className="text-xs text-zinc-500 font-mono mt-0.5">{p.gameModeId}</p>
-                        </td>
-                        <td className="text-zinc-600">{p.title}</td>
-                        <td className="text-right font-medium text-amber-300">💵 {p.entryFee}</td>
-                        <td className="text-right font-medium text-zinc-900">{p.maxParticipants}</td>
-                        <td className="text-center">
-                          <span className="inline-block px-2.5 py-1 text-xs font-semibold rounded-full bg-zinc-100/50 text-zinc-700 border border-zinc-200 capitalize">
-                            {p.matchType ?? "solo"}
-                          </span>
-                        </td>
-                        <td className="text-right">
-                          <button
-                            type="button"
-                            onClick={() => handleDelete(p.id)}
-                            className="bg-rose-600/90 hover:bg-rose-500 text-zinc-900 rounded-lg px-3 py-1.5 text-xs font-medium transition"
-                          >
-                            Delete
-                          </button>
-                        </td>
-                      </tr>
-                    ))}
-                  </tbody>
-                </table>
+              <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-6">
+                {filteredPresets.map((p) => (
+                  <AdminMatchCard
+                    key={p.id}
+                    item={{
+                      id: p.id,
+                      title: p.title,
+                      entryFee: p.entryFee,
+                      maxParticipants: p.maxParticipants,
+                      matchType: p.matchType,
+                      prizePool: p.prizePool,
+                      image: p.image,
+                      map: p.map,
+                      infoLine: `Preset: ${p.name}`,
+                      metaLine: modeLabel(p.gameModeId),
+                    }}
+                    showProgress={false}
+                    onEdit={() => {
+                      populatePresetForm(p);
+                      setView("edit");
+                    }}
+                    onDelete={() => handleDelete(p.id)}
+                  />
+                ))}
               </div>
             )}
           </section>
@@ -2381,14 +2393,23 @@ function MatchPresetsSection({
         <>
           <button
             type="button"
-            onClick={() => setView("list")}
+            onClick={() => {
+              resetForm();
+              setView("list");
+            }}
             className="flex items-center gap-2 text-sm text-zinc-500 transition hover:text-zinc-900"
           >
             ← Back to presets
           </button>
           <section className="admin-form-section w-full">
-            <h2 className="mb-1 text-lg font-bold text-zinc-900">Create Match Preset</h2>
-            <p className="mb-6 text-sm text-zinc-500">All match details except date and time.</p>
+            <h2 className="mb-1 text-lg font-bold text-zinc-900">
+              {view === "edit" ? "Edit Match Preset" : "Create Match Preset"}
+            </h2>
+            <p className="mb-6 text-sm text-zinc-500">
+              {view === "edit"
+                ? "Update this saved template."
+                : "All match details except date and time."}
+            </p>
             <form onSubmit={handleSubmit} className="space-y-5">
               <div>
                 <label className="mb-2 block text-sm font-medium text-zinc-600">Game mode</label>
@@ -2506,11 +2527,18 @@ function MatchPresetsSection({
                   disabled={submitting}
                   className="admin-btn-primary rounded-xl px-6 py-3 font-medium disabled:opacity-50"
                 >
-                  {submitting ? "Saving..." : "Save Preset"}
+                  {submitting
+                    ? "Saving..."
+                    : view === "edit"
+                      ? "Save Changes"
+                      : "Save Preset"}
                 </button>
                 <button
                   type="button"
-                  onClick={() => setView("list")}
+                  onClick={() => {
+                    resetForm();
+                    setView("list");
+                  }}
                   className="bg-zinc-50 border border-zinc-200 hover:bg-zinc-100 text-zinc-900 rounded-xl px-6 py-3 font-medium transition"
                 >
                   Cancel

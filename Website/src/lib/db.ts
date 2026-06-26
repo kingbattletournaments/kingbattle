@@ -1281,6 +1281,50 @@ export const db = {
     return toMatch(data);
   },
 
+  async updateMatch(
+    id: string,
+    updates: {
+      title?: string;
+      entryFee?: number;
+      maxParticipants?: number;
+      scheduledAt?: string;
+      matchType?: string;
+      map?: string;
+      image?: string | null;
+      prizePool?: {
+        coinsPerKill: number;
+        totalPrizePool?: number;
+        rankRewards: { fromRank: number; toRank: number; coins: number }[];
+      };
+    },
+  ): Promise<DbMatch | null> {
+    const supabase = getSupabase();
+    if (!supabase) return null;
+    const existing = await db.getMatch(id);
+    if (!existing || existing.status !== "upcoming") return null;
+
+    const payload: Record<string, unknown> = { updated_at: new Date().toISOString() };
+    if (updates.title !== undefined) payload.title = updates.title;
+    if (updates.entryFee !== undefined) payload.entry_fee = updates.entryFee;
+    if (updates.maxParticipants !== undefined) payload.max_participants = updates.maxParticipants;
+    if (updates.scheduledAt !== undefined) payload.starts_at = updates.scheduledAt || null;
+    if (updates.matchType !== undefined) payload.match_type = updates.matchType;
+    if (updates.map !== undefined) payload.map = updates.map;
+    if (updates.image !== undefined) payload.image = updates.image;
+    if (updates.prizePool) {
+      payload.coins_per_kill = updates.prizePool.coinsPerKill;
+      payload.total_prize_pool = updates.prizePool.totalPrizePool ?? 0;
+      payload.rank_rewards = updates.prizePool.rankRewards;
+    }
+
+    const { data, error } = await supabase.from("matches").update(payload).eq("id", id).select().single();
+    if (error || !data) {
+      console.error("updateMatch failed:", error?.message ?? "no data returned");
+      return null;
+    }
+    return toMatch(data);
+  },
+
   async updateParticipantKills(
     matchId: string,
     participantId: string,

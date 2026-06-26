@@ -924,6 +924,31 @@ export const adminStore = {
     m.title = title;
     return m;
   },
+  updateMatch: (
+    id: string,
+    updates: Partial<{
+      title: string;
+      entryFee: number;
+      maxParticipants: number;
+      scheduledAt: string;
+      matchType: MatchType;
+      map: string;
+      image: string | null;
+      prizePool: PrizePool;
+    }>,
+  ) => {
+    const m = matches.find((x) => x.id === id);
+    if (!m || m.status !== "upcoming") return null;
+    if (updates.title !== undefined) m.title = updates.title;
+    if (updates.entryFee !== undefined) m.entryFee = updates.entryFee;
+    if (updates.maxParticipants !== undefined) m.maxParticipants = updates.maxParticipants;
+    if (updates.scheduledAt !== undefined) m.scheduledAt = updates.scheduledAt;
+    if (updates.matchType !== undefined) m.matchType = updates.matchType;
+    if (updates.map !== undefined) m.map = updates.map;
+    if (updates.image !== undefined) m.image = updates.image ?? undefined;
+    if (updates.prizePool !== undefined) m.prizePool = updates.prizePool;
+    return m;
+  },
 
   users: () => [...users],
   getSignupBonus: () => signupBonus,
