@@ -2,13 +2,27 @@ import { NextResponse } from "next/server";
 import { getStore } from "@/lib/store";
 import { getProductionStoreError } from "@/lib/store-config";
 import { getAdminSession } from "@/lib/admin-auth";
+import {
+  ADMIN_API_CACHE_TTL,
+  getAdminApiCache,
+  invalidateAdminApiCache,
+  setAdminApiCache,
+} from "@/lib/admin-api-cache";
 
 export async function GET() {
   try {
     const admin = await getAdminSession();
     if (!admin) return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
+    const cacheKey = `games:${admin.id}`;
+    const cached = getAdminApiCache<Awaited<ReturnType<ReturnType<typeof getStore>["games"]>>>(
+      cacheKey,
+      ADMIN_API_CACHE_TTL.games,
+    );
+    if (cached) return NextResponse.json(cached);
+
     const store = getStore();
     const games = await store.games(admin.id);
+    setAdminApiCache(cacheKey, games);
     return NextResponse.json(games);
   } catch {
     return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
@@ -35,6 +49,7 @@ export async function POST(request: Request) {
     if (!game) {
       return NextResponse.json({ error: "Failed to create game in database" }, { status: 500 });
     }
+    invalidateAdminApiCache("games:");
     return NextResponse.json(game);
   } catch {
     return NextResponse.json({ error: "Unauthorized" }, { status: 401 });

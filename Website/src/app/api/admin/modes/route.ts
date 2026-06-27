@@ -2,6 +2,12 @@ import { NextResponse } from "next/server";
 import { getStore } from "@/lib/store";
 import { getProductionStoreError } from "@/lib/store-config";
 import { getAdminSession } from "@/lib/admin-auth";
+import {
+  ADMIN_API_CACHE_TTL,
+  getAdminApiCache,
+  invalidateAdminApiCache,
+  setAdminApiCache,
+} from "@/lib/admin-api-cache";
 
 export async function GET(request: Request) {
   const admin = await getAdminSession();
@@ -13,8 +19,13 @@ export async function GET(request: Request) {
       return NextResponse.json({ error: "No access to this game" }, { status: 403 });
     }
   }
+  const cacheKey = `modes:${gameId ?? "all"}`;
+  const cached = getAdminApiCache<unknown>(cacheKey, ADMIN_API_CACHE_TTL.modes);
+  if (cached) return NextResponse.json(cached);
+
   const store = getStore();
   const modes = await store.gameModes(gameId ?? undefined);
+  setAdminApiCache(cacheKey, modes);
   return NextResponse.json(modes);
 }
 
@@ -99,6 +110,7 @@ export async function POST(request: Request) {
       );
     }
 
+    invalidateAdminApiCache("modes:");
     return NextResponse.json(mode);
   } catch (err) {
     return NextResponse.json(

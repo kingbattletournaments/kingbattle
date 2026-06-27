@@ -32,6 +32,15 @@ import {
 } from "@/components/admin/AdminSkeletons";
 import type { DashboardStats } from "@/lib/dashboard-stats";
 import { validateMaxParticipants } from "@/lib/match-slots";
+import {
+  ADMIN_CLIENT_CACHE_TTL,
+  clearAdminClientCache,
+  hasAdminBootstrapCache,
+  readAdminClientCache,
+  readAdminClientCacheFresh,
+  removeAdminClientCache,
+  writeAdminClientCache,
+} from "@/lib/admin-client-cache";
 
 type Tab = "dashboard" | "modes" | "presets" | "moneyorders" | "withdrawals" | "admins" | "notifications" | "appsettings" | "banners" | "referrals" | "users";
 type Game = { id: string; name: string; imageUrl: string | null };
@@ -88,6 +97,23 @@ type MatchBulkSelectControls = {
   exitSelection: () => void;
 };
 
+type AdminTabCachePayload = {
+  matches?: Match[];
+  presets?: MatchPreset[];
+  users?: User[];
+  deposits?: unknown[];
+  withdrawals?: unknown[];
+};
+
+function adminTabClientKey(tab: Tab, modeId?: string | null): string {
+  const cacheKey = tab === "modes" && modeId ? `modes:${modeId}` : tab;
+  return `tab:${cacheKey}`;
+}
+
+function hasAdminTabCache(tab: Tab, modeId?: string | null): boolean {
+  return !!readAdminClientCache<AdminTabCachePayload>(adminTabClientKey(tab, modeId));
+}
+
 export default function AdminPage() {
   return (
     <Suspense
@@ -131,15 +157,23 @@ function AdminPageInner() {
     ];
     return allowed.includes(raw) ? raw : "dashboard";
   }, [navParams.tab, session]);
-  const [games, setGames] = useState<Game[]>([]);
-  const [modes, setModes] = useState<GameMode[]>([]);
+  const [games, setGames] = useState<Game[]>(() =>
+    typeof window !== "undefined" ? (readAdminClientCacheFresh<Game[]>("core:games") ?? []) : [],
+  );
+  const [modes, setModes] = useState<GameMode[]>(() =>
+    typeof window !== "undefined" ? (readAdminClientCacheFresh<GameMode[]>("core:modes") ?? []) : [],
+  );
   const [matches, setMatches] = useState<Match[]>([]);
   const [matchPresets, setMatchPresets] = useState<MatchPreset[]>([]);
   const [users, setUsers] = useState<User[]>([]);
   const [deposits, setDeposits] = useState<any[]>([]);
   const [withdrawals, setWithdrawals] = useState<any[]>([]);
-  const [dashboardStats, setDashboardStats] = useState<DashboardStats | null>(null);
-  const [loading, setLoading] = useState(true);
+  const [dashboardStats, setDashboardStats] = useState<DashboardStats | null>(() =>
+    typeof window !== "undefined" ? readAdminClientCacheFresh<DashboardStats>("dashboard") : null,
+  );
+  const [loading, setLoading] = useState(() =>
+    typeof window === "undefined" ? true : !hasAdminBootstrapCache(),
+  );
   const [tabLoading, setTabLoading] = useState(false);
   const loadedTabsRef = useRef<Set<string>>(new Set());
   const [message, setMessage] = useState<{ type: "ok" | "err"; text: string } | null>(null);
@@ -211,18 +245,32 @@ function AdminPageInner() {
   }, [selectedModeId, selectedGameId, modes, patchAdminNav]);
 
   const fetchSessionAndCore = async (): Promise<AdminSession | null> => {
-    const sessionRes = await fetch("/api/admin/session");
+    const hadBootstrapCache = hasAdminBootstrapCache();
+    if (hadBootstrapCache) setLoading(false);
+
+    const sessionRes = await fetch("/api/admin/session", { cache: "no-store" });
     const sessionData = await sessionRes.json();
     if (!sessionData.admin) {
       router.replace("/admin/login");
       return null;
     }
     setSession(sessionData.admin);
-    setLoading(true);
+    if (!hadBootstrapCache) setLoading(true);
     try {
-      const [gRes, mRes] = await Promise.all([fetch("/api/admin/games"), fetch("/api/admin/modes")]);
-      if (gRes.ok) setGames(await gRes.json());
-      if (mRes.ok) setModes(await mRes.json());
+      const [gRes, mRes] = await Promise.all([
+        fetch("/api/admin/games", { cache: "no-store" }),
+        fetch("/api/admin/modes", { cache: "no-store" }),
+      ]);
+      if (gRes.ok) {
+        const data = await gRes.json();
+        setGames(data);
+        writeAdminClientCache("core:games", data, ADMIN_CLIENT_CACHE_TTL.games);
+      }
+      if (mRes.ok) {
+        const data = await mRes.json();
+        setModes(data);
+        writeAdminClientCache("core:modes", data, ADMIN_CLIENT_CACHE_TTL.modes);
+      }
     } catch {
       setMessage({ type: "err", text: "Failed to load data" });
     } finally {
@@ -232,13 +280,27 @@ function AdminPageInner() {
   };
 
   const loadDashboardStats = useCallback(async (force = false) => {
-    if (!force && loadedTabsRef.current.has("dashboard")) return;
-    setTabLoading(true);
+    if (!force) {
+      const cached = readAdminClientCache<DashboardStats>("dashboard");
+      if (cached) {
+        setDashboardStats(cached.data);
+        loadedTabsRef.current.add("dashboard");
+        if (!cached.stale) return;
+      } else if (loadedTabsRef.current.has("dashboard")) {
+        return;
+      }
+    }
+
+    if (!readAdminClientCache<DashboardStats>("dashboard") || force) {
+      setTabLoading(true);
+    }
     try {
       const url = force ? "/api/admin/dashboard/stats?refresh=1" : "/api/admin/dashboard/stats";
-      const res = await fetch(url);
+      const res = await fetch(url, { cache: "no-store" });
       if (res.ok) {
-        setDashboardStats(await res.json());
+        const data = await res.json();
+        setDashboardStats(data);
+        writeAdminClientCache("dashboard", data, ADMIN_CLIENT_CACHE_TTL.dashboard);
         loadedTabsRef.current.add("dashboard");
       } else {
         setMessage({ type: "err", text: "Failed to load dashboard stats" });
@@ -258,19 +320,51 @@ function AdminPageInner() {
       }
 
       const cacheKey = t === "modes" && selectedModeId ? `modes:${selectedModeId}` : t;
-      if (!force && loadedTabsRef.current.has(cacheKey)) return;
+      const clientKey = adminTabClientKey(t, selectedModeId);
 
-      setTabLoading(true);
+      if (!force) {
+        const cached = readAdminClientCache<AdminTabCachePayload>(clientKey);
+        if (cached) {
+          if (cached.data.matches && selectedModeId) {
+            setMatches((prev) => [
+              ...prev.filter((m) => m.gameModeId !== selectedModeId),
+              ...cached.data.matches!,
+            ]);
+          }
+          if (cached.data.presets) {
+            if (selectedModeId) {
+              setMatchPresets((prev) => [
+                ...prev.filter((p) => p.gameModeId !== selectedModeId),
+                ...cached.data.presets!,
+              ]);
+            } else {
+              setMatchPresets(cached.data.presets);
+            }
+          }
+          if (cached.data.users) setUsers(cached.data.users);
+          if (cached.data.deposits) setDeposits(cached.data.deposits);
+          if (cached.data.withdrawals) setWithdrawals(cached.data.withdrawals);
+          loadedTabsRef.current.add(cacheKey);
+          if (!cached.stale) return;
+        } else if (loadedTabsRef.current.has(cacheKey)) {
+          return;
+        }
+      }
+
+      if (!readAdminClientCache(clientKey)) setTabLoading(true);
+
       try {
         switch (t) {
           case "modes": {
+            const payload: AdminTabCachePayload = {};
             if (selectedModeId) {
               const [matRes, presetRes] = await Promise.all([
-                fetch(`/api/admin/matches?modeId=${encodeURIComponent(selectedModeId)}`),
-                fetch(`/api/admin/match-presets?modeId=${encodeURIComponent(selectedModeId)}`),
+                fetch(`/api/admin/matches?modeId=${encodeURIComponent(selectedModeId)}`, { cache: "no-store" }),
+                fetch(`/api/admin/match-presets?modeId=${encodeURIComponent(selectedModeId)}`, { cache: "no-store" }),
               ]);
               if (matRes.ok) {
                 const modeMatches = await matRes.json();
+                payload.matches = modeMatches;
                 setMatches((prev) => [
                   ...prev.filter((m) => m.gameModeId !== selectedModeId),
                   ...modeMatches,
@@ -278,6 +372,7 @@ function AdminPageInner() {
               }
               if (presetRes.ok) {
                 const modePresets = await presetRes.json();
+                payload.presets = modePresets;
                 setMatchPresets((prev) => [
                   ...prev.filter((p) => p.gameModeId !== selectedModeId),
                   ...modePresets,
@@ -285,61 +380,89 @@ function AdminPageInner() {
               }
             }
             if (canAccessAdminTab(adminSession, "users")) {
-              const uRes = await fetch("/api/admin/users");
-              if (uRes.ok) setUsers(await uRes.json());
+              const uRes = await fetch("/api/admin/users", { cache: "no-store" });
+              if (uRes.ok) {
+                payload.users = await uRes.json();
+                setUsers(payload.users!);
+              }
             }
+            writeAdminClientCache(clientKey, payload, ADMIN_CLIENT_CACHE_TTL.matches);
             loadedTabsRef.current.add(cacheKey);
             break;
           }
           case "presets": {
-            const presetRes = await fetch("/api/admin/match-presets");
-            if (presetRes.ok) setMatchPresets(await presetRes.json());
+            const presetRes = await fetch("/api/admin/match-presets", { cache: "no-store" });
+            if (presetRes.ok) {
+              const data = await presetRes.json();
+              setMatchPresets(data);
+              writeAdminClientCache(clientKey, { presets: data }, ADMIN_CLIENT_CACHE_TTL.presets);
+            }
             loadedTabsRef.current.add(cacheKey);
             break;
           }
           case "moneyorders": {
+            const payload: AdminTabCachePayload = {};
             const tasks: Promise<void>[] = [];
             if (canAccessAdminTab(adminSession, "moneyorders")) {
               tasks.push(
-                fetch("/api/admin/deposits").then(async (r) => {
-                  if (r.ok) setDeposits(await r.json());
+                fetch("/api/admin/deposits", { cache: "no-store" }).then(async (r) => {
+                  if (r.ok) {
+                    payload.deposits = await r.json();
+                    setDeposits(payload.deposits!);
+                  }
                 }),
               );
             }
             if (canAccessAdminTab(adminSession, "users")) {
               tasks.push(
-                fetch("/api/admin/users").then(async (r) => {
-                  if (r.ok) setUsers(await r.json());
+                fetch("/api/admin/users", { cache: "no-store" }).then(async (r) => {
+                  if (r.ok) {
+                    payload.users = await r.json();
+                    setUsers(payload.users!);
+                  }
                 }),
               );
             }
             await Promise.all(tasks);
+            writeAdminClientCache(clientKey, payload, ADMIN_CLIENT_CACHE_TTL.deposits);
             loadedTabsRef.current.add(cacheKey);
             break;
           }
           case "withdrawals": {
+            const payload: AdminTabCachePayload = {};
             const tasks: Promise<void>[] = [];
             if (canAccessAdminTab(adminSession, "withdrawals")) {
               tasks.push(
-                fetch("/api/admin/withdrawals").then(async (r) => {
-                  if (r.ok) setWithdrawals(await r.json());
+                fetch("/api/admin/withdrawals", { cache: "no-store" }).then(async (r) => {
+                  if (r.ok) {
+                    payload.withdrawals = await r.json();
+                    setWithdrawals(payload.withdrawals!);
+                  }
                 }),
               );
             }
             if (canAccessAdminTab(adminSession, "users")) {
               tasks.push(
-                fetch("/api/admin/users").then(async (r) => {
-                  if (r.ok) setUsers(await r.json());
+                fetch("/api/admin/users", { cache: "no-store" }).then(async (r) => {
+                  if (r.ok) {
+                    payload.users = await r.json();
+                    setUsers(payload.users!);
+                  }
                 }),
               );
             }
             await Promise.all(tasks);
+            writeAdminClientCache(clientKey, payload, ADMIN_CLIENT_CACHE_TTL.withdrawals);
             loadedTabsRef.current.add(cacheKey);
             break;
           }
           case "users": {
-            const uRes = await fetch("/api/admin/users");
-            if (uRes.ok) setUsers(await uRes.json());
+            const uRes = await fetch("/api/admin/users", { cache: "no-store" });
+            if (uRes.ok) {
+              const data = await uRes.json();
+              setUsers(data);
+              writeAdminClientCache(clientKey, { users: data }, ADMIN_CLIENT_CACHE_TTL.users);
+            }
             loadedTabsRef.current.add(cacheKey);
             break;
           }
@@ -358,6 +481,7 @@ function AdminPageInner() {
 
   const invalidateDashboardCache = () => {
     loadedTabsRef.current.delete("dashboard");
+    removeAdminClientCache("dashboard");
     setDashboardStats(null);
   };
 
@@ -365,6 +489,7 @@ function AdminPageInner() {
     if (!session) return;
     const cacheKey = tab === "modes" && selectedModeId ? `modes:${selectedModeId}` : tab;
     loadedTabsRef.current.delete(cacheKey);
+    removeAdminClientCache(adminTabClientKey(tab, selectedModeId));
     invalidateDashboardCache();
     if (tab === "dashboard") {
       if (showLoading) setTabLoading(true);
@@ -401,8 +526,7 @@ function AdminPageInner() {
 
   useEffect(() => {
     if (!session || tab !== "modes" || !selectedModeId) return;
-    loadedTabsRef.current.delete(`modes:${selectedModeId}`);
-    loadTabData("modes", session, true);
+    loadTabData("modes", session, false);
   }, [selectedModeId, tab, session, loadTabData]);
 
   const showMsg = (type: "ok" | "err", text: string) => {
@@ -411,6 +535,7 @@ function AdminPageInner() {
   };
 
   const handleLogout = async () => {
+    clearAdminClientCache();
     await fetch("/api/admin/logout", { method: "POST" });
     router.replace("/admin/login");
     router.refresh();
@@ -541,7 +666,7 @@ function AdminPageInner() {
               selectedGameId={selectedGameId}
               selectedModeId={selectedModeId}
             />
-          ) : tabLoading && tab !== "dashboard" ? (
+          ) : tabLoading && tab !== "dashboard" && !hasAdminTabCache(tab, selectedModeId) ? (
             <AdminTabSkeleton
               tab={tab}
               selectedGameId={selectedGameId}

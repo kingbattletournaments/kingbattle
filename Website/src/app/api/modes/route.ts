@@ -1,26 +1,33 @@
-import { unstable_noStore } from "next/cache";
 import { NextResponse } from "next/server";
 import { getStore } from "@/lib/store";
+import {
+  getAdminApiCache,
+  setAdminApiCache,
+} from "@/lib/admin-api-cache";
 
 export const dynamic = "force-dynamic";
 
-const NO_STORE = {
-  "Cache-Control": "no-store, no-cache, must-revalidate",
-  Pragma: "no-cache",
+const CACHE_TTL_MS = 60 * 1000;
+const CACHE_HEADERS = {
+  "Cache-Control": "private, max-age=60, stale-while-revalidate=120",
 } as const;
 
 export async function GET(request: Request) {
-  unstable_noStore();
   const { searchParams } = new URL(request.url);
   const modeId = searchParams.get("modeId");
   if (modeId) {
     const store = getStore();
     const mode = await store.getMode(modeId);
-    if (!mode) return NextResponse.json({ error: "Mode not found" }, { status: 404, headers: NO_STORE });
-    return NextResponse.json(mode, { headers: NO_STORE });
+    if (!mode) return NextResponse.json({ error: "Mode not found" }, { status: 404 });
+    return NextResponse.json(mode, { headers: CACHE_HEADERS });
   }
   const gameId = searchParams.get("gameId") ?? searchParams.get("game_id");
+  const cacheKey = `public:modes:${gameId ?? "all"}`;
+  const cached = getAdminApiCache<unknown>(cacheKey, CACHE_TTL_MS);
+  if (cached) return NextResponse.json(cached, { headers: CACHE_HEADERS });
+
   const store = getStore();
   const modes = await store.gameModes(gameId || undefined);
-  return NextResponse.json(modes, { headers: NO_STORE });
+  setAdminApiCache(cacheKey, modes);
+  return NextResponse.json(modes, { headers: CACHE_HEADERS });
 }

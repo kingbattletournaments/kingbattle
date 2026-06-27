@@ -3,6 +3,12 @@ import { getStore } from "@/lib/store";
 import { getProductionStoreError } from "@/lib/store-config";
 import { getAdminSession } from "@/lib/admin-auth";
 import { validateMaxParticipants, normalizeMaxParticipants } from "@/lib/match-slots";
+import {
+  ADMIN_API_CACHE_TTL,
+  getAdminApiCache,
+  invalidateAdminApiCache,
+  setAdminApiCache,
+} from "@/lib/admin-api-cache";
 
 function normalizePrizePool(prizePool: unknown) {
   if (
@@ -56,8 +62,13 @@ export async function GET(request: Request) {
   const modeId = searchParams.get("modeId") ?? undefined;
   const accessError = await assertGamesAccess(admin, modeId ?? undefined);
   if (accessError) return accessError;
+  const cacheKey = `presets:${modeId ?? "all"}`;
+  const cached = getAdminApiCache<unknown>(cacheKey, ADMIN_API_CACHE_TTL.presets);
+  if (cached) return NextResponse.json(cached);
+
   const store = getStore();
   const presets = await store.matchPresets(modeId);
+  setAdminApiCache(cacheKey, presets);
   return NextResponse.json(presets);
 }
 
@@ -113,5 +124,6 @@ export async function POST(request: Request) {
   });
 
   if (!preset) return NextResponse.json({ error: "Failed to create preset" }, { status: 500 });
+  invalidateAdminApiCache("presets:");
   return NextResponse.json(preset);
 }

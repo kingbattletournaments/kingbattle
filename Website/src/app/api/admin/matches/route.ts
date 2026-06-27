@@ -4,6 +4,13 @@ import { getProductionStoreError } from "@/lib/store-config";
 import { getAdminSession } from "@/lib/admin-auth";
 import { toScheduledAtIso } from "@/lib/app-timezone";
 import { validateMaxParticipants, normalizeMaxParticipants } from "@/lib/match-slots";
+import {
+  ADMIN_API_CACHE_TTL,
+  getAdminApiCache,
+  invalidateAdminApiCache,
+  setAdminApiCache,
+} from "@/lib/admin-api-cache";
+import { invalidateAdminDashboardStatsCache } from "@/lib/admin-dashboard-cache";
 
 export async function GET(request: Request) {
   const admin = await getAdminSession();
@@ -17,7 +24,12 @@ export async function GET(request: Request) {
       return NextResponse.json({ error: "No access to this mode" }, { status: 403 });
     }
   }
+  const cacheKey = `matches:${modeId ?? "all"}`;
+  const cached = getAdminApiCache<unknown>(cacheKey, ADMIN_API_CACHE_TTL.matches);
+  if (cached) return NextResponse.json(cached);
+
   const matches = await store.matches(modeId ?? undefined);
+  setAdminApiCache(cacheKey, matches);
   return NextResponse.json(matches);
 }
 
@@ -80,5 +92,8 @@ export async function POST(request: Request) {
     image
   );
   if (!match) return NextResponse.json({ error: "Failed to create match" }, { status: 500 });
+  invalidateAdminApiCache("matches:");
+  invalidateAdminApiCache("public:matches:");
+  invalidateAdminDashboardStatsCache();
   return NextResponse.json(match);
 }

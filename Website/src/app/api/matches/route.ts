@@ -1,24 +1,31 @@
-import { unstable_noStore } from "next/cache";
 import { NextResponse } from "next/server";
 import { getStore } from "@/lib/store";
+import {
+  getAdminApiCache,
+  setAdminApiCache,
+} from "@/lib/admin-api-cache";
 
 export const dynamic = "force-dynamic";
 
-const NO_STORE = {
-  "Cache-Control": "no-store, no-cache, must-revalidate",
-  Pragma: "no-cache",
+const CACHE_TTL_MS = 30 * 1000;
+const CACHE_HEADERS = {
+  "Cache-Control": "private, max-age=30, stale-while-revalidate=60",
 } as const;
 
 export async function GET(request: Request) {
-  unstable_noStore();
   const { searchParams } = new URL(request.url);
   const modeId = searchParams.get("modeId") || searchParams.get("mode_id");
   if (!modeId) {
-    return NextResponse.json({ error: "modeId required" }, { status: 400, headers: NO_STORE });
+    return NextResponse.json({ error: "modeId required" }, { status: 400 });
   }
+
+  const cacheKey = `public:matches:${modeId}`;
+  const cached = getAdminApiCache<unknown>(cacheKey, CACHE_TTL_MS);
+  if (cached) return NextResponse.json(cached, { headers: CACHE_HEADERS });
+
   const store = getStore();
   const matches = await store.matches(modeId);
-  // Map scheduledAt to startsAt for Android app compatibility
   const withStartsAt = matches.map((m) => ({ ...m, startsAt: m.scheduledAt }));
-  return NextResponse.json(withStartsAt, { headers: NO_STORE });
+  setAdminApiCache(cacheKey, withStartsAt);
+  return NextResponse.json(withStartsAt, { headers: CACHE_HEADERS });
 }

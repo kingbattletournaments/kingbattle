@@ -1,6 +1,11 @@
 import { NextResponse } from "next/server";
 import { getStore } from "@/lib/store";
 import { getAdminSession } from "@/lib/admin-auth";
+import {
+  ADMIN_API_CACHE_TTL,
+  getAdminApiCache,
+  setAdminApiCache,
+} from "@/lib/admin-api-cache";
 
 export async function GET(request: Request) {
   const admin = await getAdminSession();
@@ -8,11 +13,16 @@ export async function GET(request: Request) {
   if (!admin.coinsAccess) return NextResponse.json({ error: "No coins access" }, { status: 403 });
   const { searchParams } = new URL(request.url);
   const status = searchParams.get("status") as "pending" | "accepted" | "rejected" | null;
+  const cacheKey = `withdrawals:${status ?? "all"}`;
+  const cached = getAdminApiCache<unknown>(cacheKey, ADMIN_API_CACHE_TTL.withdrawals);
+  if (cached) return NextResponse.json(cached);
+
   const store = getStore();
   const [requests, users] = await Promise.all([store.getWithdrawalRequests(status ?? undefined), store.users()]);
   const withUser = requests.map((r) => ({
     ...r,
     user: users.find((u) => u.id === r.userId),
   }));
+  setAdminApiCache(cacheKey, withUser);
   return NextResponse.json(withUser);
 }
