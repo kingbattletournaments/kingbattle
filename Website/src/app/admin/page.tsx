@@ -3,7 +3,6 @@
 import { Suspense, useState, useEffect, useRef, useCallback, useMemo } from "react";
 import { usePathname, useRouter, useSearchParams } from "next/navigation";
 import Image from "next/image";
-import { LoadingSpinner } from "@/components/ui";
 import { buildMatchScheduleTimes } from "@/lib/match-preset-schedule";
 import { formatMatchDateTime } from "@/lib/format-match-datetime";
 import {
@@ -24,6 +23,13 @@ import {
 } from "@/lib/admin-nav";
 import { AdminTabIcon } from "@/components/admin/AdminTabIcon";
 import { AdminMatchCard, getAdminMatchBanner } from "@/components/admin/AdminMatchCard";
+import {
+  AdminBannerGridSkeleton,
+  AdminFormPanelSkeleton,
+  AdminMatchDetailSkeleton,
+  AdminTabSkeleton,
+  DashboardSkeleton,
+} from "@/components/admin/AdminSkeletons";
 import type { DashboardStats } from "@/lib/dashboard-stats";
 import { validateMaxParticipants } from "@/lib/match-slots";
 
@@ -86,8 +92,12 @@ export default function AdminPage() {
   return (
     <Suspense
       fallback={
-        <div className="admin-page flex min-h-screen items-center justify-center">
-          <LoadingSpinner size="lg" label="Loading admin..." />
+        <div className="admin-page min-h-screen">
+          <div className="admin-container">
+            <div className="admin-main-content w-full lg:ml-[260px]">
+              <DashboardSkeleton />
+            </div>
+          </div>
         </div>
       }
     >
@@ -526,9 +536,17 @@ function AdminPageInner() {
           )}
 
           {loading ? (
-            <div className="admin-panel flex flex-col items-center justify-center py-16 w-full">
-              <LoadingSpinner size="lg" label="Loading data..." />
-            </div>
+            <AdminTabSkeleton
+              tab={tab}
+              selectedGameId={selectedGameId}
+              selectedModeId={selectedModeId}
+            />
+          ) : tabLoading && tab !== "dashboard" ? (
+            <AdminTabSkeleton
+              tab={tab}
+              selectedGameId={selectedGameId}
+              selectedModeId={selectedModeId}
+            />
           ) : (
             <>
               {tab === "dashboard" && (
@@ -3251,11 +3269,7 @@ function MatchDetailView({
   };
 
   if (loading || !match) {
-    return (
-      <div className="flex items-center justify-center py-12">
-        <LoadingSpinner size="md" compact label="Loading match..." />
-      </div>
-    );
+    return <AdminMatchDetailSkeleton />;
   }
 
   const participants = match.participants ?? [];
@@ -4241,11 +4255,7 @@ function DashboardSection({
   const fmtPct = (n: number) => `${Math.round(n * 100)}%`;
 
   if (loading && !stats) {
-    return (
-      <div className="flex flex-col items-center justify-center py-16">
-        <LoadingSpinner size="lg" label="Loading dashboard..." />
-      </div>
-    );
+    return <DashboardSkeleton />;
   }
 
   if (!stats) {
@@ -5551,9 +5561,7 @@ function BannersSection() {
           <section className="space-y-4">
             <h3 className="text-base font-semibold text-zinc-900">Existing Banners</h3>
             {loading ? (
-              <div className="flex py-10 justify-center">
-                <LoadingSpinner label="Loading banners..." />
-              </div>
+              <AdminBannerGridSkeleton count={3} />
             ) : banners.length === 0 ? (
               <div className="text-center py-10 text-zinc-500 border border-zinc-200/40 rounded-xl bg-zinc-100/20">
                 No banners configured yet.
@@ -5891,11 +5899,7 @@ function ReferralsSection() {
   };
 
   if (loading) {
-    return (
-      <div className="flex justify-center py-10">
-        <LoadingSpinner label="Loading referrals..." />
-      </div>
-    );
+    return <AdminFormPanelSkeleton />;
   }
 
   return (

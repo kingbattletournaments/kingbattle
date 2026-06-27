@@ -428,3 +428,21 @@
   color: #ffffff;
   border: 1px solid var(--admin-black);
 }
+
+/* Skeleton shimmer (admin panel loading states) */
+@keyframes admin-shimmer {
+  0%,
+  100% {
+    opacity: 1;
+  }
+  50% {
+    opacity: 0.42;
+  }
+}
+
+.admin-skeleton {
+  background: linear-gradient(90deg, #e4e4e7 0%, #f4f4f5 50%, #e4e4e7 100%);
+  background-size: 200% 100%;
+  animation: admin-shimmer 1.15s ease-in-out infinite;
+  border-radius: 0.5rem;
+}
