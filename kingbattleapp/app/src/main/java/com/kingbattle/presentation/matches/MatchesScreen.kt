@@ -60,6 +60,7 @@ fun MatchesScreen(
     onNavigateBack: () -> Unit,
     onNavigateToWallet: () -> Unit,
     onNavigateToMatchDetail: (String) -> Unit,
+    onNavigateToSlotSelection: (matchId: String, matchTitle: String) -> Unit = { _, _ -> },
     viewModel: MatchesViewModel = hiltViewModel()
 ) {
     val context = LocalContext.current
@@ -74,9 +75,6 @@ fun MatchesScreen(
     val tabs = remember { listOf("ONGOING", "UPCOMING", "RESULTS") }
     val coroutineScope = rememberCoroutineScope()
     val pagerState = rememberPagerState(initialPage = initialTab, pageCount = { tabs.size })
-
-    var selectedMatchToJoin by remember { mutableStateOf<Match?>(null) }
-    var showJoinDialog by remember { mutableStateOf(false) }
 
     LaunchedEffect(modeId) {
         viewModel.loadData(modeId)
@@ -269,13 +267,13 @@ fun MatchesScreen(
                                     match = match,
                                     isJoined = joinedMatchesState.value.contains(match.id),
                                     onJoinClick = {
-                                        val userCoins = userState.value?.coins ?: 0
-                                        if (userCoins < match.entry_fee) {
+                                        val user = userState.value
+                                        val totalCoins = (user?.coins ?: 0) + (user?.won_coins ?: 0)
+                                        if (totalCoins < match.entry_fee) {
                                             Toast.makeText(context, "Insufficient coins! Please deposit first.", Toast.LENGTH_LONG).show()
                                             onNavigateToWallet()
                                         } else {
-                                            selectedMatchToJoin = match
-                                            showJoinDialog = true
+                                            onNavigateToSlotSelection(match.id, match.title)
                                         }
                                     },
                                     onCardClick = {
@@ -293,36 +291,6 @@ fun MatchesScreen(
         }
     }
 
-    // Join Match Input Dialog
-    if (showJoinDialog && selectedMatchToJoin != null) {
-        val match = selectedMatchToJoin!!
-        JoinMatchDialog(
-            entryFee = match.entry_fee,
-            savedName = userState.value?.in_game_name ?: "",
-            savedUid = userState.value?.in_game_uid ?: "",
-            onDismiss = {
-                showJoinDialog = false
-                selectedMatchToJoin = null
-            },
-            onSubmit = { ign, igid ->
-                showJoinDialog = false
-                viewModel.joinMatch(
-                    matchId = match.id,
-                    inGameName = ign,
-                    inGameUid = igid,
-                    onSuccess = {
-                        Toast.makeText(context, "Successfully joined tournament!", Toast.LENGTH_LONG).show()
-                        viewModel.loadData(modeId)
-                        selectedMatchToJoin = null
-                    },
-                    onError = { err ->
-                        Toast.makeText(context, "Failed: $err", Toast.LENGTH_LONG).show()
-                        selectedMatchToJoin = null
-                    }
-                )
-            }
-        )
-    }
 }
 
 @Composable
@@ -704,102 +672,4 @@ fun MatchCard(
             }
         }
     }
-}
-
-@Composable
-fun JoinMatchDialog(
-    entryFee: Int,
-    savedName: String,
-    savedUid: String,
-    onDismiss: () -> Unit,
-    onSubmit: (inGameName: String, inGameUid: String) -> Unit
-) {
-    var ignText by remember { mutableStateOf(savedName) }
-    var igidText by remember { mutableStateOf(savedUid) }
-    val context = LocalContext.current
-
-    AlertDialog(
-        onDismissRequest = onDismiss,
-        title = {
-            Text(
-                text = "Join Tournament",
-                color = TextWhite,
-                fontSize = 18.sp,
-                fontWeight = FontWeight.Bold
-            )
-        },
-        text = {
-            Column(
-                modifier = Modifier
-                    .fillMaxWidth()
-                    .verticalScroll(rememberScrollState()),
-                verticalArrangement = Arrangement.spacedBy(12.dp)
-            ) {
-                Text(
-                    text = "Ensure your Free Fire details are correct. Entry fee of $entryFee coins will be deducted from your wallet balance.",
-                    color = TextMuted,
-                    fontSize = 12.sp
-                )
-
-                // IGN Input
-                OutlinedTextField(
-                    value = ignText,
-                    onValueChange = { ignText = it },
-                    label = { Text("In-Game Name (IGN)") },
-                    placeholder = { Text("e.g. ProGamer123") },
-                    modifier = Modifier.fillMaxWidth(),
-                    colors = OutlinedTextFieldDefaults.colors(
-                        focusedTextColor = Color.White,
-                        unfocusedTextColor = Color.White,
-                        focusedBorderColor = AccentOrange,
-                        unfocusedBorderColor = ThemeBorderColor
-                    )
-                )
-
-                // IGUID Input
-                OutlinedTextField(
-                    value = igidText,
-                    onValueChange = { igidText = it.filter { c -> c.isDigit() } },
-                    label = { Text("In-Game UID") },
-                    placeholder = { Text("e.g. 123456789") },
-                    keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.Number),
-                    modifier = Modifier.fillMaxWidth(),
-                    colors = OutlinedTextFieldDefaults.colors(
-                        focusedTextColor = Color.White,
-                        unfocusedTextColor = Color.White,
-                        focusedBorderColor = AccentOrange,
-                        unfocusedBorderColor = ThemeBorderColor
-                    )
-                )
-            }
-        },
-        confirmButton = {
-            Button(
-                onClick = {
-                    if (ignText.trim().isBlank()) {
-                        Toast.makeText(context, "Enter your game name", Toast.LENGTH_SHORT).show()
-                        return@Button
-                    }
-                    if (igidText.trim().length < 6) {
-                        Toast.makeText(context, "Enter a valid game UID", Toast.LENGTH_SHORT).show()
-                        return@Button
-                    }
-                    onSubmit(ignText.trim(), igidText.trim())
-                },
-                colors = ButtonDefaults.buttonColors(containerColor = AccentOrange),
-                enabled = ignText.isNotBlank() && igidText.isNotBlank()
-            ) {
-                Text("Confirm & Join", color = Color.White)
-            }
-        },
-        dismissButton = {
-            TextButton(
-                onClick = onDismiss,
-                colors = ButtonDefaults.textButtonColors(contentColor = TextMuted)
-            ) {
-                Text("Cancel")
-            }
-        },
-        containerColor = ThemeCardBg
-    )
 }

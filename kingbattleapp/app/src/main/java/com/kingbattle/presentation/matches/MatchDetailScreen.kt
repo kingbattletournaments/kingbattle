@@ -54,6 +54,7 @@ fun MatchDetailScreen(
     matchId: String,
     onNavigateBack: () -> Unit,
     onNavigateToWallet: () -> Unit,
+    onNavigateToSlotSelection: (matchId: String, matchTitle: String) -> Unit = { _, _ -> },
     viewModel: MatchDetailViewModel = hiltViewModel()
 ) {
     val context = LocalContext.current
@@ -65,9 +66,6 @@ fun MatchDetailScreen(
 
     var selectedTabIndex by remember { mutableStateOf(0) }
     val tabs = listOf("DESCRIPTION", "JOINED MEMBER")
-
-    var showJoinDialog by remember { mutableStateOf(false) }
-    var isJoining by remember { mutableStateOf(false) }
     // Reactive set of joined match IDs — read from ViewModel which uses TokenManager
     // (TokenManager writes to EncryptedSharedPreferences, so we must read from the same source)
     val joinedMatches = viewModel.joinedMatches.collectAsState()
@@ -153,21 +151,20 @@ fun MatchDetailScreen(
                             }
                         }
                         status == "upcoming" -> {
-                            val buttonAlpha = if (isJoining) 0.6f else 1f
                             Button(
                                 onClick = {
-                                    val userCoins = userState.value?.coins ?: 0
-                                    if (userCoins < match.entry_fee) {
+                                    val user = userState.value
+                                    val totalCoins = (user?.coins ?: 0) + (user?.won_coins ?: 0)
+                                    if (totalCoins < match.entry_fee) {
                                         Toast.makeText(context, "Insufficient coins! Please deposit first.", Toast.LENGTH_LONG).show()
                                         onNavigateToWallet()
                                     } else {
-                                        showJoinDialog = true
+                                        onNavigateToSlotSelection(match.id, match.title)
                                     }
                                 },
-                                modifier = Modifier.fillMaxWidth().height(48.dp).alpha(buttonAlpha),
+                                modifier = Modifier.fillMaxWidth().height(48.dp),
                                 colors = ButtonDefaults.buttonColors(containerColor = AccentOrange),
                                 shape = RoundedCornerShape(8.dp),
-                                enabled = !isJoining
                             ) {
                                 Text("JOIN MATCH", color = Color.White, fontWeight = FontWeight.Bold, fontSize = 16.sp)
                             }
@@ -334,50 +331,6 @@ fun MatchDetailScreen(
                 }
             }
         }
-        }
-    }
-
-    // Join Match Input Dialog
-    if (showJoinDialog) {
-        matchDetailState.value?.match?.let { match ->
-            JoinMatchDialog(
-                entryFee = match.entry_fee,
-                savedName = userState.value?.in_game_name ?: "",
-                savedUid = userState.value?.in_game_uid ?: "",
-                onDismiss = { showJoinDialog = false },
-                onSubmit = { ign, igid ->
-                    showJoinDialog = false
-                    isJoining = true
-                    viewModel.joinMatch(
-                        matchId = match.id,
-                        inGameName = ign,
-                        inGameUid = igid,
-                        onSuccess = {
-                            // Save joined match locally
-                            // Update reactive state and persist
-                            // Mark as joined via ViewModel (uses TokenManager / EncryptedSharedPreferences)
-                            viewModel.markMatchJoined(match.id)
-                            isJoining = false
-                            Toast.makeText(context, "Successfully joined tournament!", Toast.LENGTH_LONG).show()
-                        },
-                        onError = { err ->
-                            isJoining = false
-                            Toast.makeText(context, "Failed: $err", Toast.LENGTH_LONG).show()
-                        }
-                    )
-                }
-            )
-        }
-    }
-    // Show a loading overlay while the join request is in progress
-    if (isJoining) {
-        Box(
-            modifier = Modifier
-                .fillMaxSize()
-                .background(Color(0x88000000)),
-            contentAlignment = Alignment.Center
-        ) {
-            CircularProgressIndicator(color = AccentOrange)
         }
     }
 }

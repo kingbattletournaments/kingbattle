@@ -2,6 +2,7 @@ import { NextResponse } from "next/server";
 import { getStore } from "@/lib/store";
 import { getAdminSession } from "@/lib/admin-auth";
 import { toScheduledAtIso } from "@/lib/app-timezone";
+import { validateMaxParticipants } from "@/lib/match-slots";
 
 async function checkMatchAccess(adminId: string, matchId: string): Promise<boolean> {
   const store = getStore();
@@ -87,7 +88,13 @@ export async function PATCH(
     const updates: Record<string, unknown> = {};
     if (body.title != null && typeof body.title === "string") updates.title = body.title;
     if (body.entryFee != null) updates.entryFee = Number(body.entryFee);
-    if (body.maxParticipants != null) updates.maxParticipants = Number(body.maxParticipants);
+    if (body.maxParticipants != null) {
+      const nextType = (body.matchType ?? match.matchType) as string;
+      const nextMax = Number(body.maxParticipants);
+      const maxErr = validateMaxParticipants(nextType, nextMax);
+      if (maxErr) return NextResponse.json({ error: maxErr }, { status: 400 });
+      updates.maxParticipants = nextMax;
+    }
     if (body.scheduledAt != null) updates.scheduledAt = toScheduledAtIso(body.scheduledAt);
     if (body.matchType != null && ["solo", "duo", "squad"].includes(body.matchType)) {
       updates.matchType = body.matchType;

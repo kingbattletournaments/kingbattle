@@ -19,6 +19,7 @@ import {
 import { AdminTabIcon } from "@/components/admin/AdminTabIcon";
 import { AdminMatchCard, getAdminMatchBanner } from "@/components/admin/AdminMatchCard";
 import type { DashboardStats } from "@/lib/dashboard-stats";
+import { validateMaxParticipants } from "@/lib/match-slots";
 
 type Tab = "dashboard" | "modes" | "presets" | "moneyorders" | "withdrawals" | "admins" | "notifications" | "appsettings" | "banners" | "referrals" | "users";
 type Game = { id: string; name: string; imageUrl: string | null };
@@ -1688,6 +1689,11 @@ function MatchesSection({
 
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
+    const maxErr = validateMaxParticipants(matchType, Number(maxParticipants) || 16);
+    if (maxErr) {
+      alert(maxErr);
+      return;
+    }
     setSubmitting(true);
     try {
       let imageUrl: string | null | undefined = undefined;
@@ -2572,6 +2578,11 @@ function MatchPresetsSection({
     e.preventDefault();
     if (!gameModeId) {
       alert("Select a game mode");
+      return;
+    }
+    const maxErr = validateMaxParticipants(matchType, Number(maxParticipants) || 16);
+    if (maxErr) {
+      alert(maxErr);
       return;
     }
     setSubmitting(true);

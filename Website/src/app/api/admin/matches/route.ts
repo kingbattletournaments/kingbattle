@@ -3,6 +3,7 @@ import { getStore } from "@/lib/store";
 import { getProductionStoreError } from "@/lib/store-config";
 import { getAdminSession } from "@/lib/admin-auth";
 import { toScheduledAtIso } from "@/lib/app-timezone";
+import { validateMaxParticipants, normalizeMaxParticipants } from "@/lib/match-slots";
 
 export async function GET(request: Request) {
   const admin = await getAdminSession();
@@ -40,6 +41,12 @@ export async function POST(request: Request) {
     );
   }
   const validMatchType = ["solo", "duo", "squad"].includes(matchType) ? matchType : "solo";
+  const rawMax = Number(maxParticipants) || 16;
+  const maxErr = validateMaxParticipants(validMatchType, rawMax);
+  if (maxErr) {
+    return NextResponse.json({ error: maxErr }, { status: 400 });
+  }
+  const validMaxParticipants = normalizeMaxParticipants(validMatchType, rawMax);
   const validPrizePool = prizePool && typeof prizePool.coinsPerKill === "number" && Array.isArray(prizePool.rankRewards)
     ? {
         coinsPerKill: Number(prizePool.coinsPerKill),
@@ -65,7 +72,7 @@ export async function POST(request: Request) {
     gameModeId,
     title,
     Number(entryFee),
-    Number(maxParticipants) || 16,
+    validMaxParticipants,
     toScheduledAtIso(scheduledAt),
     validMatchType,
     validPrizePool,

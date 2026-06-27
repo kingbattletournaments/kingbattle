@@ -2,7 +2,9 @@ package com.kingbattle.navigation
 
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.LaunchedEffect
+import androidx.compose.runtime.remember
 import androidx.compose.runtime.collectAsState
+import androidx.hilt.navigation.compose.hiltViewModel
 import androidx.hilt.navigation.compose.hiltViewModel
 import androidx.navigation.NavHostController
 import androidx.navigation.compose.NavHost
@@ -154,6 +156,9 @@ fun RootNavigation() {
                 },
                 onNavigateToMatchDetail = { matchId ->
                     navController.navigate(Screen.MatchDetail.createRoute(matchId))
+                },
+                onNavigateToSlotSelection = { id, title ->
+                    navController.navigate(Screen.MatchSlots.createRoute(id, title))
                 }
             )
         }
@@ -172,8 +177,57 @@ fun RootNavigation() {
                 },
                 onNavigateToWallet = {
                     navController.navigate(Screen.Wallet.route)
+                },
+                onNavigateToSlotSelection = { id, title ->
+                    navController.navigate(Screen.MatchSlots.createRoute(id, title))
                 }
             )
+        }
+
+        composable(
+            route = Screen.MatchSlots.route,
+            arguments = listOf(
+                navArgument("matchId") { type = NavType.StringType },
+                navArgument("matchTitle") { type = NavType.StringType },
+            )
+        ) { backStackEntry ->
+            val matchId = backStackEntry.arguments?.getString("matchId") ?: ""
+            val matchTitle = java.net.URLDecoder.decode(
+                backStackEntry.arguments?.getString("matchTitle") ?: "Match",
+                "UTF-8"
+            )
+            val slotViewModel: com.kingbattle.presentation.matches.SlotSelectionViewModel =
+                hiltViewModel(backStackEntry)
+            com.kingbattle.presentation.matches.SlotSelectionScreen(
+                matchId = matchId,
+                matchTitle = matchTitle,
+                onNavigateBack = { navController.popBackStack() },
+                onNavigateToDetails = {
+                    navController.navigate(Screen.JoinSlotDetails.createRoute(matchId))
+                },
+                viewModel = slotViewModel,
+            )
+        }
+
+        composable(
+            route = Screen.JoinSlotDetails.route,
+            arguments = listOf(navArgument("matchId") { type = NavType.StringType })
+        ) { backStackEntry ->
+            val matchId = backStackEntry.arguments?.getString("matchId") ?: ""
+            val parentEntry = navController.previousBackStackEntry
+            if (parentEntry != null) {
+                val slotViewModel: com.kingbattle.presentation.matches.SlotSelectionViewModel =
+                    hiltViewModel(parentEntry)
+                com.kingbattle.presentation.matches.JoinSlotDetailsScreen(
+                    matchId = matchId,
+                    onNavigateBack = { navController.popBackStack() },
+                    onJoinSuccess = {
+                        navController.popBackStack(Screen.MatchDetail.createRoute(matchId), false)
+                            || navController.popBackStack(Screen.Home.route, false)
+                    },
+                    viewModel = slotViewModel,
+                )
+            }
         }
     }
 }
@@ -188,6 +242,13 @@ sealed class Screen(val route: String) {
     }
     object MatchDetail : Screen("match_detail/{matchId}") {
         fun createRoute(matchId: String) = "match_detail/$matchId"
+    }
+    object MatchSlots : Screen("match_slots/{matchId}/{matchTitle}") {
+        fun createRoute(matchId: String, matchTitle: String) =
+            "match_slots/$matchId/${java.net.URLEncoder.encode(matchTitle, "UTF-8")}"
+    }
+    object JoinSlotDetails : Screen("join_slot_details/{matchId}") {
+        fun createRoute(matchId: String) = "join_slot_details/$matchId"
     }
     object Profile : Screen("profile")
     object Wallet : Screen("wallet")

@@ -48,8 +48,16 @@ export function getStore() {
         appUserId: string,
         inGameName: string,
         inGameUid: string,
-        teamMembers?: { inGameName: string; inGameUid: string }[]
-      ) => db.joinMatch(matchId, appUserId, inGameName, inGameUid, teamMembers),
+        teamMembers?: { inGameName: string; inGameUid: string }[],
+        slotJoin?: {
+          holdId: string;
+          slots: { slotIndex: number; inGameName: string; inGameUid: string }[];
+        },
+      ) => db.joinMatch(matchId, appUserId, inGameName, inGameUid, teamMembers, slotJoin),
+      getMatchSlotAvailability: (matchId: string, appUserId?: string) =>
+        db.getMatchSlotAvailability(matchId, appUserId),
+      holdMatchSlots: (matchId: string, appUserId: string, slotIndices: number[]) =>
+        db.holdMatchSlots(matchId, appUserId, slotIndices),
       updateMatchRoomInfo: (id: string, roomCode: string, roomPassword: string) => db.updateMatchRoomInfo(id, roomCode, roomPassword),
       startMatch: (id: string, roomCode?: string, roomPassword?: string) => db.startMatch(id, roomCode, roomPassword),
       cancelMatch: (id: string) => db.cancelMatch(id),
@@ -196,8 +204,16 @@ export function getStore() {
       appUserId: string,
       inGameName: string,
       inGameUid: string,
-      teamMembers?: { inGameName: string; inGameUid: string }[]
+      teamMembers?: { inGameName: string; inGameUid: string }[],
+      slotJoin?: {
+        holdId: string;
+        slots: { slotIndex: number; inGameName: string; inGameUid: string }[];
+      },
     ) => Promise.resolve(adminStore.joinMatch(matchId, appUserId, inGameName, inGameUid, teamMembers)),
+    getMatchSlotAvailability: (_matchId: string, _appUserId?: string) =>
+      Promise.resolve({ error: "Configure Supabase for slot booking" }),
+    holdMatchSlots: (_matchId: string, _appUserId: string, _slotIndices: number[]) =>
+      Promise.resolve({ error: "Configure Supabase for slot booking" }),
     updateMatchRoomInfo: (id: string, roomCode: string, roomPassword: string) =>
       Promise.resolve(adminStore.updateMatchRoomInfo(id, roomCode, roomPassword)).then((m) => (m ? { ...m, participants: adminStore.getParticipantsForMatch(id) } : null)),
     startMatch: (id: string, roomCode?: string, roomPassword?: string) =>

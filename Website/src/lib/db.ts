@@ -14,6 +14,15 @@ import {
   type AdminTabAccess,
 } from "./admin-tabs";
 import type { DashboardStats } from "./dashboard-stats";
+import {
+  confirmSlotBookings,
+  fetchConfirmedSlotParticipants,
+  finishMatchSlotPayouts,
+  getMatchSlotAvailability,
+  holdMatchSlots,
+  refundSlotBookingsForMatch,
+} from "./db-match-slots";
+import { slotToTeamNumber, teamSlotIndices } from "./match-slots";
 
 
 // Types matching admin-store
@@ -1088,34 +1097,49 @@ export const db = {
       }
       return members;
     };
-    const participants = [
-      ...(parts ?? []).map((p) => ({
-        id: p.id,
-        matchId: p.match_id,
-        userId: p.user_id,
-        teamMembers: [{ inGameName: p.in_game_name, inGameUid: p.in_game_uid, kills: p.kills ?? 0 }],
-        joinedAt: p.joined_at,
-        rank: p.squad_rank ?? undefined,
-      })),
-      ...appPartsSafe.map((p) => ({
-        id: p.id,
-        matchId: p.match_id,
-        userId: p.app_user_id,
-        teamMembers: appRowToTeamMembers(p),
-        joinedAt: p.joined_at,
-        rank: (p as { squad_rank?: number }).squad_rank ?? undefined,
-      })),
-    ];
+    const slotParticipants = await fetchConfirmedSlotParticipants(id);
+    const participants =
+      slotParticipants.length > 0
+        ? slotParticipants
+        : [
+            ...(parts ?? []).map((p) => ({
+              id: p.id,
+              matchId: p.match_id,
+              userId: p.user_id,
+              teamMembers: [{ inGameName: p.in_game_name, inGameUid: p.in_game_uid, kills: p.kills ?? 0 }],
+              joinedAt: p.joined_at,
+              rank: p.squad_rank ?? undefined,
+            })),
+            ...appPartsSafe.map((p) => ({
+              id: p.id,
+              matchId: p.match_id,
+              userId: p.app_user_id,
+              teamMembers: appRowToTeamMembers(p),
+              joinedAt: p.joined_at,
+              rank: (p as { squad_rank?: number }).squad_rank ?? undefined,
+            })),
+          ];
     return { ...toMatch(matchRow), participants };
   },
+
+  getMatchSlotAvailability,
+  holdMatchSlots,
+  confirmSlotBookings,
 
   async joinMatch(
     matchId: string,
     appUserId: string,
     inGameName: string,
     inGameUid: string,
-    teamMembers?: { inGameName: string; inGameUid: string }[]
+    teamMembers?: { inGameName: string; inGameUid: string }[],
+    slotJoin?: {
+      holdId: string;
+      slots: { slotIndex: number; inGameName: string; inGameUid: string }[];
+    },
   ): Promise<{ error?: string } | null> {
+    if (slotJoin?.holdId && slotJoin.slots?.length) {
+      return confirmSlotBookings(matchId, appUserId, slotJoin.holdId, slotJoin.slots);
+    }
     const supabase = getSupabase();
     if (!supabase) return { error: "Database not configured" };
     const { data: match } = await supabase.from("matches").select("*").eq("id", matchId).single();
@@ -1222,6 +1246,8 @@ export const db = {
     const snapshot = toMatch(m);
 
     if (entryFee > 0) {
+      await refundSlotBookingsForMatch(id, entryFee, title);
+
       const { data: appRows } = await supabase.from("app_match_participants").select("app_user_id").eq("match_id", id);
       const appUserIds = Array.from(new Set((appRows ?? []).map((r: { app_user_id: string }) => r.app_user_id)));
       for (const appUserId of appUserIds) {
@@ -1253,6 +1279,7 @@ export const db = {
       }
     }
 
+    await supabase.from("match_slot_bookings").delete().eq("match_id", id);
     await supabase.from("app_match_participants").delete().eq("match_id", id);
     await supabase.from("match_participants").delete().eq("match_id", id);
     const { error } = await supabase.from("matches").delete().eq("id", id).eq("status", "upcoming");
@@ -1333,6 +1360,20 @@ export const db = {
     const supabase = getSupabase();
     if (!supabase) return null;
     const k0 = kills[0] ?? 0;
+    const { data: slotRow } = await supabase
+      .from("match_slot_bookings")
+      .select("id")
+      .eq("id", participantId)
+      .eq("match_id", matchId)
+      .single();
+    if (slotRow) {
+      const { error } = await supabase
+        .from("match_slot_bookings")
+        .update({ kills: k0 })
+        .eq("id", participantId)
+        .eq("match_id", matchId);
+      return error ? null : { id: participantId };
+    }
     const { data: mp } = await supabase.from("match_participants").select("id").eq("id", participantId).eq("match_id", matchId).single();
     if (mp) {
       const { error } = await supabase.from("match_participants").update({ kills: k0 }).eq("id", participantId).eq("match_id", matchId);
@@ -1353,6 +1394,25 @@ export const db = {
   ): Promise<{ id: string } | null> {
     const supabase = getSupabase();
     if (!supabase) return null;
+    const { data: slotRow } = await supabase
+      .from("match_slot_bookings")
+      .select("slot_index")
+      .eq("id", participantId)
+      .eq("match_id", matchId)
+      .single();
+    if (slotRow) {
+      const { data: matchRow } = await supabase.from("matches").select("match_type, max_participants").eq("id", matchId).single();
+      const matchType = matchRow?.match_type ?? "solo";
+      const maxParticipants = matchRow?.max_participants ?? 100;
+      const teamNum = slotToTeamNumber(slotRow.slot_index as number, matchType);
+      const indices = teamSlotIndices(teamNum, matchType, maxParticipants);
+      const { error } = await supabase
+        .from("match_slot_bookings")
+        .update({ squad_rank: rank })
+        .eq("match_id", matchId)
+        .in("slot_index", indices);
+      return error ? null : { id: participantId };
+    }
     const { data: mp } = await supabase.from("match_participants").select("id").eq("id", participantId).eq("match_id", matchId).single();
     if (mp) {
       const { error } = await supabase.from("match_participants").update({ squad_rank: rank }).eq("id", participantId).eq("match_id", matchId);
@@ -1375,43 +1435,55 @@ export const db = {
     const prizePool = match.prizePool ?? { coinsPerKill: 0, totalPrizePool: 0, rankRewards: [] };
     const rewards = prizePool.rankRewards ?? [];
     const cpk = prizePool.coinsPerKill ?? 0;
-    const withRank = participants
-      .filter((p) => typeof p.rank === "number" && p.rank >= 1)
-      .sort((a, b) => (a.rank ?? 0) - (b.rank ?? 0));
-    for (const p of withRank) {
-      const totalKills = (p.teamMembers ?? []).reduce((s, t) => s + (t.kills ?? 0), 0);
-      let coins = totalKills * cpk;
-      for (const r of rewards) {
-        if (p.rank! >= r.fromRank && p.rank! <= r.toRank) {
-          coins += r.coins;
-          break;
+
+    const usedSlotPayouts = await finishMatchSlotPayouts(
+      id,
+      match.matchType ?? "solo",
+      cpk,
+      rewards,
+      async (userId, coins, matchId) => {
+        await db.addMatchWinnings(userId, coins, matchId);
+      },
+    );
+
+    if (!usedSlotPayouts) {
+      const withRank = participants
+        .filter((p) => typeof p.rank === "number" && p.rank >= 1)
+        .sort((a, b) => (a.rank ?? 0) - (b.rank ?? 0));
+      for (const p of withRank) {
+        const totalKills = (p.teamMembers ?? []).reduce((s, t) => s + (t.kills ?? 0), 0);
+        let coins = totalKills * cpk;
+        for (const r of rewards) {
+          if (p.rank! >= r.fromRank && p.rank! <= r.toRank) {
+            coins += r.coins;
+            break;
+          }
+        }
+        if (coins > 0 && p.userId) {
+          await db.addMatchWinnings(p.userId, coins, id);
         }
       }
-      if (coins > 0 && p.userId) {
-        await db.addMatchWinnings(p.userId, coins, id);
-      }
-    }
 
-    // Update matches_played and total_kills stats for all participants
-    for (const p of participants) {
-      if (p.userId) {
-        const totalKills = (p.teamMembers ?? []).reduce((s, t) => s + (t.kills ?? 0), 0);
-        const isAppUser = p.userId.length !== 36; // UUID is 36 chars
-        if (isAppUser) {
-          const { data: userRow } = await supabase.from("app_users").select("matches_played, total_kills").eq("username", p.userId).single();
-          if (userRow) {
-            await supabase.from("app_users").update({
-              matches_played: (userRow.matches_played ?? 0) + 1,
-              total_kills: (userRow.total_kills ?? 0) + totalKills
-            }).eq("username", p.userId);
-          }
-        } else {
-          const { data: userRow } = await supabase.from("users").select("matches_played, total_kills").eq("id", p.userId).single();
-          if (userRow) {
-            await supabase.from("users").update({
-              matches_played: (userRow.matches_played ?? 0) + 1,
-              total_kills: (userRow.total_kills ?? 0) + totalKills
-            }).eq("id", p.userId);
+      for (const p of participants) {
+        if (p.userId) {
+          const totalKills = (p.teamMembers ?? []).reduce((s, t) => s + (t.kills ?? 0), 0);
+          const isAppUser = p.userId.length !== 36;
+          if (isAppUser) {
+            const { data: userRow } = await supabase.from("app_users").select("matches_played, total_kills").eq("username", p.userId).single();
+            if (userRow) {
+              await supabase.from("app_users").update({
+                matches_played: (userRow.matches_played ?? 0) + 1,
+                total_kills: (userRow.total_kills ?? 0) + totalKills,
+              }).eq("username", p.userId);
+            }
+          } else {
+            const { data: userRow } = await supabase.from("users").select("matches_played, total_kills").eq("id", p.userId).single();
+            if (userRow) {
+              await supabase.from("users").update({
+                matches_played: (userRow.matches_played ?? 0) + 1,
+                total_kills: (userRow.total_kills ?? 0) + totalKills,
+              }).eq("id", p.userId);
+            }
           }
         }
       }

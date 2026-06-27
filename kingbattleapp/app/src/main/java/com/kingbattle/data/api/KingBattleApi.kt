@@ -39,6 +39,15 @@ interface KingBattleApi {
         @Body request: JoinMatchRequest
     ): Response<Unit>
 
+    @GET("matches/{id}/slots")
+    suspend fun getMatchSlots(@Path("id") matchId: String): Response<MatchSlotsResponse>
+
+    @POST("matches/{id}/slots/hold")
+    suspend fun holdMatchSlots(
+        @Path("id") matchId: String,
+        @Body request: HoldSlotsRequest
+    ): Response<HoldSlotsResponse>
+
     @GET("matches/{id}/participants")
     suspend fun getMatchParticipants(@Path("id") matchId: String): Response<List<Participant>>
 
@@ -116,9 +125,11 @@ interface KingBattleApi {
 
 // Request Models
 data class JoinMatchRequest(
-    val in_game_name: String,
-    val in_game_uid: String,
-    val team_members: List<TeamMember>? = null
+    val in_game_name: String? = null,
+    val in_game_uid: String? = null,
+    val team_members: List<TeamMember>? = null,
+    val hold_id: String? = null,
+    val slots: List<SlotBookingInput>? = null,
 )
 
 data class GoogleAuthRequest(

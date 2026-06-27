@@ -1,0 +1,420 @@
+/**
+ * Match slot booking DB operations (hold / confirm / query).
+ */
+
+import { getSupabase } from "./supabase";
+import {
+  buildSlotGrid,
+  slotToTeamNumber,
+  teamSizeFor,
+  validateMaxParticipants,
+  validateSlotSelection,
+  type SlotAvailability,
+} from "./match-slots";
+
+export type SlotBookingRow = {
+  id: string;
+  match_id: string;
+  slot_index: number;
+  app_user_id: string;
+  in_game_name: string | null;
+  in_game_uid: string | null;
+  kills: number;
+  squad_rank: number | null;
+  status: string;
+  hold_id: string | null;
+  hold_expires_at: string | null;
+  confirmed_at: string | null;
+  created_at: string;
+};
+
+export async function cleanupExpiredSlotHolds(matchId?: string): Promise<void> {
+  const supabase = getSupabase();
+  if (!supabase) return;
+  await supabase.rpc("cleanup_expired_slot_holds", { p_match_id: matchId ?? null });
+}
+
+export async function getMatchSlotAvailability(
+  matchId: string,
+  appUserId?: string,
+): Promise<
+  | {
+      matchType: string;
+      maxParticipants: number;
+      teamSize: number;
+      teamCount: number;
+      entryFee: number;
+      slots: SlotAvailability[];
+    }
+  | { error: string }
+> {
+  const supabase = getSupabase();
+  if (!supabase) return { error: "Database not configured" };
+
+  await cleanupExpiredSlotHolds(matchId);
+
+  const { data: match } = await supabase.from("matches").select("*").eq("id", matchId).single();
+  if (!match) return { error: "Match not found" };
+
+  const maxParticipants = match.max_participants ?? 100;
+  const matchType = match.match_type ?? "solo";
+  const teamSize = teamSizeFor(matchType);
+
+  const { data: bookings } = await supabase
+    .from("match_slot_bookings")
+    .select("slot_index, app_user_id, status")
+    .eq("match_id", matchId)
+    .in("status", ["held", "confirmed"]);
+
+  const slots = buildSlotGrid(
+    maxParticipants,
+    matchType,
+    (bookings ?? []) as { slot_index: number; app_user_id: string; status: string }[],
+    appUserId,
+  );
+
+  return {
+    matchType,
+    maxParticipants,
+    teamSize,
+    teamCount: Math.floor(maxParticipants / teamSize),
+    entryFee: match.entry_fee ?? 0,
+    slots,
+  };
+}
+
+export async function holdMatchSlots(
+  matchId: string,
+  appUserId: string,
+  slotIndices: number[],
+): Promise<{ holdId: string } | { error: string }> {
+  const supabase = getSupabase();
+  if (!supabase) return { error: "Database not configured" };
+
+  const { data: match } = await supabase.from("matches").select("*").eq("id", matchId).single();
+  if (!match) return { error: "Match not found" };
+  if (match.status !== "upcoming") return { error: "Registration closed" };
+  if (match.registration_locked) return { error: "Registration locked" };
+
+  const maxParticipants = match.max_participants ?? 100;
+  const matchType = match.match_type ?? "solo";
+  const validation = validateSlotSelection(slotIndices, matchType, maxParticipants);
+  if (validation) return { error: validation };
+
+  const { data: user } = await supabase
+    .from("app_users")
+    .select("is_blocked")
+    .eq("username", appUserId)
+    .single();
+  if (!user) return { error: "User not found" };
+  if (user.is_blocked) return { error: "Account is blocked" };
+
+  const { data: holdId, error } = await supabase.rpc("hold_match_slots", {
+    p_match_id: matchId,
+    p_app_user_id: appUserId,
+    p_slot_indices: slotIndices,
+    p_hold_seconds: 300,
+  });
+
+  if (error) {
+    const msg = error.message.includes("unavailable")
+      ? "One or more slots were just taken. Please refresh and try again."
+      : error.message;
+    return { error: msg };
+  }
+
+  return { holdId: holdId as string };
+}
+
+export async function confirmSlotBookings(
+  matchId: string,
+  appUserId: string,
+  holdId: string,
+  slots: { slotIndex: number; inGameName: string; inGameUid: string }[],
+): Promise<{ error?: string } | null> {
+  const supabase = getSupabase();
+  if (!supabase) return { error: "Database not configured" };
+
+  await cleanupExpiredSlotHolds(matchId);
+
+  const { data: match } = await supabase.from("matches").select("*").eq("id", matchId).single();
+  if (!match) return { error: "Match not found" };
+  if (match.status !== "upcoming") return { error: "Registration closed" };
+  if (match.registration_locked) return { error: "Registration locked" };
+
+  const maxParticipants = match.max_participants ?? 100;
+  const matchType = match.match_type ?? "solo";
+  const slotIndices = slots.map((s) => s.slotIndex);
+  const validation = validateSlotSelection(slotIndices, matchType, maxParticipants);
+  if (validation) return { error: validation };
+
+  if (slots.some((s) => !s.inGameName?.trim() || !s.inGameUid?.trim())) {
+    return { error: "In-game name and UID required for each slot" };
+  }
+
+  const { data: heldRows, error: heldErr } = await supabase
+    .from("match_slot_bookings")
+    .select("*")
+    .eq("match_id", matchId)
+    .eq("app_user_id", appUserId)
+    .eq("hold_id", holdId)
+    .eq("status", "held");
+
+  if (heldErr || !heldRows?.length) {
+    return { error: "Hold expired or invalid. Please select slots again." };
+  }
+
+  const heldIndices = new Set(heldRows.map((r: SlotBookingRow) => r.slot_index));
+  for (const s of slots) {
+    if (!heldIndices.has(s.slotIndex)) {
+      return { error: "Selected slots do not match your hold. Please try again." };
+    }
+  }
+  if (slots.length !== heldRows.length) {
+    return { error: "Provide details for every held slot" };
+  }
+
+  const entryFee = match.entry_fee ?? 0;
+  const totalFee = entryFee * slots.length;
+
+  const { data: user } = await supabase
+    .from("app_users")
+    .select("coins, won_coins, is_blocked")
+    .eq("username", appUserId)
+    .single();
+  if (!user) return { error: "User not found" };
+  if (user.is_blocked) return { error: "Account is blocked" };
+  const totalBalance = (user.coins ?? 0) + (user.won_coins ?? 0);
+  if (totalBalance < totalFee) return { error: "Insufficient coins" };
+
+  const now = new Date().toISOString();
+  for (const s of slots) {
+    const { error: updErr } = await supabase
+      .from("match_slot_bookings")
+      .update({
+        status: "confirmed",
+        in_game_name: s.inGameName.trim(),
+        in_game_uid: s.inGameUid.trim(),
+        hold_expires_at: null,
+        confirmed_at: now,
+      })
+      .eq("match_id", matchId)
+      .eq("slot_index", s.slotIndex)
+      .eq("app_user_id", appUserId)
+      .eq("hold_id", holdId)
+      .eq("status", "held");
+
+    if (updErr) return { error: updErr.message };
+  }
+
+  if (totalFee > 0) {
+    let deductCoins = 0;
+    let deductWonCoins = 0;
+    if ((user.coins ?? 0) >= totalFee) {
+      deductCoins = totalFee;
+    } else {
+      deductCoins = user.coins ?? 0;
+      deductWonCoins = totalFee - deductCoins;
+    }
+    await supabase
+      .from("app_users")
+      .update({
+        coins: (user.coins ?? 0) - deductCoins,
+        won_coins: (user.won_coins ?? 0) - deductWonCoins,
+      })
+      .eq("username", appUserId);
+    await supabase.from("app_coin_transactions").insert({
+      user_id: appUserId,
+      amount: -totalFee,
+      type: "match_entry",
+      reference_id: matchId,
+      description: `Match entry (${slots.length} slot${slots.length === 1 ? "" : "s"})`,
+    });
+  }
+
+  return null;
+}
+
+export async function fetchConfirmedSlotParticipants(
+  matchId: string,
+): Promise<
+  {
+    id: string;
+    matchId: string;
+    userId: string;
+    slotIndex: number;
+    teamMembers: { inGameName: string; inGameUid: string; kills?: number }[];
+    joinedAt: string;
+    rank?: number;
+  }[]
+> {
+  const supabase = getSupabase();
+  if (!supabase) return [];
+
+  const { data: slots } = await supabase
+    .from("match_slot_bookings")
+    .select("*")
+    .eq("match_id", matchId)
+    .eq("status", "confirmed")
+    .order("slot_index", { ascending: true });
+
+  if (!slots?.length) return [];
+
+  return (slots as SlotBookingRow[]).map((s) => ({
+    id: s.id,
+    matchId: s.match_id,
+    userId: s.app_user_id,
+    slotIndex: s.slot_index,
+    teamMembers: [
+      {
+        inGameName: s.in_game_name ?? "",
+        inGameUid: s.in_game_uid ?? "",
+        kills: s.kills ?? 0,
+      },
+    ],
+    joinedAt: s.confirmed_at ?? s.created_at,
+    rank: s.squad_rank ?? undefined,
+  }));
+}
+
+export async function refundSlotBookingsForMatch(
+  matchId: string,
+  entryFee: number,
+  title: string,
+): Promise<void> {
+  const supabase = getSupabase();
+  if (!supabase || entryFee <= 0) return;
+
+  const { data: slotRows } = await supabase
+    .from("match_slot_bookings")
+    .select("app_user_id")
+    .eq("match_id", matchId)
+    .eq("status", "confirmed");
+
+  const refundByUser = new Map<string, number>();
+  for (const row of slotRows ?? []) {
+    const uid = (row as { app_user_id: string }).app_user_id;
+    refundByUser.set(uid, (refundByUser.get(uid) ?? 0) + entryFee);
+  }
+
+  for (const [appUserId, amount] of Array.from(refundByUser.entries())) {
+    const { data: user } = await supabase.from("app_users").select("coins").eq("username", appUserId).single();
+    if (!user || typeof user.coins !== "number") continue;
+    await supabase.from("app_users").update({ coins: user.coins + amount }).eq("username", appUserId);
+    await supabase.from("app_coin_transactions").insert({
+      user_id: appUserId,
+      amount,
+      type: "refund",
+      reference_id: matchId,
+      description: `Refund: ${title} cancelled (${amount / entryFee} slot${amount / entryFee === 1 ? "" : "s"})`,
+    });
+  }
+}
+
+export async function finishMatchSlotPayouts(
+  matchId: string,
+  matchType: string,
+  cpk: number,
+  rankRewards: { fromRank: number; toRank: number; coins: number }[],
+  addMatchWinnings: (userId: string, coins: number, matchId: string) => Promise<void>,
+): Promise<boolean> {
+  const supabase = getSupabase();
+  if (!supabase) return false;
+
+  const { data: slots } = await supabase
+    .from("match_slot_bookings")
+    .select("*")
+    .eq("match_id", matchId)
+    .eq("status", "confirmed");
+
+  if (!slots?.length) return false;
+
+  const rows = slots as SlotBookingRow[];
+
+  const killCoinsByUser = new Map<string, number>();
+  for (const s of rows) {
+    const coins = (s.kills ?? 0) * cpk;
+    if (coins > 0) {
+      killCoinsByUser.set(s.app_user_id, (killCoinsByUser.get(s.app_user_id) ?? 0) + coins);
+    }
+  }
+
+  const teams = new Map<number, SlotBookingRow[]>();
+  for (const s of rows) {
+    const teamNum = slotToTeamNumber(s.slot_index, matchType);
+    if (!teams.has(teamNum)) teams.set(teamNum, []);
+    teams.get(teamNum)!.push(s);
+  }
+
+  const rankCoinsByUser = new Map<string, number>();
+  for (const [, teamSlots] of Array.from(teams.entries())) {
+    const teamRank = teamSlots.find((s) => typeof s.squad_rank === "number" && s.squad_rank >= 1)?.squad_rank;
+    if (!teamRank) continue;
+    let rankReward = 0;
+    for (const r of rankRewards) {
+      if (teamRank >= r.fromRank && teamRank <= r.toRank) {
+        rankReward = r.coins;
+        break;
+      }
+    }
+    if (rankReward <= 0) continue;
+
+    const killsByUser = new Map<string, number>();
+    let teamKills = 0;
+    for (const s of teamSlots) {
+      const k = s.kills ?? 0;
+      teamKills += k;
+      killsByUser.set(s.app_user_id, (killsByUser.get(s.app_user_id) ?? 0) + k);
+    }
+
+    const uniqueUsers = Array.from(killsByUser.keys());
+    if (uniqueUsers.length === 1) {
+      rankCoinsByUser.set(uniqueUsers[0], (rankCoinsByUser.get(uniqueUsers[0]) ?? 0) + rankReward);
+    } else if (teamKills > 0) {
+      for (const [uid, k] of Array.from(killsByUser.entries())) {
+        const share = Math.floor((rankReward * k) / teamKills);
+        if (share > 0) rankCoinsByUser.set(uid, (rankCoinsByUser.get(uid) ?? 0) + share);
+      }
+    } else {
+      const share = Math.floor(rankReward / uniqueUsers.length);
+      for (const uid of uniqueUsers) {
+        rankCoinsByUser.set(uid, (rankCoinsByUser.get(uid) ?? 0) + share);
+      }
+    }
+  }
+
+  const totalByUser = new Map<string, number>();
+  for (const [uid, c] of Array.from(killCoinsByUser.entries())) totalByUser.set(uid, (totalByUser.get(uid) ?? 0) + c);
+  for (const [uid, c] of Array.from(rankCoinsByUser.entries())) totalByUser.set(uid, (totalByUser.get(uid) ?? 0) + c);
+
+  for (const [userId, coins] of Array.from(totalByUser.entries())) {
+    if (coins > 0) await addMatchWinnings(userId, coins, matchId);
+  }
+
+  const statsByUser = new Map<string, { kills: number }>();
+  for (const s of rows) {
+    const prev = statsByUser.get(s.app_user_id) ?? { kills: 0 };
+    prev.kills += s.kills ?? 0;
+    statsByUser.set(s.app_user_id, prev);
+  }
+  for (const [userId, stat] of Array.from(statsByUser.entries())) {
+    const { data: userRow } = await supabase
+      .from("app_users")
+      .select("matches_played, total_kills")
+      .eq("username", userId)
+      .single();
+    if (userRow) {
+      await supabase
+        .from("app_users")
+        .update({
+          matches_played: (userRow.matches_played ?? 0) + 1,
+          total_kills: (userRow.total_kills ?? 0) + stat.kills,
+        })
+        .eq("username", userId);
+    }
+  }
+
+  return true;
+}
+
+export { validateMaxParticipants };
