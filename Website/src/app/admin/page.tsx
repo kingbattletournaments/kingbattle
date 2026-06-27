@@ -1340,8 +1340,6 @@ function MatchesSection({
   onSuccess: (opts?: { silent?: boolean }) => void;
   onBulkSelectChange?: (controls: MatchBulkSelectControls | null) => void;
 }) {
-  const longPressTimerRef = useRef<number | null>(null);
-  const longPressTriggeredRef = useRef(false);
   const [view, setView] = useState<"list" | "create" | "createFromPreset" | "edit">("list");
   const [editingMatchId, setEditingMatchId] = useState<string | null>(null);
   const [title, setTitle] = useState("");
@@ -1355,7 +1353,6 @@ function MatchesSection({
   const [imageFile, setImageFile] = useState<File | null>(null);
   const [imagePreview, setImagePreview] = useState<string | null>(null);
   const [submitting, setSubmitting] = useState(false);
-  const [selectedMatchId, setSelectedMatchId] = useState<string | null>(null);
   const [matchTab, setMatchTab] = useState<"upcoming" | "ongoing" | "finished">("upcoming");
   const [expandedMatchId, setExpandedMatchId] = useState<string | null>(null);
   const [selectedPresetId, setSelectedPresetId] = useState("");
@@ -1372,6 +1369,11 @@ function MatchesSection({
   const [startRoomPassword, setStartRoomPassword] = useState("");
   const [startingMatch, setStartingMatch] = useState(false);
   const [playersMatchId, setPlayersMatchId] = useState<string | null>(null);
+  const [playersViewMode, setPlayersViewMode] = useState<"manage" | "leaderboard" | "registered">("registered");
+  const [editRoomTarget, setEditRoomTarget] = useState<Match | null>(null);
+  const [editRoomCode, setEditRoomCode] = useState("");
+  const [editRoomPassword, setEditRoomPassword] = useState("");
+  const [savingRoom, setSavingRoom] = useState(false);
 
   const presetSchedulePreview =
     selectedPresetId && presetMatchDate && presetStartingTime && presetEndingTime && Number(presetGapMinutes) > 0
@@ -1422,7 +1424,7 @@ function MatchesSection({
   const enterSelectionMode = useCallback((matchId: string) => {
     setSelectionMode(true);
     setSelectedMatchIds(new Set([matchId]));
-    setSelectedMatchId(null);
+    setPlayersMatchId(null);
     setExpandedMatchId(null);
   }, []);
 
@@ -1449,21 +1451,10 @@ function MatchesSection({
     }
   }, [matchTab, selectionMode, exitSelectionMode]);
 
-  const clearLongPressTimer = () => {
-    if (longPressTimerRef.current !== null) {
-      window.clearTimeout(longPressTimerRef.current);
-      longPressTimerRef.current = null;
+  const handleMatchCardClick = (matchId: string, canSelect: boolean) => {
+    if (selectionMode && canSelect) {
+      toggleMatchSelection(matchId);
     }
-  };
-
-  const startLongPress = (matchId: string) => {
-    if (matchTab !== "upcoming" || selectedMatchId) return;
-    longPressTriggeredRef.current = false;
-    clearLongPressTimer();
-    longPressTimerRef.current = window.setTimeout(() => {
-      longPressTriggeredRef.current = true;
-      enterSelectionMode(matchId);
-    }, 500);
   };
 
   const handleBulkCancel = async () => {
@@ -1495,20 +1486,6 @@ function MatchesSection({
         (failureCount ? ` (${failureCount} failed)` : "") +
         ".",
     );
-  };
-
-  const handleMatchCardClick = (matchId: string, canSelect: boolean) => {
-    if (longPressTriggeredRef.current) {
-      longPressTriggeredRef.current = false;
-      return;
-    }
-    if (selectionMode && canSelect) {
-      toggleMatchSelection(matchId);
-      return;
-    }
-    if (!selectionMode && matchTab !== "upcoming") {
-      setSelectedMatchId(matchId);
-    }
   };
 
   const getMatchBanner = (m: Match) => {
@@ -1588,7 +1565,6 @@ function MatchesSection({
         return;
       }
     }
-    if (selectedMatchId === m.id) setSelectedMatchId(null);
     if (playersMatchId === m.id) setPlayersMatchId(null);
     onSuccess({ silent: true });
   };
@@ -1596,7 +1572,6 @@ function MatchesSection({
   const handleOpenEditMatch = (m: Match) => {
     populateMatchForm(m);
     setView("edit");
-    setSelectedMatchId(null);
     setPlayersMatchId(null);
   };
 
@@ -1643,6 +1618,72 @@ function MatchesSection({
     } finally {
       setStartingMatch(false);
     }
+  };
+
+  const openEditRoomModal = (m: Match) => {
+    setEditRoomTarget(m);
+    setEditRoomCode(m.roomCode ?? "");
+    setEditRoomPassword(m.roomPassword ?? "");
+  };
+
+  const closeEditRoomModal = () => {
+    if (savingRoom) return;
+    setEditRoomTarget(null);
+    setEditRoomCode("");
+    setEditRoomPassword("");
+  };
+
+  const handleSaveRoomInfo = async () => {
+    if (!editRoomTarget) return;
+    if (!editRoomCode.trim() || !editRoomPassword.trim()) {
+      alert("Please enter room ID and password");
+      return;
+    }
+    setSavingRoom(true);
+    try {
+      const res = await fetch(`/api/admin/matches/${editRoomTarget.id}`, {
+        method: "PATCH",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          roomCode: editRoomCode.trim(),
+          roomPassword: editRoomPassword.trim(),
+        }),
+      });
+      if (!res.ok) throw new Error(await res.text());
+      setEditRoomTarget(null);
+      setEditRoomCode("");
+      setEditRoomPassword("");
+      onSuccess({ silent: true });
+    } catch (err) {
+      alert(err instanceof Error ? err.message : "Failed to save room info");
+    } finally {
+      setSavingRoom(false);
+    }
+  };
+
+  const handleCancelOngoingMatch = async (m: Match) => {
+    const spots = m.participantCount ?? 0;
+    const refundNote =
+      spots > 0
+        ? ` All ${spots} registered player${spots === 1 ? "" : "s"} will receive a refund.`
+        : "";
+    if (!confirm(`Cancel "${m.title}"?${refundNote}`)) return;
+    try {
+      const res = await fetch(`/api/admin/matches/${m.id}/cancel`, { method: "POST" });
+      if (!res.ok) throw new Error(await res.text());
+      if (playersMatchId === m.id) setPlayersMatchId(null);
+      onSuccess({ silent: true });
+    } catch (err) {
+      alert(err instanceof Error ? err.message : "Failed to cancel match");
+    }
+  };
+
+  const openPlayersView = (
+    matchId: string,
+    mode: "manage" | "leaderboard" | "registered",
+  ) => {
+    setPlayersViewMode(mode);
+    setPlayersMatchId(matchId);
   };
 
   const handleSubmit = async (e: React.FormEvent) => {
@@ -1721,7 +1762,6 @@ function MatchesSection({
       setTotalPrizePool("");
       setRankRewards([...DEFAULT_RANK_REWARDS]);
       handleImageClear();
-      setSelectedMatchId(data?.id ?? null);
       setMatchTab("upcoming");
       setView("list");
       onSuccess();
@@ -1787,7 +1827,7 @@ function MatchesSection({
                 <p className="text-zinc-500 text-sm">Review players registration, details and map parameters.</p>
               </div>
             </div>
-            {!selectedMatchId && !playersMatchId && !selectionMode && (
+            {!playersMatchId && !selectionMode && (
               <div className="flex flex-col gap-2 shrink-0">
                 <button
                   type="button"
@@ -1812,22 +1852,15 @@ function MatchesSection({
           </div>
 
           <div className="admin-match-list space-y-6">
-            {selectedMatchId ? (
-              <MatchDetailView
-                matchId={selectedMatchId}
-                games={games}
-                modes={modes}
-                users={users}
-                onBack={() => setSelectedMatchId(null)}
-                onSuccess={onSuccess}
-              />
-            ) : playersMatchId ? (
+            {playersMatchId ? (
               <MatchDetailView
                 matchId={playersMatchId}
                 games={games}
                 modes={modes}
                 users={users}
                 playersOnly
+                readOnly={playersViewMode === "leaderboard"}
+                leaderboardMode={playersViewMode === "leaderboard"}
                 onBack={() => setPlayersMatchId(null)}
                 onSuccess={onSuccess}
               />
@@ -1840,7 +1873,6 @@ function MatchesSection({
                       type="button"
                       onClick={() => {
                         setMatchTab(t);
-                        setSelectedMatchId(null);
                         setPlayersMatchId(null);
                         exitSelectionMode();
                       }}
@@ -1906,8 +1938,11 @@ function MatchesSection({
                             e.preventDefault();
                             enterSelectionMode(m.id);
                           }}
-                          onLongPressStart={() => canSelect && !selectionMode && startLongPress(m.id)}
-                          onLongPressEnd={clearLongPressTimer}
+                          onLongPress={
+                            canSelect && !selectionMode
+                              ? () => enterSelectionMode(m.id)
+                              : undefined
+                          }
                           onStart={
                             matchTab === "upcoming" && m.status === "upcoming"
                               ? () => openStartMatchModal(m)
@@ -1915,16 +1950,33 @@ function MatchesSection({
                           }
                           onSeePlayers={
                             matchTab === "upcoming" && m.status === "upcoming"
-                              ? () => setPlayersMatchId(m.id)
+                              ? () => openPlayersView(m.id, "registered")
                               : undefined
                           }
                           onManage={
-                            matchTab !== "upcoming"
-                              ? () => setSelectedMatchId(m.id)
+                            matchTab === "ongoing" && m.status === "ongoing"
+                              ? () => openPlayersView(m.id, "manage")
+                              : undefined
+                          }
+                          onEditRoom={
+                            matchTab === "ongoing" && m.status === "ongoing"
+                              ? () => openEditRoomModal(m)
+                              : undefined
+                          }
+                          onCancelMatch={
+                            matchTab === "ongoing" && m.status === "ongoing"
+                              ? () => handleCancelOngoingMatch(m)
+                              : undefined
+                          }
+                          onSeeLeaderboard={
+                            matchTab === "finished"
+                              ? () => openPlayersView(m.id, "leaderboard")
                               : undefined
                           }
                           onEdit={m.status === "upcoming" ? () => handleOpenEditMatch(m) : undefined}
-                          onDelete={() => handleDeleteMatch(m)}
+                          onDelete={
+                            m.status === "upcoming" ? () => handleDeleteMatch(m) : undefined
+                          }
                         />
                       );
                     })}
@@ -2197,6 +2249,114 @@ function MatchesSection({
           starting={startingMatch}
         />
       )}
+
+      {editRoomTarget && (
+        <EditRoomModal
+          matchTitle={editRoomTarget.title}
+          roomCode={editRoomCode}
+          roomPassword={editRoomPassword}
+          onRoomCodeChange={setEditRoomCode}
+          onRoomPasswordChange={setEditRoomPassword}
+          onClose={closeEditRoomModal}
+          onSave={handleSaveRoomInfo}
+          saving={savingRoom}
+        />
+      )}
+    </div>
+  );
+}
+
+function EditRoomModal({
+  matchTitle,
+  roomCode,
+  roomPassword,
+  onRoomCodeChange,
+  onRoomPasswordChange,
+  onClose,
+  onSave,
+  saving,
+}: {
+  matchTitle: string;
+  roomCode: string;
+  roomPassword: string;
+  onRoomCodeChange: (v: string) => void;
+  onRoomPasswordChange: (v: string) => void;
+  onClose: () => void;
+  onSave: () => void;
+  saving: boolean;
+}) {
+  const ref = useRef<HTMLDivElement>(null);
+
+  useEffect(() => {
+    const esc = (e: KeyboardEvent) => {
+      if (e.key === "Escape" && !saving) onClose();
+    };
+    document.addEventListener("keydown", esc);
+    return () => document.removeEventListener("keydown", esc);
+  }, [onClose, saving]);
+
+  return (
+    <div className="fixed inset-0 z-50 flex items-end justify-center sm:items-center sm:p-4">
+      <div
+        className="absolute inset-0 bg-black/60 backdrop-blur-sm"
+        onClick={() => !saving && onClose()}
+        aria-hidden
+      />
+      <div
+        ref={ref}
+        className="relative z-10 w-full max-w-md overflow-hidden rounded-t-2xl sm:rounded-2xl border border-zinc-200 bg-white shadow-xl"
+        onClick={(e) => e.stopPropagation()}
+      >
+        <div className="flex items-start justify-between gap-3 border-b border-zinc-100 px-5 py-4 sm:px-6">
+          <div className="min-w-0">
+            <h2 className="text-lg font-bold text-zinc-900">Edit Room Info</h2>
+            <p className="mt-0.5 truncate text-sm text-zinc-500">{matchTitle}</p>
+          </div>
+          <button
+            type="button"
+            onClick={onClose}
+            disabled={saving}
+            className="shrink-0 rounded-lg p-2 text-zinc-400 transition hover:bg-zinc-100 hover:text-zinc-700 disabled:opacity-50"
+            aria-label="Close"
+          >
+            <svg className="h-5 w-5" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+              <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M6 18L18 6M6 6l12 12" />
+            </svg>
+          </button>
+        </div>
+
+        <div className="space-y-4 px-5 py-5 sm:px-6">
+          <div>
+            <label className="mb-1.5 block text-xs font-medium text-zinc-600">Room ID</label>
+            <input
+              type="text"
+              value={roomCode}
+              onChange={(e) => onRoomCodeChange(e.target.value)}
+              className="admin-input w-full rounded-xl px-4 py-2.5 text-sm text-zinc-900 outline-none"
+              placeholder="ROOM123"
+              autoFocus
+            />
+          </div>
+          <div>
+            <label className="mb-1.5 block text-xs font-medium text-zinc-600">Password</label>
+            <input
+              type="text"
+              value={roomPassword}
+              onChange={(e) => onRoomPasswordChange(e.target.value)}
+              className="admin-input w-full rounded-xl px-4 py-2.5 text-sm text-zinc-900 outline-none"
+              placeholder="pass123"
+            />
+          </div>
+          <button
+            type="button"
+            onClick={onSave}
+            disabled={saving || !roomCode.trim() || !roomPassword.trim()}
+            className="w-full rounded-xl admin-btn-primary py-3 text-sm font-semibold disabled:cursor-not-allowed disabled:opacity-50"
+          >
+            {saving ? "Saving..." : "Save Room Info"}
+          </button>
+        </div>
+      </div>
     </div>
   );
 }
@@ -2744,6 +2904,8 @@ function MatchParticipantsPanel({
   match,
   participants,
   isOngoing,
+  readOnly = false,
+  leaderboardMode = false,
   localKills,
   setLocalKills,
   localRank,
@@ -2755,6 +2917,8 @@ function MatchParticipantsPanel({
   match: MatchWithParticipants;
   participants: ParticipantWithStats[];
   isOngoing: boolean;
+  readOnly?: boolean;
+  leaderboardMode?: boolean;
   localKills: Record<string, number[]>;
   setLocalKills: React.Dispatch<React.SetStateAction<Record<string, number[]>>>;
   localRank: Record<string, number | "">;
@@ -2763,23 +2927,33 @@ function MatchParticipantsPanel({
   onUpdateParticipant: (p: ParticipantWithStats) => void;
   getKills: (p: ParticipantWithStats) => number[];
 }) {
+  const displayList = leaderboardMode
+    ? [...participants].sort((a, b) => {
+        const ra = typeof a.rank === "number" && a.rank >= 1 ? a.rank : 9999;
+        const rb = typeof b.rank === "number" && b.rank >= 1 ? b.rank : 9999;
+        return ra - rb;
+      })
+    : participants;
+
+  const panelTitle = leaderboardMode
+    ? `Leaderboard (${participants.length})`
+    : `Players Joined (${participants.length})`;
+
   return (
     <div className="rounded-xl border border-zinc-200 bg-zinc-50/30 p-4 sm:p-6">
       <div className="mb-3 flex flex-col gap-1 sm:flex-row sm:items-baseline">
-        <h3 className="text-sm font-medium text-zinc-600">
-          Players Joined ({participants.length})
-        </h3>
-        {isOngoing && (
+        <h3 className="text-sm font-medium text-zinc-600">{panelTitle}</h3>
+        {isOngoing && !readOnly && (
           <span className="text-xs font-normal text-zinc-900">
             Edit kills/rank, then click Update to save. Changes apply only after Update.
           </span>
         )}
       </div>
-      {participants.length === 0 ? (
+      {displayList.length === 0 ? (
         <p className="text-sm text-zinc-500">No players registered yet</p>
       ) : (
         <ul className="space-y-3">
-          {participants.map((p, i) => {
+          {displayList.map((p, i) => {
             const killsArr = getKills(p);
             const totalKills = killsArr.reduce((sum, k) => sum + k, 0);
             const rankVal = localRank[p.id] ?? "";
@@ -2792,12 +2966,13 @@ function MatchParticipantsPanel({
               (p.teamMembers ?? []).some((t) => (t.kills ?? 0) > 0);
             const position = typeof p.rank === "number" && p.rank >= 1 ? p.rank : i + 1;
             const coins = calcCoinsForPosition(position, totalKills, match.prizePool);
+            const showRankBadge = hasBeenUpdated || leaderboardMode;
             return (
               <li
                 key={p.id}
                 className="flex flex-col gap-3 rounded-lg bg-zinc-100/30 p-4 transition sm:flex-row sm:flex-wrap sm:items-center sm:gap-3"
               >
-                {hasBeenUpdated && (
+                {showRankBadge && (
                   <span className="shrink-0 text-sm font-bold text-zinc-500">#{position}</span>
                 )}
                 <div className="min-w-0 flex-1 space-y-2">
@@ -2812,7 +2987,7 @@ function MatchParticipantsPanel({
                         <div className="text-base font-bold text-zinc-900">{t.inGameName}</div>
                         <div className="text-xs opacity-60 text-zinc-500">{t.inGameUid}</div>
                       </div>
-                      {isOngoing && (
+                      {isOngoing && !readOnly && (
                         <div className="flex items-center gap-1">
                           <label className="text-xs text-zinc-500">Kills</label>
                           <input
@@ -2830,10 +3005,15 @@ function MatchParticipantsPanel({
                           />
                         </div>
                       )}
+                      {readOnly && (killsArr[ti] ?? 0) > 0 && (
+                        <span className="rounded-lg bg-zinc-200/80 px-2 py-0.5 text-xs font-medium text-zinc-700">
+                          {killsArr[ti]} kills
+                        </span>
+                      )}
                     </div>
                   ))}
                 </div>
-                {isOngoing && (
+                {isOngoing && !readOnly && (
                   <>
                     <div className="flex items-center gap-1">
                       <label className="text-xs text-zinc-500">Rank</label>
@@ -2865,8 +3045,8 @@ function MatchParticipantsPanel({
                     )}
                   </>
                 )}
-                {hasBeenUpdated && (
-                  <span className="shrink-0 self-start rounded-lg bg-amber-500/20 px-3 py-1 font-medium text-amber-300 sm:self-center">
+                {(hasBeenUpdated || leaderboardMode) && (
+                  <span className="shrink-0 self-start rounded-lg bg-amber-500/20 px-3 py-1 font-medium text-amber-700 sm:self-center">
                     {coins} coins
                   </span>
                 )}
@@ -2887,6 +3067,8 @@ function MatchDetailView({
   onBack,
   onSuccess,
   playersOnly = false,
+  readOnly = false,
+  leaderboardMode = false,
 }: {
   matchId: string;
   games: Game[];
@@ -2895,6 +3077,8 @@ function MatchDetailView({
   onBack: () => void;
   onSuccess: (opts?: { silent?: boolean }) => void;
   playersOnly?: boolean;
+  readOnly?: boolean;
+  leaderboardMode?: boolean;
 }) {
   const [match, setMatch] = useState<MatchWithParticipants | null>(null);
   const [loading, setLoading] = useState(true);
@@ -3036,7 +3220,9 @@ function MatchDetailView({
         <div className="rounded-xl border border-zinc-200 bg-white p-4 sm:p-5">
           <h2 className="text-lg font-bold text-zinc-900">{match.title}</h2>
           <p className="mt-1 text-sm text-zinc-500">
-            {participants.length} player{participants.length === 1 ? "" : "s"} registered
+            {leaderboardMode
+              ? `Final results · ${participants.length} player${participants.length === 1 ? "" : "s"}`
+              : `${participants.length} player${participants.length === 1 ? "" : "s"} registered`}
           </p>
         </div>
 
@@ -3044,6 +3230,8 @@ function MatchDetailView({
           match={match}
           participants={participants}
           isOngoing={isOngoing}
+          readOnly={readOnly}
+          leaderboardMode={leaderboardMode}
           localKills={localKills}
           setLocalKills={setLocalKills}
           localRank={localRank}
@@ -3053,7 +3241,7 @@ function MatchDetailView({
           getKills={getKills}
         />
 
-        {isOngoing && (
+        {isOngoing && !readOnly && (
           <div className="rounded-xl border border-emerald-500/20 bg-emerald-500/5 p-6">
             <h3 className="mb-4 text-sm font-medium text-emerald-700">Finish Match</h3>
             <p className="mb-4 text-xs text-zinc-500">

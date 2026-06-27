@@ -1,6 +1,6 @@
 "use client";
 
-import { useState } from "react";
+import { useRef, useCallback, useState } from "react";
 import { formatMatchDateTime } from "@/lib/format-match-datetime";
 
 export type MatchType = "solo" | "duo" | "squad";
@@ -39,18 +39,23 @@ export function getAdminMatchBanner(item: { image?: string | null; title: string
   return "/images/ff_image.jpg";
 }
 
+const LONG_PRESS_MS = 500;
+const MOVE_THRESHOLD_PX = 10;
+
 type AdminMatchCardProps = {
   item: AdminMatchCardItem;
   isSelected?: boolean;
   selectionMode?: boolean;
   canSelect?: boolean;
   onCardClick?: () => void;
-  onLongPressStart?: () => void;
-  onLongPressEnd?: () => void;
+  onLongPress?: () => void;
   onContextMenu?: (e: React.MouseEvent) => void;
   onManage?: () => void;
   onStart?: () => void;
   onSeePlayers?: () => void;
+  onEditRoom?: () => void;
+  onCancelMatch?: () => void;
+  onSeeLeaderboard?: () => void;
   onEdit?: () => void;
   onDelete?: () => void;
   manageLabel?: string;
@@ -63,18 +68,26 @@ export function AdminMatchCard({
   selectionMode = false,
   canSelect = false,
   onCardClick,
-  onLongPressStart,
-  onLongPressEnd,
+  onLongPress,
   onContextMenu,
   onManage,
   onStart,
   onSeePlayers,
+  onEditRoom,
+  onCancelMatch,
+  onSeeLeaderboard,
   onEdit,
   onDelete,
   manageLabel = "Manage Match",
   showProgress = true,
 }: AdminMatchCardProps) {
   const [expanded, setExpanded] = useState(false);
+  const longPressTimerRef = useRef<number | null>(null);
+  const longPressFiredRef = useRef(false);
+  const pressStartRef = useRef<{ x: number; y: number } | null>(null);
+  const pressMovedRef = useRef(false);
+  const cleanupRef = useRef<(() => void) | null>(null);
+
   const spotsTaken = item.participantCount ?? 0;
   const maxParticipants = item.maxParticipants ?? 100;
   const spotsLeft = Math.max(0, maxParticipants - spotsTaken);
@@ -82,19 +95,106 @@ export function AdminMatchCard({
     item.infoLine ??
     (item.scheduledAt ? `Starts: ${formatMatchDateTime(item.scheduledAt)}` : undefined);
 
+  const clearLongPress = useCallback(() => {
+    if (longPressTimerRef.current !== null) {
+      window.clearTimeout(longPressTimerRef.current);
+      longPressTimerRef.current = null;
+    }
+    cleanupRef.current?.();
+    cleanupRef.current = null;
+    pressStartRef.current = null;
+  }, []);
+
+  const getCoords = (e: MouseEvent | TouchEvent | React.MouseEvent | React.TouchEvent) => {
+    if ("touches" in e && e.touches.length > 0) {
+      return { x: e.touches[0].clientX, y: e.touches[0].clientY };
+    }
+    if ("clientX" in e) {
+      return { x: e.clientX, y: e.clientY };
+    }
+    return null;
+  };
+
+  const handlePressStart = (e: React.MouseEvent | React.TouchEvent) => {
+    if (!canSelect || selectionMode || !onLongPress) return;
+
+    longPressFiredRef.current = false;
+    pressMovedRef.current = false;
+    const coords = getCoords(e);
+    if (!coords) return;
+    pressStartRef.current = coords;
+
+    const onMove = (ev: MouseEvent | TouchEvent) => {
+      const pos = getCoords(ev);
+      const start = pressStartRef.current;
+      if (!pos || !start) return;
+      const dx = pos.x - start.x;
+      const dy = pos.y - start.y;
+      if (Math.hypot(dx, dy) > MOVE_THRESHOLD_PX) {
+        pressMovedRef.current = true;
+        clearLongPress();
+      }
+    };
+
+    const onScroll = () => {
+      pressMovedRef.current = true;
+      clearLongPress();
+    };
+
+    const onEnd = () => {
+      clearLongPress();
+    };
+
+    window.addEventListener("mousemove", onMove);
+    window.addEventListener("mouseup", onEnd);
+    window.addEventListener("touchmove", onMove, { passive: true });
+    window.addEventListener("touchend", onEnd);
+    window.addEventListener("touchcancel", onEnd);
+    window.addEventListener("scroll", onScroll, true);
+
+    cleanupRef.current = () => {
+      window.removeEventListener("mousemove", onMove);
+      window.removeEventListener("mouseup", onEnd);
+      window.removeEventListener("touchmove", onMove);
+      window.removeEventListener("touchend", onEnd);
+      window.removeEventListener("touchcancel", onEnd);
+      window.removeEventListener("scroll", onScroll, true);
+    };
+
+    longPressTimerRef.current = window.setTimeout(() => {
+      if (!pressMovedRef.current) {
+        longPressFiredRef.current = true;
+        onLongPress();
+      }
+      clearLongPress();
+    }, LONG_PRESS_MS);
+  };
+
+  const handlePressEnd = () => {
+    clearLongPress();
+  };
+
+  const handleCardClick = () => {
+    if (longPressFiredRef.current) {
+      longPressFiredRef.current = false;
+      return;
+    }
+    onCardClick?.();
+  };
+
   return (
     <div
       className={`admin-content-card relative rounded-2xl overflow-hidden transition flex flex-col cursor-pointer ${
         isSelected ? "ring-2 ring-zinc-900 border-zinc-400" : "hover:border-zinc-300"
       }`}
-      onClick={onCardClick}
+      onClick={handleCardClick}
       onContextMenu={onContextMenu}
-      onMouseDown={onLongPressStart}
-      onMouseUp={onLongPressEnd}
-      onMouseLeave={onLongPressEnd}
-      onTouchStart={onLongPressStart}
-      onTouchEnd={onLongPressEnd}
-      onTouchCancel={onLongPressEnd}
+      onMouseDown={handlePressStart}
+      onMouseUp={handlePressEnd}
+      onMouseLeave={handlePressEnd}
+      onTouchStart={handlePressStart}
+      onTouchEnd={handlePressEnd}
+      onTouchCancel={handlePressEnd}
     >
       {isSelected && (
         <div className="absolute top-3 right-3 z-10 flex h-7 w-7 items-center justify-center rounded-full bg-zinc-900 text-white text-sm font-bold shadow-lg">
@@ -233,7 +333,18 @@ export function AdminMatchCard({
           </button>
         ) : (
           <div className="space-y-2">
-            {onStart && onSeePlayers ? (
+            {onSeeLeaderboard ? (
+              <button
+                type="button"
+                onClick={(e) => {
+                  e.stopPropagation();
+                  onSeeLeaderboard();
+                }}
+                className="w-full bg-zinc-900 hover:bg-zinc-800 text-white rounded-xl py-2.5 text-xs font-semibold transition"
+              >
+                See Leaderboard
+              </button>
+            ) : onStart && onSeePlayers ? (
               <>
                 <button
                   type="button"
@@ -254,6 +365,39 @@ export function AdminMatchCard({
                   className="w-full rounded-xl border border-zinc-300 bg-white py-2.5 text-xs font-semibold text-zinc-800 hover:bg-zinc-50 transition"
                 >
                   See Players
+                </button>
+              </>
+            ) : onManage && onEditRoom && onCancelMatch ? (
+              <>
+                <button
+                  type="button"
+                  onClick={(e) => {
+                    e.stopPropagation();
+                    onManage();
+                  }}
+                  className="w-full bg-zinc-900 hover:bg-zinc-800 text-white rounded-xl py-2.5 text-xs font-semibold transition"
+                >
+                  {manageLabel}
+                </button>
+                <button
+                  type="button"
+                  onClick={(e) => {
+                    e.stopPropagation();
+                    onEditRoom();
+                  }}
+                  className="w-full rounded-xl border border-zinc-300 bg-white py-2.5 text-xs font-semibold text-zinc-800 hover:bg-zinc-50 transition"
+                >
+                  Edit Room Info
+                </button>
+                <button
+                  type="button"
+                  onClick={(e) => {
+                    e.stopPropagation();
+                    onCancelMatch();
+                  }}
+                  className="w-full rounded-xl bg-rose-600 hover:bg-rose-500 py-2.5 text-xs font-semibold text-white transition"
+                >
+                  Cancel Match
                 </button>
               </>
             ) : onManage ? (
