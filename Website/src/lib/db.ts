@@ -19,6 +19,7 @@ import {
   fetchConfirmedSlotParticipants,
   finishMatchSlotPayouts,
   getMatchSlotAvailability,
+  getParticipantCountsForMatches,
   holdMatchSlots,
   refundSlotBookingsForMatch,
 } from "./db-match-slots";
@@ -984,28 +985,7 @@ export const db = {
     const matchIds = matchesList.map((m) => m.id);
     if (matchIds.length === 0) return matchesList;
 
-    const countMap: Record<string, number> = {};
-    const { data: countRows, error: viewError } = await supabase
-      .from("v_match_participant_counts")
-      .select("match_id, participant_count")
-      .in("match_id", matchIds);
-
-    if (!viewError && countRows) {
-      for (const row of countRows) {
-        countMap[row.match_id] = row.participant_count ?? 0;
-      }
-    } else {
-      const { data: participantsData } = await supabase
-        .from("app_match_participants")
-        .select("match_id")
-        .in("match_id", matchIds);
-      if (participantsData) {
-        for (const p of participantsData) {
-          countMap[p.match_id] = (countMap[p.match_id] ?? 0) + 1;
-        }
-      }
-    }
-
+    const countMap = await getParticipantCountsForMatches(matchIds);
     for (const m of matchesList) {
       m.participantCount = countMap[m.id] ?? 0;
     }
@@ -1119,7 +1099,8 @@ export const db = {
               rank: (p as { squad_rank?: number }).squad_rank ?? undefined,
             })),
           ];
-    return { ...toMatch(matchRow), participants };
+    const countMap = await getParticipantCountsForMatches([id]);
+    return { ...toMatch(matchRow), participants, participantCount: countMap[id] ?? 0 };
   },
 
   getMatchSlotAvailability,

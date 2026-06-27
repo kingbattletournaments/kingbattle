@@ -29,15 +29,24 @@ CREATE INDEX IF NOT EXISTS idx_match_slot_bookings_hold_expiry
   ON match_slot_bookings (hold_expires_at)
   WHERE status = 'held';
 
--- Participant count = confirmed player slots (not legacy registration rows)
+-- Participant count: slot-based matches use confirmed slots; legacy matches use app_match_participants.
 CREATE OR REPLACE VIEW v_match_participant_counts AS
 SELECT
   m.id AS match_id,
-  COALESCE(
-    (SELECT COUNT(*)::int FROM match_slot_bookings b
-     WHERE b.match_id = m.id AND b.status = 'confirmed'),
-    0
-  ) AS participant_count
+  CASE
+    WHEN EXISTS (
+      SELECT 1 FROM match_slot_bookings b WHERE b.match_id = m.id
+    ) THEN (
+      SELECT COUNT(*)::INTEGER
+      FROM match_slot_bookings b
+      WHERE b.match_id = m.id AND b.status = 'confirmed'
+    )
+    ELSE (
+      SELECT COUNT(*)::INTEGER
+      FROM app_match_participants p
+      WHERE p.match_id = m.id
+    )
+  END AS participant_count
 FROM matches m;
 
 -- Remove expired holds before any slot operation

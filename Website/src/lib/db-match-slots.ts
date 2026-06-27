@@ -28,6 +28,48 @@ export type SlotBookingRow = {
   created_at: string;
 };
 
+/** Count joined spots per match (slot bookings or legacy participants). */
+export async function getParticipantCountsForMatches(
+  matchIds: string[],
+): Promise<Record<string, number>> {
+  const supabase = getSupabase();
+  if (!supabase || matchIds.length === 0) return {};
+
+  const countMap: Record<string, number> = {};
+  for (const id of matchIds) countMap[id] = 0;
+
+  const { data: slotActivity } = await supabase
+    .from("match_slot_bookings")
+    .select("match_id, status")
+    .in("match_id", matchIds);
+
+  const usesSlots = new Set<string>();
+  const slotConfirmedCount: Record<string, number> = {};
+  for (const row of slotActivity ?? []) {
+    usesSlots.add(row.match_id);
+    if (row.status === "confirmed") {
+      slotConfirmedCount[row.match_id] = (slotConfirmedCount[row.match_id] ?? 0) + 1;
+    }
+  }
+
+  const legacyIds = matchIds.filter((id) => !usesSlots.has(id));
+  const legacyCount: Record<string, number> = {};
+  if (legacyIds.length > 0) {
+    const { data: legacyRows } = await supabase
+      .from("app_match_participants")
+      .select("match_id")
+      .in("match_id", legacyIds);
+    for (const row of legacyRows ?? []) {
+      legacyCount[row.match_id] = (legacyCount[row.match_id] ?? 0) + 1;
+    }
+  }
+
+  for (const id of matchIds) {
+    countMap[id] = usesSlots.has(id) ? (slotConfirmedCount[id] ?? 0) : (legacyCount[id] ?? 0);
+  }
+  return countMap;
+}
+
 export async function cleanupExpiredSlotHolds(matchId?: string): Promise<void> {
   const supabase = getSupabase();
   if (!supabase) return;
