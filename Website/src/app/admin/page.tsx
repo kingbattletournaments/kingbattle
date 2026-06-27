@@ -1,7 +1,7 @@
 "use client";
 
-import { useState, useEffect, useRef, useCallback, useMemo } from "react";
-import { useRouter } from "next/navigation";
+import { Suspense, useState, useEffect, useRef, useCallback, useMemo } from "react";
+import { usePathname, useRouter, useSearchParams } from "next/navigation";
 import Image from "next/image";
 import { LoadingSpinner } from "@/components/ui";
 import { buildMatchScheduleTimes } from "@/lib/match-preset-schedule";
@@ -16,6 +16,12 @@ import {
   type AdminTabId,
   type AdminPanelTab,
 } from "@/lib/admin-tabs";
+import {
+  buildAdminNavQuery,
+  readAdminNavParams,
+  type AdminMatchStatus,
+  type AdminMatchView,
+} from "@/lib/admin-nav";
 import { AdminTabIcon } from "@/components/admin/AdminTabIcon";
 import { AdminMatchCard, getAdminMatchBanner } from "@/components/admin/AdminMatchCard";
 import type { DashboardStats } from "@/lib/dashboard-stats";
@@ -77,11 +83,44 @@ type MatchBulkSelectControls = {
 };
 
 export default function AdminPage() {
+  return (
+    <Suspense
+      fallback={
+        <div className="admin-page flex min-h-screen items-center justify-center">
+          <LoadingSpinner size="lg" label="Loading admin..." />
+        </div>
+      }
+    >
+      <AdminPageInner />
+    </Suspense>
+  );
+}
+
+function AdminPageInner() {
   const router = useRouter();
+  const pathname = usePathname();
+  const searchParams = useSearchParams();
+  const navParams = useMemo(() => readAdminNavParams(searchParams), [searchParams]);
+
+  const patchAdminNav = useCallback(
+    (patch: Parameters<typeof buildAdminNavQuery>[1]) => {
+      const qs = buildAdminNavQuery(searchParams, patch);
+      router.replace(qs ? `${pathname}?${qs}` : pathname, { scroll: false });
+    },
+    [pathname, router, searchParams],
+  );
+
   const [session, setSession] = useState<AdminSession | null>(null);
-  const [tab, setTab] = useState<Tab>("dashboard");
-  const [selectedGameId, setSelectedGameId] = useState<string | null>(null);
-  const [selectedModeId, setSelectedModeId] = useState<string | null>(null);
+  const selectedGameId = navParams.game;
+  const selectedModeId = navParams.mode;
+  const tab = useMemo((): Tab => {
+    const raw = navParams.tab as Tab;
+    const allowed: Tab[] = [
+      "dashboard",
+      ...ALL_ADMIN_TAB_IDS.filter((id) => (session ? canAccessAdminTab(session, id) : true)),
+    ];
+    return allowed.includes(raw) ? raw : "dashboard";
+  }, [navParams.tab, session]);
   const [games, setGames] = useState<Game[]>([]);
   const [modes, setModes] = useState<GameMode[]>([]);
   const [matches, setMatches] = useState<Match[]>([]);
@@ -110,18 +149,56 @@ export default function AdminPage() {
       ]
     : [];
 
+  const goToTab = useCallback(
+    (nextTab: Tab) => {
+      const patch: Parameters<typeof buildAdminNavQuery>[1] = { tab: nextTab };
+      if (nextTab !== "modes" && nextTab !== "presets") {
+        patch.game = null;
+        patch.mode = null;
+        patch.mstatus = null;
+        patch.match = null;
+        patch.mview = null;
+      } else if (hasSingleGameAccess && session && games.length > 0) {
+        patch.game = session.allowedGameIds[0];
+        patch.mode = null;
+      }
+      patchAdminNav(patch);
+    },
+    [games.length, hasSingleGameAccess, patchAdminNav, session],
+  );
+
   useEffect(() => {
     if (!session) return;
-    const validTabs: Tab[] = ["dashboard", ...ALL_ADMIN_TAB_IDS.filter((id) => canAccessAdminTab(session, id))];
-    setTab((prev) => (validTabs.length > 0 && !validTabs.includes(prev) ? "dashboard" : prev));
-  }, [session]);
+    const allowed: Tab[] = [
+      "dashboard",
+      ...ALL_ADMIN_TAB_IDS.filter((id) => canAccessAdminTab(session, id)),
+    ];
+    if (!allowed.includes(navParams.tab as Tab)) {
+      patchAdminNav({
+        tab: "dashboard",
+        game: null,
+        mode: null,
+        mstatus: null,
+        match: null,
+        mview: null,
+      });
+    }
+  }, [session, navParams.tab, patchAdminNav]);
 
   // Automatically select the first game (Free Fire) to bypass the Games selection screen
   useEffect(() => {
+    if (tab !== "modes") return;
     if (games.length > 0 && !selectedGameId && !selectedModeId) {
-      setSelectedGameId(games[0].id);
+      patchAdminNav({ game: games[0].id });
     }
-  }, [games, selectedGameId, selectedModeId]);
+  }, [games, selectedGameId, selectedModeId, tab, patchAdminNav]);
+
+  // Restore game id when only mode is present in the URL (e.g. after refresh)
+  useEffect(() => {
+    if (!selectedModeId || selectedGameId || modes.length === 0) return;
+    const mode = modes.find((m) => m.id === selectedModeId);
+    if (mode) patchAdminNav({ game: mode.gameId });
+  }, [selectedModeId, selectedGameId, modes, patchAdminNav]);
 
   const fetchSessionAndCore = async (): Promise<AdminSession | null> => {
     const sessionRes = await fetch("/api/admin/session");
@@ -291,7 +368,18 @@ export default function AdminPage() {
   useEffect(() => {
     (async () => {
       const adminSession = await fetchSessionAndCore();
-      if (adminSession) await loadDashboardStats();
+      if (!adminSession) return;
+      const params = readAdminNavParams(searchParams);
+      const initialTab = params.tab as Tab;
+      const allowed: Tab[] = [
+        "dashboard",
+        ...ALL_ADMIN_TAB_IDS.filter((id) => canAccessAdminTab(adminSession, id)),
+      ];
+      if (initialTab === "dashboard" || !allowed.includes(initialTab)) {
+        await loadDashboardStats();
+      } else {
+        await loadTabData(initialTab, adminSession);
+      }
     })();
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
@@ -410,15 +498,8 @@ export default function AdminPage() {
               key={t.id}
               type="button"
               onClick={() => {
-                setTab(t.id);
+                goToTab(t.id);
                 setSidebarOpen(false);
-                if (t.id !== "modes" && t.id !== "presets") {
-                  setSelectedGameId(null);
-                  setSelectedModeId(null);
-                } else if (hasSingleGameAccess && session && games.length > 0) {
-                  setSelectedGameId(session.allowedGameIds[0]);
-                  setSelectedModeId(null);
-                }
               }}
               className={`admin-sidebar-item ${tab === t.id ? "active" : ""}`}
             >
@@ -455,7 +536,7 @@ export default function AdminPage() {
                   stats={dashboardStats}
                   loading={tabLoading}
                   session={session}
-                  onNavigate={(t) => setTab(t)}
+                  onNavigate={(t) => goToTab(t as Tab)}
                   onRefresh={() => loadDashboardStats(true)}
                 />
               )}
@@ -469,9 +550,13 @@ export default function AdminPage() {
                     matchPresets={matchPresets.filter((p) => p.gameModeId === selectedModeId)}
                     modeId={selectedModeId}
                     users={users}
+                    matchStatus={navParams.mstatus}
+                    playersMatchId={navParams.match}
+                    playersViewMode={navParams.mview}
+                    onNavChange={(patch) => patchAdminNav(patch)}
                     onBack={() => {
                       setMatchBulkSelect(null);
-                      setSelectedModeId(null);
+                      patchAdminNav({ mode: null, match: null, mview: null, mstatus: null });
                     }}
                     onSuccess={(opts?: { silent?: boolean }) => { refreshCurrentTab(!opts?.silent); showMsg("ok", "Updated"); }}
                     onBulkSelectChange={setMatchBulkSelect}
@@ -482,13 +567,13 @@ export default function AdminPage() {
                     modes={modes.filter((m) => m.gameId === selectedGameId)}
                     gameId={selectedGameId}
                     onBack={undefined}
-                    onSelectMode={(id) => setSelectedModeId(id)}
+                    onSelectMode={(id) => patchAdminNav({ mode: id, match: null, mview: null, mstatus: null })}
                     onSuccess={() => { refreshCurrentTab(); showMsg("ok", "Mode created"); }}
                   />
                 ) : (
                   <GamesSection
                     games={games}
-                    onSelectGame={(id) => setSelectedGameId(id)}
+                    onSelectGame={(id) => patchAdminNav({ game: id, mode: null })}
                     onSuccess={() => { refreshCurrentTab(); showMsg("ok", "Game created"); }}
                     showCreateGame={!hasSpecificGameAccess}
                   />
@@ -1327,6 +1412,10 @@ function MatchesSection({
   matchPresets,
   modeId,
   users,
+  matchStatus,
+  playersMatchId,
+  playersViewMode,
+  onNavChange,
   onBack,
   onSuccess,
   onBulkSelectChange,
@@ -1337,6 +1426,14 @@ function MatchesSection({
   matchPresets: MatchPreset[];
   modeId: string;
   users: User[];
+  matchStatus: AdminMatchStatus;
+  playersMatchId: string | null;
+  playersViewMode: AdminMatchView;
+  onNavChange: (patch: {
+    mstatus?: AdminMatchStatus | null;
+    match?: string | null;
+    mview?: AdminMatchView | null;
+  }) => void;
   onBack: () => void;
   onSuccess: (opts?: { silent?: boolean }) => void;
   onBulkSelectChange?: (controls: MatchBulkSelectControls | null) => void;
@@ -1354,7 +1451,7 @@ function MatchesSection({
   const [imageFile, setImageFile] = useState<File | null>(null);
   const [imagePreview, setImagePreview] = useState<string | null>(null);
   const [submitting, setSubmitting] = useState(false);
-  const [matchTab, setMatchTab] = useState<"upcoming" | "ongoing" | "finished">("upcoming");
+  const matchTab = matchStatus;
   const [expandedMatchId, setExpandedMatchId] = useState<string | null>(null);
   const [selectedPresetId, setSelectedPresetId] = useState("");
   const [presetMatchDate, setPresetMatchDate] = useState(() => new Date().toISOString().slice(0, 10));
@@ -1369,8 +1466,6 @@ function MatchesSection({
   const [startRoomCode, setStartRoomCode] = useState("");
   const [startRoomPassword, setStartRoomPassword] = useState("");
   const [startingMatch, setStartingMatch] = useState(false);
-  const [playersMatchId, setPlayersMatchId] = useState<string | null>(null);
-  const [playersViewMode, setPlayersViewMode] = useState<"manage" | "leaderboard" | "registered">("registered");
   const [editRoomTarget, setEditRoomTarget] = useState<Match | null>(null);
   const [editRoomCode, setEditRoomCode] = useState("");
   const [editRoomPassword, setEditRoomPassword] = useState("");
@@ -1425,7 +1520,7 @@ function MatchesSection({
   const enterSelectionMode = useCallback((matchId: string) => {
     setSelectionMode(true);
     setSelectedMatchIds(new Set([matchId]));
-    setPlayersMatchId(null);
+    onNavChange({ match: null, mview: null });
     setExpandedMatchId(null);
   }, []);
 
@@ -1566,14 +1661,14 @@ function MatchesSection({
         return;
       }
     }
-    if (playersMatchId === m.id) setPlayersMatchId(null);
+    if (playersMatchId === m.id) onNavChange({ match: null, mview: null });
     onSuccess({ silent: true });
   };
 
   const handleOpenEditMatch = (m: Match) => {
     populateMatchForm(m);
     setView("edit");
-    setPlayersMatchId(null);
+    onNavChange({ match: null, mview: null });
   };
 
   const openStartMatchModal = (m: Match) => {
@@ -1612,7 +1707,7 @@ function MatchesSection({
       setStartMatchTarget(null);
       setStartRoomCode("");
       setStartRoomPassword("");
-      setMatchTab("ongoing");
+      onNavChange({ mstatus: "ongoing", match: null, mview: null });
       onSuccess({ silent: true });
     } catch (err) {
       alert(err instanceof Error ? err.message : "Failed to start match");
@@ -1672,7 +1767,7 @@ function MatchesSection({
     try {
       const res = await fetch(`/api/admin/matches/${m.id}/cancel`, { method: "POST" });
       if (!res.ok) throw new Error(await res.text());
-      if (playersMatchId === m.id) setPlayersMatchId(null);
+      if (playersMatchId === m.id) onNavChange({ match: null, mview: null });
       onSuccess({ silent: true });
     } catch (err) {
       alert(err instanceof Error ? err.message : "Failed to cancel match");
@@ -1683,8 +1778,7 @@ function MatchesSection({
     matchId: string,
     mode: "manage" | "leaderboard" | "registered",
   ) => {
-    setPlayersViewMode(mode);
-    setPlayersMatchId(matchId);
+    onNavChange({ match: matchId, mview: mode });
   };
 
   const handleSubmit = async (e: React.FormEvent) => {
@@ -1768,7 +1862,7 @@ function MatchesSection({
       setTotalPrizePool("");
       setRankRewards([...DEFAULT_RANK_REWARDS]);
       handleImageClear();
-      setMatchTab("upcoming");
+      onNavChange({ mstatus: "upcoming", match: null, mview: null });
       setView("list");
       onSuccess();
     } catch (err) {
@@ -1804,7 +1898,7 @@ function MatchesSection({
       }
       const data = await res.json();
       setView("list");
-      setMatchTab("upcoming");
+      onNavChange({ mstatus: "upcoming", match: null, mview: null });
       onSuccess({ silent: true });
       alert(`Created ${data.count} match${data.count === 1 ? "" : "es"}`);
     } catch (err) {
@@ -1867,7 +1961,7 @@ function MatchesSection({
                 playersOnly
                 readOnly={playersViewMode === "leaderboard"}
                 leaderboardMode={playersViewMode === "leaderboard"}
-                onBack={() => setPlayersMatchId(null)}
+                onBack={() => onNavChange({ match: null, mview: null })}
                 onSuccess={onSuccess}
               />
             ) : (
@@ -1878,8 +1972,7 @@ function MatchesSection({
                       key={t}
                       type="button"
                       onClick={() => {
-                        setMatchTab(t);
-                        setPlayersMatchId(null);
+                        onNavChange({ mstatus: t, match: null, mview: null });
                         exitSelectionMode();
                       }}
                       className={`rounded-full px-3.5 py-2 text-xs font-semibold sm:px-5 sm:text-sm ${
