@@ -1,5 +1,6 @@
 package com.kingbattle.data.api
 
+import com.google.gson.annotations.SerializedName
 import com.kingbattle.domain.model.*
 import retrofit2.Response
 import retrofit2.http.*
@@ -37,7 +38,7 @@ interface KingBattleApi {
     suspend fun joinMatch(
         @Path("id") matchId: String,
         @Body request: JoinMatchRequest
-    ): Response<Unit>
+    ): Response<JoinMatchResponse>
 
     @GET("matches/{id}/slots")
     suspend fun getMatchSlots(@Path("id") matchId: String): Response<MatchSlotsResponse>
@@ -124,6 +125,12 @@ interface KingBattleApi {
 }
 
 // Request Models
+data class JoinMatchResponse(
+    val success: Boolean = true,
+    @SerializedName("slotsBooked") val slotsBooked: Int? = null,
+    @SerializedName("participantCount") val participantCount: Int? = null,
+)
+
 data class JoinMatchRequest(
     val in_game_name: String? = null,
     val in_game_uid: String? = null,

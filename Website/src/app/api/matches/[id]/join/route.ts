@@ -1,8 +1,8 @@
 import { NextResponse } from "next/server";
 import { invalidateAdminApiCache } from "@/lib/admin-api-cache";
+import { getParticipantCountsForMatches } from "@/lib/db-match-slots";
 import { getStore } from "@/lib/store";
 import { getAppUserId } from "@/lib/app-auth";
-
 export async function POST(
   request: Request,
   { params }: { params: Promise<{ id: string }> },
@@ -37,7 +37,9 @@ export async function POST(
         return NextResponse.json({ error: result.error }, { status: 400 });
       }
       invalidateAdminApiCache("public:matches:");
-      return NextResponse.json({ success: true, slotsBooked: slots.length });
+      const countMap = await getParticipantCountsForMatches([matchId]);
+      const participantCount = countMap[matchId] ?? slots.length;
+      return NextResponse.json({ success: true, slotsBooked: slots.length, participantCount });
     }
 
     const inGameName = body.inGameName || body.in_game_name;
@@ -66,7 +68,11 @@ export async function POST(
       return NextResponse.json({ error: result.error }, { status: 400 });
     }
     invalidateAdminApiCache("public:matches:");
-    return NextResponse.json({ success: true });
+    const countMap = await getParticipantCountsForMatches([matchId]);
+    return NextResponse.json({
+      success: true,
+      participantCount: countMap[matchId] ?? 1,
+    });
   } catch {
     return NextResponse.json({ error: "Invalid request" }, { status: 400 });
   }

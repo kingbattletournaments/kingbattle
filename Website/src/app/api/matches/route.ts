@@ -1,15 +1,11 @@
 import { NextResponse } from "next/server";
 import { getStore } from "@/lib/store";
-import {
-  getAdminApiCache,
-  setAdminApiCache,
-} from "@/lib/admin-api-cache";
 
 export const dynamic = "force-dynamic";
 
-const CACHE_TTL_MS = 30 * 1000;
-const CACHE_HEADERS = {
-  "Cache-Control": "private, max-age=30, stale-while-revalidate=60",
+const NO_STORE = {
+  "Cache-Control": "no-store, no-cache, must-revalidate",
+  Pragma: "no-cache",
 } as const;
 
 export async function GET(request: Request) {
@@ -19,13 +15,8 @@ export async function GET(request: Request) {
     return NextResponse.json({ error: "modeId required" }, { status: 400 });
   }
 
-  const cacheKey = `public:matches:${modeId}`;
-  const cached = getAdminApiCache<unknown>(cacheKey, CACHE_TTL_MS);
-  if (cached) return NextResponse.json(cached, { headers: CACHE_HEADERS });
-
   const store = getStore();
   const matches = await store.matches(modeId);
   const withStartsAt = matches.map((m) => ({ ...m, startsAt: m.scheduledAt }));
-  setAdminApiCache(cacheKey, withStartsAt);
-  return NextResponse.json(withStartsAt, { headers: CACHE_HEADERS });
+  return NextResponse.json(withStartsAt, { headers: NO_STORE });
 }

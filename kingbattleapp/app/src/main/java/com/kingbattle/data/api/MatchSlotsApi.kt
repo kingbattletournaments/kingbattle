@@ -8,6 +8,7 @@ data class MatchSlotsResponse(
     @SerializedName("teamSize") val teamSize: Int,
     @SerializedName("teamCount") val teamCount: Int,
     @SerializedName("entryFee") val entryFee: Int,
+    @SerializedName("joinedCount") val joinedCount: Int? = null,
     val slots: List<SlotInfo>,
 )
 

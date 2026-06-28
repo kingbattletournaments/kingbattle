@@ -111,16 +111,18 @@ class MatchDetailViewModel @Inject constructor(
             if (detailRes != null && detailRes.isSuccessful && detailRes.body() != null) {
                 val fresh = detailRes.body()!!
                 val current = _matchDetail.value
+                val count = MatchJoinNotifier.applyServerCount(matchId, fresh.participant_count)
+                val matchWithCount = fresh.copy(participant_count = count)
                 _matchDetail.value = if (current != null) {
                     current.copy(
-                        match = fresh,
+                        match = matchWithCount,
                         prize_pool = fresh.prizePool ?: current.prize_pool,
                     )
                 } else {
-                    MatchDetail(fresh, emptyList(), fresh.prizePool)
+                    MatchDetail(matchWithCount, emptyList(), fresh.prizePool)
                 }
                 if (SelectedMatchHolder.selectedMatch?.id == matchId) {
-                    SelectedMatchHolder.selectedMatch = fresh
+                    SelectedMatchHolder.selectedMatch = matchWithCount
                 }
             } else if (detailRes == null) {
                 _errorMessage.value = "Match detail request timed out"
@@ -167,7 +169,8 @@ class MatchDetailViewModel @Inject constructor(
                 )
                 if (response.isSuccessful) {
                     tokenManager.saveJoinedMatch(matchId)
-                    // Refresh participants silently
+                    val participantCount = response.body()?.participantCount
+                    MatchJoinNotifier.notifyJoined(matchId, 1, participantCount)
                     fetchExtras(matchId)
                     onSuccess()
                 } else {

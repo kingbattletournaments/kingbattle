@@ -40,11 +40,17 @@ object NetworkModule {
 
     @Provides
     @Singleton
+    fun provideNoCacheInterceptor(): NoCacheInterceptor = NoCacheInterceptor()
+
+    @Provides
+    @Singleton
     fun provideOkHttpClient(
         logging: HttpLoggingInterceptor,
         authInterceptor: AuthInterceptor,
+        noCacheInterceptor: NoCacheInterceptor,
     ): OkHttpClient {
         return OkHttpClient.Builder()
+            .addInterceptor(noCacheInterceptor)
             .addInterceptor(logging)
             .addInterceptor(authInterceptor)
             .connectTimeout(TIMEOUT, TimeUnit.SECONDS)

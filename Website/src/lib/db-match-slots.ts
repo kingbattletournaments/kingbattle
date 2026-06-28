@@ -43,29 +43,28 @@ export async function getParticipantCountsForMatches(
     .select("match_id, status")
     .in("match_id", matchIds);
 
-  const usesSlots = new Set<string>();
   const slotConfirmedCount: Record<string, number> = {};
   for (const row of slotActivity ?? []) {
-    usesSlots.add(row.match_id);
     if (row.status === "confirmed") {
       slotConfirmedCount[row.match_id] = (slotConfirmedCount[row.match_id] ?? 0) + 1;
     }
   }
 
-  const legacyIds = matchIds.filter((id) => !usesSlots.has(id));
+  const { data: legacyRows } = await supabase
+    .from("app_match_participants")
+    .select("match_id")
+    .in("match_id", matchIds);
+
   const legacyCount: Record<string, number> = {};
-  if (legacyIds.length > 0) {
-    const { data: legacyRows } = await supabase
-      .from("app_match_participants")
-      .select("match_id")
-      .in("match_id", legacyIds);
-    for (const row of legacyRows ?? []) {
-      legacyCount[row.match_id] = (legacyCount[row.match_id] ?? 0) + 1;
-    }
+  for (const row of legacyRows ?? []) {
+    legacyCount[row.match_id] = (legacyCount[row.match_id] ?? 0) + 1;
   }
 
   for (const id of matchIds) {
-    countMap[id] = usesSlots.has(id) ? (slotConfirmedCount[id] ?? 0) : (legacyCount[id] ?? 0);
+    const confirmed = slotConfirmedCount[id] ?? 0;
+    const legacy = legacyCount[id] ?? 0;
+    // Confirmed slots are authoritative; fall back to legacy when none confirmed yet.
+    countMap[id] = confirmed > 0 ? confirmed : legacy;
   }
   return countMap;
 }
@@ -86,6 +85,7 @@ export async function getMatchSlotAvailability(
       teamSize: number;
       teamCount: number;
       entryFee: number;
+      joinedCount: number;
       slots: SlotAvailability[];
     }
   | { error: string }
@@ -115,12 +115,15 @@ export async function getMatchSlotAvailability(
     appUserId,
   );
 
+  const joinedCount = (bookings ?? []).filter((b) => b.status === "confirmed").length;
+
   return {
     matchType,
     maxParticipants,
     teamSize,
     teamCount: Math.floor(maxParticipants / teamSize),
     entryFee: match.entry_fee ?? 0,
+    joinedCount,
     slots,
   };
 }

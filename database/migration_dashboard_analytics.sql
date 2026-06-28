@@ -2,14 +2,28 @@
 -- Run in Supabase SQL Editor after migration_production_schema.sql.
 
 -- ---------------------------------------------------------------------------
--- Match participant counts (replaces full-table scan in app code)
+-- Match participant counts (slot bookings + legacy fallback)
 -- ---------------------------------------------------------------------------
 CREATE OR REPLACE VIEW public.v_match_participant_counts AS
 SELECT
-  match_id,
-  COUNT(*)::INTEGER AS participant_count
-FROM public.app_match_participants
-GROUP BY match_id;
+  m.id AS match_id,
+  COALESCE(
+    NULLIF(
+      (
+        SELECT COUNT(*)::INTEGER
+        FROM public.match_slot_bookings b
+        WHERE b.match_id = m.id AND b.status = 'confirmed'
+      ),
+      0
+    ),
+    (
+      SELECT COUNT(*)::INTEGER
+      FROM public.app_match_participants p
+      WHERE p.match_id = m.id
+    ),
+    0
+  ) AS participant_count
+FROM public.matches m;
 
 -- ---------------------------------------------------------------------------
 -- User metrics (single row)

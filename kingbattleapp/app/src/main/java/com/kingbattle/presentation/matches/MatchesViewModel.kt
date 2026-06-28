@@ -58,27 +58,36 @@ class MatchesViewModel @Inject constructor(
 
     /** Apply optimistic slot count + refresh list after a join completed elsewhere in the app. */
     fun onExternalJoinCompleted(modeId: String) {
-        val pending = MatchJoinNotifier.consumePending() ?: run {
-            syncJoinedMatches()
-            refreshData(modeId)
-            return
-        }
-        val (matchId, slotsBooked) = pending
+        val pending = MatchJoinNotifier.consumePending()
         syncJoinedMatches()
-        _matches.value = _matches.value.map { m ->
-            if (m.id == matchId) {
-                m.copy(participant_count = (m.participant_count ?: 0) + slotsBooked)
-            } else m
-        }
-        SelectedMatchHolder.selectedMatch?.let { selected ->
-            if (selected.id == matchId) {
-                SelectedMatchHolder.selectedMatch = selected.copy(
-                    participant_count = (selected.participant_count ?: 0) + slotsBooked,
-                )
+        if (pending != null) {
+            val (matchId, slotsBooked) = pending
+            _matches.value = _matches.value.map { m ->
+                if (m.id == matchId) {
+                    val effective = MatchJoinNotifier.applyServerCount(
+                        matchId,
+                        (m.participant_count ?: 0) + slotsBooked,
+                    )
+                    m.copy(participant_count = effective)
+                } else m
+            }
+            SelectedMatchHolder.selectedMatch?.let { selected ->
+                if (selected.id == matchId) {
+                    val effective = MatchJoinNotifier.applyServerCount(
+                        matchId,
+                        (selected.participant_count ?: 0) + slotsBooked,
+                    )
+                    SelectedMatchHolder.selectedMatch = selected.copy(participant_count = effective)
+                }
             }
         }
         refreshData(modeId)
     }
+
+    private fun mergeParticipantCounts(serverMatches: List<Match>): List<Match> =
+        serverMatches.map { m ->
+            m.copy(participant_count = MatchJoinNotifier.applyServerCount(m.id, m.participant_count))
+        }
 
     fun refreshData(modeId: String) {
         loadData(modeId, force = true)
@@ -143,6 +152,7 @@ class MatchesViewModel @Inject constructor(
                     val joinedMatchIds = serverJoinedMatchIds + localJoinedMatchIds
 
                     _matches.value = loadedMatches.filter { joinedMatchIds.contains(it.id) }
+                        .let { mergeParticipantCounts(it) }
                 } else {
                     val isSolo = modeId.contains("solo", ignoreCase = true)
                     val isDuo = modeId.contains("duo", ignoreCase = true)
@@ -161,7 +171,7 @@ class MatchesViewModel @Inject constructor(
                     try {
                         val response = api.getMatches(modeId)
                         if (response.isSuccessful && response.body() != null) {
-                            _matches.value = response.body()!!
+                            _matches.value = mergeParticipantCounts(response.body()!!)
                         } else {
                             _matches.value = emptyList()
                         }
@@ -214,7 +224,8 @@ class MatchesViewModel @Inject constructor(
                 if (response.isSuccessful) {
                     tokenManager.saveJoinedMatch(matchId)
                     _joinedMatches.value = _joinedMatches.value + matchId
-                    MatchJoinNotifier.notifyJoined(matchId, 1)
+                    val participantCount = response.body()?.participantCount
+                    MatchJoinNotifier.notifyJoined(matchId, 1, participantCount)
                     onSuccess()
                 } else {
                     val errorBody = response.errorBody()?.string() ?: "Failed to join match"

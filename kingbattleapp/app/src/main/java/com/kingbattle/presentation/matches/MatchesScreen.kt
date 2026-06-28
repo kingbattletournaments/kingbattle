@@ -273,6 +273,10 @@ fun MatchesScreen(
                                 MatchCard(
                                     match = match,
                                     isJoined = joinedMatchesState.value.contains(match.id),
+                                    participantCountOverride = MatchJoinNotifier.applyServerCount(
+                                        match.id,
+                                        match.participant_count,
+                                    ),
                                     onJoinClick = {
                                         val user = userState.value
                                         val totalCoins = (user?.coins ?: 0) + (user?.won_coins ?: 0)
@@ -304,6 +308,7 @@ fun MatchesScreen(
 fun MatchCard(
     match: Match,
     isJoined: Boolean = false,
+    participantCountOverride: Int? = null,
     onJoinClick: () -> Unit,
     onCardClick: () -> Unit
 ) {
@@ -604,7 +609,7 @@ fun MatchCard(
                 }
 
                 // 4. Progress bar and Join button row
-                val spotsTaken = match.participant_count ?: 0
+                val spotsTaken = participantCountOverride ?: match.participant_count ?: 0
                 val progress = spotsTaken.toFloat() / match.max_participants.toFloat()
 
                 Row(
