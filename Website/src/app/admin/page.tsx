@@ -3156,13 +3156,14 @@ function MatchDetailView({
   const [match, setMatch] = useState<MatchWithParticipants | null>(null);
   const [loading, setLoading] = useState(true);
   const [finishing, setFinishing] = useState(false);
-  const [updatingParticipant, setUpdatingParticipant] = useState<string | null>(null);
-  const [localKills, setLocalKills] = useState<Record<string, number[]>>({});
-  const [localRank, setLocalRank] = useState<Record<string, number | "">>({});
+  const [localKills, setLocalKills] = useState<Record<string, string>>({});
+  const [localRank, setLocalRank] = useState<Record<string, string>>({});
   const [subView, setSubView] = useState<"overview" | "players">(playersOnly ? "players" : "overview");
+  const [formInitialized, setFormInitialized] = useState(false);
 
   useEffect(() => {
     let cancelled = false;
+    setFormInitialized(false);
     fetch(`/api/admin/matches/${matchId}`)
       .then((r) => r.json())
       .then((data) => {
@@ -3176,41 +3177,60 @@ function MatchDetailView({
   }, [matchId]);
 
   useEffect(() => {
-    if (!match?.participants) return;
-    const nextKills: Record<string, number[]> = {};
-    const nextRank: Record<string, number | ""> = {};
+    if (!match?.participants || formInitialized) return;
+    const nextKills: Record<string, string> = {};
+    const nextRank: Record<string, string> = {};
     for (const p of match.participants) {
-      nextKills[p.id] = (p.teamMembers ?? []).map((t) => t.kills ?? 0);
-      nextRank[p.id] = p.rank ?? "";
+      const k = p.teamMembers?.[0]?.kills ?? 0;
+      nextKills[p.id] = k > 0 ? String(k) : "";
+      nextRank[p.id] =
+        typeof p.rank === "number" && p.rank >= 1 ? String(p.rank) : "";
     }
-    setLocalKills((prev) => ({ ...prev, ...nextKills }));
-    setLocalRank((prev) => ({ ...prev, ...nextRank }));
-  }, [match]);
+    setLocalKills(nextKills);
+    setLocalRank(nextRank);
+    setFormInitialized(true);
+  }, [match, formInitialized]);
 
   const mode = modes.find((m) => m.id === match?.gameModeId);
   const gameName = mode ? games.find((g) => g.id === mode.gameId)?.name ?? "?" : "?";
 
   const handleFinish = async () => {
     if (!match) return;
-    const allUpdated = (match.participants ?? []).every(
-      (p) =>
-        (typeof p.rank === "number" && p.rank >= 1) ||
-        (p.teamMembers ?? []).some((t) => (t.kills ?? 0) > 0)
-    );
-    if (!allUpdated && (match.participants ?? []).length > 0) {
-      alert("Update rank and kills for all participants before finishing the match.");
+    const participants = match.participants ?? [];
+    const missingRank = participants.filter((p) => {
+      const rankStr = localRank[p.id] ?? "";
+      return rankStr.trim() === "";
+    });
+    if (missingRank.length > 0) {
+      alert("Enter an individual rank for every player before finishing the match.");
       return;
     }
-    if (!confirm("Finish this match? Coins will be transferred to winners. This cannot be undone.")) return;
+    if (!confirm("Finish this match? Results will be saved and coins transferred. This cannot be undone.")) return;
     setFinishing(true);
     try {
-      const res = await fetch(`/api/admin/matches/${matchId}/finish`, { method: "POST" });
+      const payload = {
+        participants: participants.map((p) => {
+          const killsStr = localKills[p.id] ?? "";
+          const rankStr = localRank[p.id] ?? "";
+          return {
+            id: p.id,
+            kills: [killsStr.trim() === "" ? 0 : Number(killsStr) || 0],
+            rank: Number(rankStr) || undefined,
+          };
+        }),
+      };
+      const res = await fetch(`/api/admin/matches/${matchId}/finish`, {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify(payload),
+      });
       if (!res.ok) {
         const err = await res.json().catch(() => ({}));
         throw new Error(err.error || "Failed to finish match");
       }
       const data = await res.json();
       setMatch(data);
+      setFormInitialized(false);
       onSuccess({ silent: true });
     } catch (err) {
       alert(err instanceof Error ? err.message : "Failed to finish match");
@@ -3229,34 +3249,6 @@ function MatchDetailView({
   const maxParticipants = match.maxParticipants ?? 100;
   const joinedCount = match.participantCount ?? participants.length;
   const spotsLeft = Math.max(0, maxParticipants - joinedCount);
-  const getKills = (p: ParticipantWithStats) =>
-    localKills[p.id] ?? (p.teamMembers ?? []).map((t) => t.kills ?? 0);
-
-  const handleUpdateParticipant = async (p: ParticipantWithStats) => {
-    setUpdatingParticipant(p.id);
-    try {
-      const kills = localKills[p.id] ?? (p.teamMembers ?? []).map((t) => t.kills ?? 0);
-      const rankVal = localRank[p.id];
-      const body: { kills?: number[]; rank?: number } = {};
-      const serverKills = (p.teamMembers ?? []).map((t) => t.kills ?? 0);
-      if (JSON.stringify(kills) !== JSON.stringify(serverKills)) body.kills = kills;
-      if (typeof rankVal === "number" && rankVal >= 1 && rankVal !== p.rank) body.rank = rankVal;
-      if (Object.keys(body).length === 0) return;
-      const res = await fetch(`/api/admin/matches/${matchId}/participants/${p.id}`, {
-        method: "PATCH",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify(body),
-      });
-      if (!res.ok) throw new Error(await res.text());
-      const data = await res.json();
-      setMatch(data);
-      onSuccess({ silent: true });
-    } catch (err) {
-      alert(err instanceof Error ? err.message : "Failed to update");
-    } finally {
-      setUpdatingParticipant(null);
-    }
-  };
 
   const statusLabel =
     match.status === "ongoing"
@@ -3308,16 +3300,13 @@ function MatchDetailView({
           setLocalKills={setLocalKills}
           localRank={localRank}
           setLocalRank={setLocalRank}
-          updatingParticipant={updatingParticipant}
-          onUpdateParticipant={handleUpdateParticipant}
-          getKills={getKills}
         />
 
         {isOngoing && !readOnly && (
           <div className="rounded-xl border border-emerald-500/20 bg-emerald-500/5 p-6">
             <h3 className="mb-4 text-sm font-medium text-emerald-700">Finish Match</h3>
             <p className="mb-4 text-xs text-zinc-500">
-              After updating rank and kills for all participants, click Finish to complete the match.
+              Enter kills and individual rank for every player above, then finish the match. Team placement is calculated automatically from player ranks.
             </p>
             <button
               type="button"

@@ -11,6 +11,12 @@ import {
   validateSlotSelection,
   type SlotAvailability,
 } from "./match-slots";
+import {
+  computeTeamOrdinals,
+  calcRankRewardCoins,
+  splitRankRewardAmongPlayers,
+  type TeamGroup,
+} from "./admin-match-teams";
 
 export type SlotBookingRow = {
   id: string;
@@ -391,40 +397,44 @@ export async function finishMatchSlotPayouts(
     teams.get(teamNum)!.push(s);
   }
 
+  const teamGroups: TeamGroup[] = Array.from(teams.entries()).map(([teamNumber, teamSlots]) => ({
+    teamNumber,
+    players: teamSlots.map((s) => ({
+      id: s.id,
+      userId: s.app_user_id,
+      slotIndex: s.slot_index,
+      teamMembers: [
+        {
+          inGameName: s.in_game_name ?? "",
+          inGameUid: s.in_game_uid ?? "",
+          kills: s.kills ?? 0,
+        },
+      ],
+      rank: s.squad_rank ?? undefined,
+    })),
+  }));
+
+  const teamOrdinals = computeTeamOrdinals(teamGroups);
+
   const rankCoinsByUser = new Map<string, number>();
-  for (const [, teamSlots] of Array.from(teams.entries())) {
-    const teamRank = teamSlots.find((s) => typeof s.squad_rank === "number" && s.squad_rank >= 1)?.squad_rank;
-    if (!teamRank) continue;
-    let rankReward = 0;
-    for (const r of rankRewards) {
-      if (teamRank >= r.fromRank && teamRank <= r.toRank) {
-        rankReward = r.coins;
-        break;
-      }
-    }
+  for (const [teamNum, teamSlots] of Array.from(teams.entries())) {
+    const teamOrdinal = teamOrdinals.get(teamNum);
+    if (!teamOrdinal) continue;
+
+    const rankReward = calcRankRewardCoins(teamOrdinal, { coinsPerKill: cpk, rankRewards });
     if (rankReward <= 0) continue;
 
-    const killsByUser = new Map<string, number>();
-    let teamKills = 0;
-    for (const s of teamSlots) {
-      const k = s.kills ?? 0;
-      teamKills += k;
-      killsByUser.set(s.app_user_id, (killsByUser.get(s.app_user_id) ?? 0) + k);
-    }
+    const players = teamSlots.map((s) => ({
+      id: s.id,
+      kills: s.kills ?? 0,
+      userId: s.app_user_id,
+    }));
 
-    const uniqueUsers = Array.from(killsByUser.keys());
-    if (uniqueUsers.length === 1) {
-      rankCoinsByUser.set(uniqueUsers[0], (rankCoinsByUser.get(uniqueUsers[0]) ?? 0) + rankReward);
-    } else if (teamKills > 0) {
-      for (const [uid, k] of Array.from(killsByUser.entries())) {
-        const share = Math.floor((rankReward * k) / teamKills);
-        if (share > 0) rankCoinsByUser.set(uid, (rankCoinsByUser.get(uid) ?? 0) + share);
-      }
-    } else {
-      const share = Math.floor(rankReward / uniqueUsers.length);
-      for (const uid of uniqueUsers) {
-        rankCoinsByUser.set(uid, (rankCoinsByUser.get(uid) ?? 0) + share);
-      }
+    const shares = splitRankRewardAmongPlayers(rankReward, players);
+    for (const [pid, coins] of Array.from(shares.entries())) {
+      const row = teamSlots.find((s) => s.id === pid);
+      if (!row) continue;
+      rankCoinsByUser.set(row.app_user_id, (rankCoinsByUser.get(row.app_user_id) ?? 0) + coins);
     }
   }
 

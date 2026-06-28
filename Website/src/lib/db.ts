@@ -23,7 +23,6 @@ import {
   holdMatchSlots,
   refundSlotBookingsForMatch,
 } from "./db-match-slots";
-import { slotToTeamNumber, teamSlotIndices } from "./match-slots";
 
 
 // Types matching admin-store
@@ -1377,21 +1376,16 @@ export const db = {
     if (!supabase) return null;
     const { data: slotRow } = await supabase
       .from("match_slot_bookings")
-      .select("slot_index")
+      .select("id")
       .eq("id", participantId)
       .eq("match_id", matchId)
       .single();
     if (slotRow) {
-      const { data: matchRow } = await supabase.from("matches").select("match_type, max_participants").eq("id", matchId).single();
-      const matchType = matchRow?.match_type ?? "solo";
-      const maxParticipants = matchRow?.max_participants ?? 100;
-      const teamNum = slotToTeamNumber(slotRow.slot_index as number, matchType);
-      const indices = teamSlotIndices(teamNum, matchType, maxParticipants);
       const { error } = await supabase
         .from("match_slot_bookings")
         .update({ squad_rank: rank })
-        .eq("match_id", matchId)
-        .in("slot_index", indices);
+        .eq("id", participantId)
+        .eq("match_id", matchId);
       return error ? null : { id: participantId };
     }
     const { data: mp } = await supabase.from("match_participants").select("id").eq("id", participantId).eq("match_id", matchId).single();
@@ -1407,9 +1401,33 @@ export const db = {
     return null;
   },
 
-  async finishMatch(id: string): Promise<DbMatch | null> {
+  async bulkUpdateParticipants(
+    matchId: string,
+    updates: { id: string; kills?: number[]; rank?: number }[],
+  ): Promise<boolean> {
+    for (const u of updates) {
+      if (Array.isArray(u.kills)) {
+        const ok = await db.updateParticipantKills(matchId, u.id, u.kills);
+        if (!ok) return false;
+      }
+      if (typeof u.rank === "number" && u.rank >= 1) {
+        const ok = await db.updateParticipantRank(matchId, u.id, u.rank);
+        if (!ok) return false;
+      }
+    }
+    return true;
+  },
+
+  async finishMatch(
+    id: string,
+    participantUpdates?: { id: string; kills?: number[]; rank?: number }[],
+  ): Promise<DbMatch | null> {
     const supabase = getSupabase();
     if (!supabase) return null;
+    if (participantUpdates?.length) {
+      const ok = await db.bulkUpdateParticipants(id, participantUpdates);
+      if (!ok) return null;
+    }
     const match = await db.getMatch(id);
     if (!match || match.status !== "ongoing") return null;
     const participants = match.participants ?? [];

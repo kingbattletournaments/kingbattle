@@ -61,7 +61,14 @@ export function getStore() {
       updateMatchRoomInfo: (id: string, roomCode: string, roomPassword: string) => db.updateMatchRoomInfo(id, roomCode, roomPassword),
       startMatch: (id: string, roomCode?: string, roomPassword?: string) => db.startMatch(id, roomCode, roomPassword),
       cancelMatch: (id: string) => db.cancelMatch(id),
-      finishMatch: (id: string) => db.finishMatch(id),
+      finishMatch: (
+        id: string,
+        participantUpdates?: { id: string; kills?: number[]; rank?: number }[],
+      ) => db.finishMatch(id, participantUpdates),
+      bulkUpdateParticipants: (
+        matchId: string,
+        updates: { id: string; kills?: number[]; rank?: number }[],
+      ) => db.bulkUpdateParticipants(matchId, updates),
       deleteMatch: (id: string) => db.deleteMatch(id),
       renameMatch: (id: string, title: string) => db.renameMatch(id, title),
       updateMatch: (
