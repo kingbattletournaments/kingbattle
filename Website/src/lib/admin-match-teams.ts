@@ -1,4 +1,4 @@
-import { slotToTeamNumber, teamSizeFor, teamSlotIndices } from "@/lib/match-slots";
+import { slotPositionInTeam, slotToTeamNumber, teamSizeFor, teamSlotIndices } from "@/lib/match-slots";
 
 export type AdminSlotParticipant = {
   id: string;
@@ -15,8 +15,15 @@ export type PrizePool = {
   rankRewards: RankReward[];
 };
 
+export type TeamSlotEntry = {
+  slotPositionInTeam: number;
+  globalSlotIndex: number;
+  participant: (AdminSlotParticipant & { slotIndex: number }) | null;
+};
+
 export type TeamGroup = {
   teamNumber: number;
+  slots: TeamSlotEntry[];
   players: (AdminSlotParticipant & { slotIndex: number })[];
 };
 
@@ -54,13 +61,18 @@ export function getFilledTeams(
 
   for (let tn = 1; tn <= teamCount; tn++) {
     const indices = teamSlotIndices(tn, matchType, maxParticipants);
-    const players = indices
-      .map((si) => {
-        const p = slotMap.get(si);
-        return p ? { ...p, slotIndex: si } : null;
-      })
+    const slots: TeamSlotEntry[] = indices.map((globalSlotIndex) => {
+      const p = slotMap.get(globalSlotIndex);
+      return {
+        slotPositionInTeam: slotPositionInTeam(globalSlotIndex, matchType),
+        globalSlotIndex,
+        participant: p ? { ...p, slotIndex: globalSlotIndex } : null,
+      };
+    });
+    const players = slots
+      .map((s) => s.participant)
       .filter((p): p is AdminSlotParticipant & { slotIndex: number } => !!p);
-    if (players.length > 0) teams.push({ teamNumber: tn, players });
+    if (players.length > 0) teams.push({ teamNumber: tn, slots, players });
   }
 
   return teams;

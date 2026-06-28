@@ -5,6 +5,7 @@
 import { getSupabase } from "./supabase";
 import {
   buildSlotGrid,
+  slotPositionInTeam,
   slotToTeamNumber,
   teamSizeFor,
   validateMaxParticipants,
@@ -399,6 +400,23 @@ export async function finishMatchSlotPayouts(
 
   const teamGroups: TeamGroup[] = Array.from(teams.entries()).map(([teamNumber, teamSlots]) => ({
     teamNumber,
+    slots: teamSlots.map((s) => ({
+      slotPositionInTeam: slotPositionInTeam(s.slot_index, matchType),
+      globalSlotIndex: s.slot_index,
+      participant: {
+        id: s.id,
+        userId: s.app_user_id,
+        slotIndex: s.slot_index,
+        teamMembers: [
+          {
+            inGameName: s.in_game_name ?? "",
+            inGameUid: s.in_game_uid ?? "",
+            kills: s.kills ?? 0,
+          },
+        ],
+        rank: s.squad_rank ?? undefined,
+      },
+    })),
     players: teamSlots.map((s) => ({
       id: s.id,
       userId: s.app_user_id,

@@ -5,6 +5,7 @@ import { teamSizeFor } from "@/lib/match-slots";
 import {
   type AdminSlotParticipant,
   type PrizePool,
+  type TeamSlotEntry,
   calcKillCoins,
   calcPlayerWinnings,
   computeTeamOrdinals,
@@ -24,78 +25,114 @@ function parseRankInput(value: string | undefined): number | undefined {
   return Number.isFinite(n) && n >= 1 ? Math.floor(n) : undefined;
 }
 
-function PlayerRow({
-  name,
-  kills,
-  rank,
+function SlotCell({
+  slotPositionInTeam,
+  participant,
   readOnly,
   isOngoing,
-  showWinnings,
+  leaderboardMode,
+  kills,
+  rank,
   winnings,
   onKillsChange,
   onRankChange,
 }: {
-  name: string;
-  kills?: string;
-  rank?: string;
+  slotPositionInTeam: number;
+  participant: AdminSlotParticipant | null;
   readOnly: boolean;
   isOngoing: boolean;
-  showWinnings?: boolean;
+  leaderboardMode: boolean;
+  kills: string;
+  rank: string;
   winnings?: number;
   onKillsChange?: (v: string) => void;
   onRankChange?: (v: string) => void;
 }) {
+  const filled = !!participant;
+  const ign = participant?.teamMembers?.[0]?.inGameName?.trim();
+  const uid = participant?.teamMembers?.[0]?.inGameUid?.trim();
+
   return (
-    <div className="flex flex-wrap items-center gap-x-4 gap-y-2 border-b border-zinc-100 py-2.5 last:border-0">
-      <span className="min-w-0 flex-1 truncate text-sm font-medium text-zinc-900">{name || "—"}</span>
+    <div className="flex min-w-0 flex-col">
+      <span className="mb-1.5 text-[10px] font-bold uppercase tracking-wider text-zinc-500">
+        Slot {slotPositionInTeam}
+      </span>
+      <div
+        className={`flex min-h-[6.5rem] flex-1 flex-col rounded-lg border px-2.5 py-2 ${
+          filled
+            ? "border-zinc-200 bg-white shadow-sm"
+            : "border-dashed border-zinc-200 bg-zinc-50/80"
+        }`}
+      >
+        {!filled ? (
+          <div className="flex flex-1 items-center justify-center">
+            <span className="text-xs font-medium text-zinc-400">Empty</span>
+          </div>
+        ) : (
+          <>
+            {participant.userId && (
+              <p className="truncate text-[10px] font-mono text-zinc-500" title={participant.userId}>
+                {participant.userId}
+              </p>
+            )}
+            <p className="mt-1 truncate text-sm font-semibold text-zinc-900" title={ign || undefined}>
+              {ign || "—"}
+            </p>
+            <p className="truncate text-xs text-zinc-500" title={uid || undefined}>
+              {uid || "—"}
+            </p>
 
-      {isOngoing && !readOnly && (
-        <>
-          <label className="flex items-center gap-1.5 text-xs text-zinc-500">
-            Kills
-            <input
-              type="text"
-              inputMode="numeric"
-              value={kills ?? ""}
-              placeholder="0"
-              onChange={(e) => onKillsChange?.(e.target.value.replace(/\D/g, ""))}
-              className="admin-input w-14 rounded-lg px-2 py-1.5 text-center text-sm"
-            />
-          </label>
-          <label className="flex items-center gap-1.5 text-xs text-zinc-500">
-            Rank
-            <input
-              type="text"
-              inputMode="numeric"
-              value={rank ?? ""}
-              placeholder="—"
-              onChange={(e) => onRankChange?.(e.target.value.replace(/\D/g, ""))}
-              className="admin-input w-14 rounded-lg px-2 py-1.5 text-center text-sm"
-            />
-          </label>
-        </>
-      )}
+            {isOngoing && !readOnly && (
+              <div className="mt-auto flex flex-wrap items-center gap-2 pt-2">
+                <label className="flex items-center gap-1 text-[10px] text-zinc-500">
+                  Kills
+                  <input
+                    type="text"
+                    inputMode="numeric"
+                    value={kills}
+                    placeholder="0"
+                    onChange={(e) => onKillsChange?.(e.target.value.replace(/\D/g, ""))}
+                    className="admin-input w-12 rounded-md px-1.5 py-1 text-center text-xs"
+                  />
+                </label>
+                <label className="flex items-center gap-1 text-[10px] text-zinc-500">
+                  Rank
+                  <input
+                    type="text"
+                    inputMode="numeric"
+                    value={rank}
+                    placeholder="—"
+                    onChange={(e) => onRankChange?.(e.target.value.replace(/\D/g, ""))}
+                    className="admin-input w-12 rounded-md px-1.5 py-1 text-center text-xs"
+                  />
+                </label>
+              </div>
+            )}
 
-      {!isOngoing && rank && (
-        <span className="text-xs font-semibold text-zinc-500">Rank #{rank}</span>
-      )}
+            {!isOngoing && rank && (
+              <p className="mt-auto pt-2 text-[10px] font-medium text-zinc-600">Rank #{rank}</p>
+            )}
 
-      {!isOngoing && parseKillsInput(kills) > 0 && (
-        <span className="text-xs text-zinc-500">{parseKillsInput(kills)} kills</span>
-      )}
+            {!isOngoing && parseKillsInput(kills) > 0 && (
+              <p className="text-[10px] text-zinc-500">{parseKillsInput(kills)} kills</p>
+            )}
 
-      {showWinnings && typeof winnings === "number" && winnings > 0 && (
-        <span className="rounded-md bg-amber-500/15 px-2 py-0.5 text-xs font-semibold text-amber-800">
-          {winnings} coins
-        </span>
-      )}
+            {leaderboardMode && typeof winnings === "number" && winnings > 0 && (
+              <span className="mt-2 self-start rounded-md bg-amber-500/15 px-2 py-0.5 text-[10px] font-semibold text-amber-800">
+                {winnings} coins
+              </span>
+            )}
+          </>
+        )}
+      </div>
     </div>
   );
 }
 
 function TeamBox({
+  teamNumber,
   teamOrdinal,
-  players,
+  slots,
   readOnly,
   isOngoing,
   leaderboardMode,
@@ -105,10 +142,11 @@ function TeamBox({
   setLocalRank,
   prizePool,
   allTeams,
-  teamNumber,
+  matchType,
 }: {
+  teamNumber: number;
   teamOrdinal?: number;
-  players: (AdminSlotParticipant & { slotIndex: number })[];
+  slots: TeamSlotEntry[];
   readOnly: boolean;
   isOngoing: boolean;
   leaderboardMode: boolean;
@@ -118,71 +156,84 @@ function TeamBox({
   setLocalRank: Dispatch<SetStateAction<Record<string, string>>>;
   prizePool?: PrizePool;
   allTeams: ReturnType<typeof getFilledTeams>;
-  teamNumber: number;
+  matchType: string;
 }) {
-  const teamForCalc = { teamNumber, players };
+  const players = slots
+    .map((s) => s.participant)
+    .filter((p): p is AdminSlotParticipant & { slotIndex: number } => !!p);
+  const teamForCalc = { teamNumber, slots, players };
+
+  const ts = teamSizeFor(matchType);
+  const gridCols = ts === 2 ? "grid-cols-2" : "grid-cols-2 sm:grid-cols-4";
 
   return (
     <article className="rounded-xl border border-zinc-200 bg-zinc-50/50 p-4">
-      {leaderboardMode && teamOrdinal != null && (
-        <div className="mb-3 flex items-center gap-2">
-          <span className="rounded-full bg-zinc-900 px-2.5 py-0.5 text-xs font-bold text-white">
-            #{teamOrdinal}
+      <div className="mb-3 flex flex-wrap items-center gap-2">
+        <h4 className="text-xs font-bold uppercase tracking-wider text-zinc-700">
+          Team {teamNumber}
+        </h4>
+        {leaderboardMode && teamOrdinal != null && (
+          <span className="rounded-full bg-zinc-900 px-2.5 py-0.5 text-[10px] font-bold text-white">
+            Placement #{teamOrdinal}
           </span>
-        </div>
-      )}
+        )}
+      </div>
 
-      <div className="divide-y divide-zinc-100 rounded-lg border border-zinc-100 bg-white px-3">
-        {players.map((p) => {
-          const ign = p.teamMembers?.[0]?.inGameName?.trim() || "—";
-          const killsDisplay = localKills[p.id] ?? "";
-          const rankDisplay = localRank[p.id] ?? "";
+      <div className={`grid gap-3 ${gridCols}`}>
+        {slots.map((slot) => {
+          const p = slot.participant;
+          const killsDisplay = p ? (localKills[p.id] ?? "") : "";
+          const rankDisplay = p ? (localRank[p.id] ?? "") : "";
 
-          const previewPlayer: AdminSlotParticipant = {
-            ...p,
-            rank: parseRankInput(rankDisplay) ?? p.rank,
-            teamMembers: [
-              {
-                ...p.teamMembers[0],
-                kills: parseKillsInput(killsDisplay),
-              },
-            ],
-          };
-
-          const winnings = leaderboardMode
-            ? calcPlayerWinnings(
-                previewPlayer,
-                teamForCalc,
-                teamOrdinal ?? null,
-                prizePool,
-                allTeams.map((t) => ({
-                  ...t,
-                  players: t.players.map((pl) => ({
-                    ...pl,
-                    rank: parseRankInput(localRank[pl.id] ?? "") ?? pl.rank,
+          const winnings =
+            p && leaderboardMode
+              ? calcPlayerWinnings(
+                  {
+                    ...p,
+                    rank: parseRankInput(rankDisplay) ?? p.rank,
                     teamMembers: [
                       {
-                        ...pl.teamMembers[0],
-                        kills: parseKillsInput(localKills[pl.id] ?? ""),
+                        ...p.teamMembers[0],
+                        kills: parseKillsInput(killsDisplay),
                       },
                     ],
+                  },
+                  teamForCalc,
+                  teamOrdinal ?? null,
+                  prizePool,
+                  allTeams.map((t) => ({
+                    ...t,
+                    players: t.players.map((pl) => ({
+                      ...pl,
+                      rank: parseRankInput(localRank[pl.id] ?? "") ?? pl.rank,
+                      teamMembers: [
+                        {
+                          ...pl.teamMembers[0],
+                          kills: parseKillsInput(localKills[pl.id] ?? ""),
+                        },
+                      ],
+                    })),
                   })),
-                })),
-              )
-            : undefined;
+                )
+              : undefined;
 
           return (
-            <PlayerRow
-              key={p.id}
-              name={ign}
-              kills={killsDisplay}
-              rank={rankDisplay}
+            <SlotCell
+              key={slot.globalSlotIndex}
+              slotPositionInTeam={slot.slotPositionInTeam}
+              participant={p}
               readOnly={readOnly}
               isOngoing={isOngoing}
-              showWinnings={leaderboardMode}
+              leaderboardMode={leaderboardMode}
+              kills={killsDisplay}
+              rank={rankDisplay}
               winnings={winnings}
-              onKillsChange={(v) => setLocalKills((prev) => ({ ...prev, [p.id]: v }))}
-              onRankChange={(v) => setLocalRank((prev) => ({ ...prev, [p.id]: v }))}
+              onKillsChange={
+                p ? (v) => setLocalKills((prev) => ({ ...prev, [p.id]: v })) : undefined
+              }
+              onRankChange={
+                p ? (v) => setLocalRank((prev) => ({ ...prev, [p.id]: v })) : undefined
+              }
             />
           );
         })}
@@ -267,11 +318,11 @@ export function AdminMatchSlotsPanel({
           <h3 className="text-sm font-semibold text-zinc-800">{panelTitle}</h3>
           {isOngoing && !readOnly && (
             <p className="mt-1 text-xs text-zinc-500">
-              Fill kills and rank for each player, then click Finish Match. Changes are saved when you finish.
+              Fill kills and rank for each player, then click Finish Match.
             </p>
           )}
         </div>
-        <div className="space-y-3">
+        <div className="grid grid-cols-2 gap-3 sm:grid-cols-3 md:grid-cols-4 lg:grid-cols-5 xl:grid-cols-6">
           {sortedSolo.map((p) => {
             const ign = p.teamMembers?.[0]?.inGameName?.trim() || "—";
             const killsDisplay = localKills[p.id] ?? "";
@@ -290,24 +341,19 @@ export function AdminMatchSlotsPanel({
             }
 
             return (
-              <article key={p.id} className="rounded-xl border border-zinc-200 bg-zinc-50/50 p-4">
-                {leaderboardMode && typeof rank === "number" && (
-                  <span className="mb-2 inline-block rounded-full bg-zinc-900 px-2.5 py-0.5 text-xs font-bold text-white">
-                    #{rank}
-                  </span>
-                )}
-                <PlayerRow
-                  name={ign}
-                  kills={killsDisplay}
-                  rank={rankDisplay}
-                  readOnly={readOnly}
-                  isOngoing={isOngoing}
-                  showWinnings={leaderboardMode}
-                  winnings={killCoins + rankCoins}
-                  onKillsChange={(v) => setLocalKills((prev) => ({ ...prev, [p.id]: v }))}
-                  onRankChange={(v) => setLocalRank((prev) => ({ ...prev, [p.id]: v }))}
-                />
-              </article>
+              <SlotCell
+                key={p.id}
+                slotPositionInTeam={p.slotIndex}
+                participant={p}
+                readOnly={readOnly}
+                isOngoing={isOngoing}
+                leaderboardMode={leaderboardMode}
+                kills={killsDisplay}
+                rank={rankDisplay}
+                winnings={killCoins + rankCoins}
+                onKillsChange={(v) => setLocalKills((prev) => ({ ...prev, [p.id]: v }))}
+                onRankChange={(v) => setLocalRank((prev) => ({ ...prev, [p.id]: v }))}
+              />
             );
           })}
         </div>
@@ -321,7 +367,7 @@ export function AdminMatchSlotsPanel({
         <h3 className="text-sm font-semibold text-zinc-800">{panelTitle}</h3>
         {isOngoing && !readOnly && (
           <p className="mt-1 text-xs text-zinc-500">
-            Enter kills and individual rank per player. Team order is calculated automatically on finish.
+            Slots are numbered 1–{teamSize} within each team. Enter kills and individual rank per player, then finish the match.
           </p>
         )}
       </div>
@@ -331,7 +377,7 @@ export function AdminMatchSlotsPanel({
             key={team.teamNumber}
             teamNumber={team.teamNumber}
             teamOrdinal={ordinals.get(team.teamNumber)}
-            players={team.players}
+            slots={team.slots}
             readOnly={readOnly}
             isOngoing={isOngoing}
             leaderboardMode={leaderboardMode}
@@ -341,6 +387,7 @@ export function AdminMatchSlotsPanel({
             setLocalRank={setLocalRank}
             prizePool={prizePool}
             allTeams={teamsWithRanks}
+            matchType={matchType}
           />
         ))}
       </div>
