@@ -1,4 +1,5 @@
 import { NextResponse } from "next/server";
+import { invalidateAdminApiCache } from "@/lib/admin-api-cache";
 import { getStore } from "@/lib/store";
 import { getAppUserId } from "@/lib/app-auth";
 
@@ -35,6 +36,7 @@ export async function POST(
       if (result?.error) {
         return NextResponse.json({ error: result.error }, { status: 400 });
       }
+      invalidateAdminApiCache("public:matches:");
       return NextResponse.json({ success: true, slotsBooked: slots.length });
     }
 
@@ -63,6 +65,7 @@ export async function POST(
     if (result?.error) {
       return NextResponse.json({ error: result.error }, { status: 400 });
     }
+    invalidateAdminApiCache("public:matches:");
     return NextResponse.json({ success: true });
   } catch {
     return NextResponse.json({ error: "Invalid request" }, { status: 400 });

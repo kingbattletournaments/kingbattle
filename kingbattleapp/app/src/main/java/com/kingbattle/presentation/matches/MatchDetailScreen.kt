@@ -69,6 +69,7 @@ fun MatchDetailScreen(
     // Reactive set of joined match IDs — read from ViewModel which uses TokenManager
     // (TokenManager writes to EncryptedSharedPreferences, so we must read from the same source)
     val joinedMatches = viewModel.joinedMatches.collectAsState()
+    val joinNotifierVersion = MatchJoinNotifier.version.collectAsState()
 
     // Preload match details if already selected (instant UI)
     LaunchedEffect(Unit) {
@@ -78,6 +79,13 @@ fun MatchDetailScreen(
     }
     // Silently fetch participants + user data in background (won't show spinner or disrupt scroll)
     LaunchedEffect(matchId) { viewModel.fetchExtras(matchId) }
+
+    LaunchedEffect(joinNotifierVersion.value) {
+        if (joinNotifierVersion.value > 0) {
+            viewModel.syncJoinedMatches()
+            viewModel.fetchExtras(matchId)
+        }
+    }
 
 
     Scaffold(
@@ -140,14 +148,20 @@ fun MatchDetailScreen(
                 ) {
                     when {
                         isJoined -> {
+                            val joinPurple = Color(0xFF7C3AED)
                             Button(
                                 onClick = {},
                                 modifier = Modifier.fillMaxWidth().height(48.dp),
-                                colors = ButtonDefaults.buttonColors(containerColor = Color(0xFF0099FF)),
+                                colors = ButtonDefaults.buttonColors(
+                                    containerColor = joinPurple.copy(alpha = 0.22f),
+                                    contentColor = joinPurple.copy(alpha = 0.72f),
+                                    disabledContainerColor = joinPurple.copy(alpha = 0.22f),
+                                    disabledContentColor = joinPurple.copy(alpha = 0.72f),
+                                ),
                                 enabled = false,
                                 shape = RoundedCornerShape(8.dp)
                             ) {
-                                Text("JOINED", color = Color.White, fontWeight = FontWeight.Bold, fontSize = 16.sp)
+                                Text("JOINED", fontWeight = FontWeight.Bold, fontSize = 16.sp)
                             }
                         }
                         status == "upcoming" -> {

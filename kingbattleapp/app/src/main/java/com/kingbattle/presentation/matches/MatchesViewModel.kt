@@ -49,7 +49,35 @@ class MatchesViewModel @Inject constructor(
     val joinedMatches: StateFlow<Set<String>> = _joinedMatches.asStateFlow()
 
     init {
+        syncJoinedMatches()
+    }
+
+    fun syncJoinedMatches() {
         _joinedMatches.value = tokenManager.getJoinedMatches()
+    }
+
+    /** Apply optimistic slot count + refresh list after a join completed elsewhere in the app. */
+    fun onExternalJoinCompleted(modeId: String) {
+        val pending = MatchJoinNotifier.consumePending() ?: run {
+            syncJoinedMatches()
+            refreshData(modeId)
+            return
+        }
+        val (matchId, slotsBooked) = pending
+        syncJoinedMatches()
+        _matches.value = _matches.value.map { m ->
+            if (m.id == matchId) {
+                m.copy(participant_count = (m.participant_count ?: 0) + slotsBooked)
+            } else m
+        }
+        SelectedMatchHolder.selectedMatch?.let { selected ->
+            if (selected.id == matchId) {
+                SelectedMatchHolder.selectedMatch = selected.copy(
+                    participant_count = (selected.participant_count ?: 0) + slotsBooked,
+                )
+            }
+        }
+        refreshData(modeId)
     }
 
     fun refreshData(modeId: String) {
@@ -186,6 +214,7 @@ class MatchesViewModel @Inject constructor(
                 if (response.isSuccessful) {
                     tokenManager.saveJoinedMatch(matchId)
                     _joinedMatches.value = _joinedMatches.value + matchId
+                    MatchJoinNotifier.notifyJoined(matchId, 1)
                     onSuccess()
                 } else {
                     val errorBody = response.errorBody()?.string() ?: "Failed to join match"

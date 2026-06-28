@@ -178,6 +178,7 @@ class SlotSelectionViewModel @Inject constructor(
                 )
                 if (res.isSuccessful) {
                     tokenManager.saveJoinedMatch(matchId)
+                    MatchJoinNotifier.notifyJoined(matchId, entries.size)
                     onSuccess()
                 } else {
                     onError(res.errorBody()?.string() ?: "Failed to join")

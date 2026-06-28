@@ -44,7 +44,10 @@ class MatchDetailViewModel @Inject constructor(
     val joinedMatches: StateFlow<Set<String>> = _joinedMatches.asStateFlow()
 
     init {
-        // Load persisted joined matches at ViewModel creation
+        syncJoinedMatches()
+    }
+
+    fun syncJoinedMatches() {
         _joinedMatches.value = tokenManager.getJoinedMatches()
     }
 
@@ -84,7 +87,9 @@ class MatchDetailViewModel @Inject constructor(
      */
     fun fetchExtras(matchId: String) {
         viewModelScope.launch {
+            syncJoinedMatches()
             fetchUserProfile()
+            fetchMatchDetail(matchId)
             fetchParticipants(matchId)
         }
     }
@@ -101,19 +106,31 @@ class MatchDetailViewModel @Inject constructor(
     private suspend fun fetchMatchDetail(matchId: String) {
         try {
             val detailRes = kotlinx.coroutines.withTimeoutOrNull(5000L) {
-                api.getMatchDetail(matchId)
+                api.getMatch(matchId)
             }
             if (detailRes != null && detailRes.isSuccessful && detailRes.body() != null) {
-                _matchDetail.value = detailRes.body()!!
-            } else {
-                _errorMessage.value = if (detailRes == null) {
-                    "Match detail request timed out"
+                val fresh = detailRes.body()!!
+                val current = _matchDetail.value
+                _matchDetail.value = if (current != null) {
+                    current.copy(
+                        match = fresh,
+                        prize_pool = fresh.prizePool ?: current.prize_pool,
+                    )
                 } else {
-                    "Failed to fetch match details"
+                    MatchDetail(fresh, emptyList(), fresh.prizePool)
                 }
+                if (SelectedMatchHolder.selectedMatch?.id == matchId) {
+                    SelectedMatchHolder.selectedMatch = fresh
+                }
+            } else if (detailRes == null) {
+                _errorMessage.value = "Match detail request timed out"
+            } else if (_matchDetail.value == null) {
+                _errorMessage.value = "Failed to fetch match details"
             }
         } catch (e: Exception) {
-            _errorMessage.value = "Failed to load match: ${e.localizedMessage}"
+            if (_matchDetail.value == null) {
+                _errorMessage.value = "Failed to load match: ${e.localizedMessage}"
+            }
         }
     }
 
@@ -177,5 +194,4 @@ class MatchDetailViewModel @Inject constructor(
         tokenManager.saveJoinedMatch(matchId)
         _joinedMatches.value = _joinedMatches.value + matchId
     }
-
 }

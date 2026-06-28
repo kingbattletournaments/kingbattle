@@ -71,6 +71,7 @@ fun MatchesScreen(
     val errorMessageState = viewModel.errorMessage.collectAsState()
     val modeNameState = viewModel.modeName.collectAsState()
     val joinedMatchesState = viewModel.joinedMatches.collectAsState()
+    val joinNotifierVersion = MatchJoinNotifier.version.collectAsState()
 
     val tabs = remember { listOf("ONGOING", "UPCOMING", "RESULTS") }
     val coroutineScope = rememberCoroutineScope()
@@ -78,6 +79,12 @@ fun MatchesScreen(
 
     LaunchedEffect(modeId) {
         viewModel.loadData(modeId)
+    }
+
+    LaunchedEffect(joinNotifierVersion.value) {
+        if (joinNotifierVersion.value > 0) {
+            viewModel.onExternalJoinCompleted(modeId)
+        }
     }
 
     Scaffold(
@@ -646,17 +653,18 @@ fun MatchCard(
                         else -> "JOIN"
                     }
 
-                    val joinButtonColor = if (isJoined) Color(0xFF0099FF) else Color(0xFF7C3AED)
-
+                    val joinPurple = Color(0xFF7C3AED)
+                    val joinedButtonContainer = joinPurple.copy(alpha = 0.22f)
+                    val joinedButtonContent = joinPurple.copy(alpha = 0.72f)
 
                     Button(
                         onClick = onJoinClick,
                         enabled = btnEnabled,
                         colors = ButtonDefaults.buttonColors(
-                            containerColor = joinButtonColor,
+                            containerColor = joinPurple,
                             contentColor = Color.White,
-                            disabledContainerColor = if (isJoined) Color(0xFF0099FF) else Color(0xFFCBD5E1),
-                            disabledContentColor = if (isJoined) Color.White else Color(0xFF94A3B8)
+                            disabledContainerColor = if (isJoined) joinedButtonContainer else Color(0xFFCBD5E1),
+                            disabledContentColor = if (isJoined) joinedButtonContent else Color(0xFF94A3B8)
                         ),
                         shape = RoundedCornerShape(6.dp),
                         modifier = Modifier.height(36.dp),
