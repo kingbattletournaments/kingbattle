@@ -23,6 +23,7 @@ import {
 } from "@/lib/admin-nav";
 import { AdminTabIcon } from "@/components/admin/AdminTabIcon";
 import { AdminMatchCard, getAdminMatchBanner } from "@/components/admin/AdminMatchCard";
+import { AdminMatchSlotsPanel } from "@/components/admin/AdminMatchSlotsPanel";
 import {
   AdminBannerGridSkeleton,
   AdminFormPanelSkeleton,
@@ -1486,27 +1487,11 @@ function ModesSection({
 type ParticipantWithStats = {
   id: string;
   userId: string;
+  slotIndex?: number;
   teamMembers: { inGameName: string; inGameUid: string; kills?: number }[];
   rank?: number;
 };
 type MatchWithParticipants = Match & { participants?: ParticipantWithStats[] };
-
-function calcCoinsForPosition(
-  position: number,
-  totalKills: number,
-  prizePool: PrizePool | undefined
-): number {
-  if (!prizePool) return 0;
-  let coins = totalKills * (prizePool.coinsPerKill ?? 0);
-  const rewards = prizePool.rankRewards ?? [];
-  for (const r of rewards) {
-    if (position >= r.fromRank && position <= r.toRank) {
-      coins += r.coins;
-      break;
-    }
-  }
-  return coins;
-}
 
 const PRESET_PREVIEW_PAGE = 10;
 
@@ -3147,165 +3132,6 @@ function MatchPresetsSection({
   );
 }
 
-function MatchParticipantsPanel({
-  match,
-  participants,
-  isOngoing,
-  readOnly = false,
-  leaderboardMode = false,
-  localKills,
-  setLocalKills,
-  localRank,
-  setLocalRank,
-  updatingParticipant,
-  onUpdateParticipant,
-  getKills,
-}: {
-  match: MatchWithParticipants;
-  participants: ParticipantWithStats[];
-  isOngoing: boolean;
-  readOnly?: boolean;
-  leaderboardMode?: boolean;
-  localKills: Record<string, number[]>;
-  setLocalKills: React.Dispatch<React.SetStateAction<Record<string, number[]>>>;
-  localRank: Record<string, number | "">;
-  setLocalRank: React.Dispatch<React.SetStateAction<Record<string, number | "">>>;
-  updatingParticipant: string | null;
-  onUpdateParticipant: (p: ParticipantWithStats) => void;
-  getKills: (p: ParticipantWithStats) => number[];
-}) {
-  const displayList = leaderboardMode
-    ? [...participants].sort((a, b) => {
-        const ra = typeof a.rank === "number" && a.rank >= 1 ? a.rank : 9999;
-        const rb = typeof b.rank === "number" && b.rank >= 1 ? b.rank : 9999;
-        return ra - rb;
-      })
-    : participants;
-
-  const panelTitle = leaderboardMode
-    ? `Leaderboard (${participants.length})`
-    : `Players Joined (${participants.length})`;
-
-  return (
-    <div className="rounded-xl border border-zinc-200 bg-zinc-50/30 p-4 sm:p-6">
-      <div className="mb-3 flex flex-col gap-1 sm:flex-row sm:items-baseline">
-        <h3 className="text-sm font-medium text-zinc-600">{panelTitle}</h3>
-        {isOngoing && !readOnly && (
-          <span className="text-xs font-normal text-zinc-900">
-            Edit kills/rank, then click Update to save. Changes apply only after Update.
-          </span>
-        )}
-      </div>
-      {displayList.length === 0 ? (
-        <p className="text-sm text-zinc-500">No players registered yet</p>
-      ) : (
-        <ul className="space-y-3">
-          {displayList.map((p, i) => {
-            const killsArr = getKills(p);
-            const totalKills = killsArr.reduce((sum, k) => sum + k, 0);
-            const rankVal = localRank[p.id] ?? "";
-            const serverKills = (p.teamMembers ?? []).map((t) => t.kills ?? 0);
-            const killsChanged = JSON.stringify(killsArr) !== JSON.stringify(serverKills);
-            const rankChanged = typeof rankVal === "number" && rankVal >= 1 && rankVal !== p.rank;
-            const hasChanges = killsChanged || rankChanged;
-            const hasBeenUpdated =
-              (typeof p.rank === "number" && p.rank >= 1) ||
-              (p.teamMembers ?? []).some((t) => (t.kills ?? 0) > 0);
-            const position = typeof p.rank === "number" && p.rank >= 1 ? p.rank : i + 1;
-            const coins = calcCoinsForPosition(position, totalKills, match.prizePool);
-            const showRankBadge = hasBeenUpdated || leaderboardMode;
-            return (
-              <li
-                key={p.id}
-                className="flex flex-col gap-3 rounded-lg bg-zinc-100/30 p-4 transition sm:flex-row sm:flex-wrap sm:items-center sm:gap-3"
-              >
-                {showRankBadge && (
-                  <span className="shrink-0 text-sm font-bold text-zinc-500">#{position}</span>
-                )}
-                <div className="min-w-0 flex-1 space-y-2">
-                  {p.userId && (
-                    <div className="break-all text-xs font-mono text-zinc-500">
-                      User ID: {p.userId}
-                    </div>
-                  )}
-                  {(p.teamMembers ?? []).map((t, ti) => (
-                    <div key={ti} className="flex flex-wrap items-center gap-2">
-                      <div>
-                        <div className="text-base font-bold text-zinc-900">{t.inGameName}</div>
-                        <div className="text-xs opacity-60 text-zinc-500">{t.inGameUid}</div>
-                      </div>
-                      {isOngoing && !readOnly && (
-                        <div className="flex items-center gap-1">
-                          <label className="text-xs text-zinc-500">Kills</label>
-                          <input
-                            type="number"
-                            min={0}
-                            value={killsArr[ti] ?? 0}
-                            onChange={(e) => {
-                              const v = Number(e.target.value) || 0;
-                              setLocalKills((prev) => ({
-                                ...prev,
-                                [p.id]: (prev[p.id] ?? killsArr).map((k, j) => (j === ti ? v : k)),
-                              }));
-                            }}
-                            className="admin-input w-14 rounded-lg px-2 py-1.5 text-center text-sm"
-                          />
-                        </div>
-                      )}
-                      {readOnly && (killsArr[ti] ?? 0) > 0 && (
-                        <span className="rounded-lg bg-zinc-200/80 px-2 py-0.5 text-xs font-medium text-zinc-700">
-                          {killsArr[ti]} kills
-                        </span>
-                      )}
-                    </div>
-                  ))}
-                </div>
-                {isOngoing && !readOnly && (
-                  <>
-                    <div className="flex items-center gap-1">
-                      <label className="text-xs text-zinc-500">Rank</label>
-                      <input
-                        type="number"
-                        min={1}
-                        max={participants.length}
-                        value={rankVal === "" ? "" : rankVal}
-                        onChange={(e) => {
-                          const v = e.target.value;
-                          setLocalRank((prev) => ({
-                            ...prev,
-                            [p.id]: v === "" ? "" : Math.min(participants.length, Math.max(1, Number(v) || 1)),
-                          }));
-                        }}
-                        placeholder="—"
-                        className="admin-input w-14 rounded-lg px-2 py-1.5 text-center text-sm"
-                      />
-                    </div>
-                    {hasChanges && (
-                      <button
-                        type="button"
-                        onClick={() => onUpdateParticipant(p)}
-                        disabled={!!updatingParticipant}
-                        className="shrink-0 rounded-lg admin-btn-primary px-3 py-1.5 text-xs font-medium disabled:opacity-50"
-                      >
-                        {updatingParticipant === p.id ? "Updating..." : "Update"}
-                      </button>
-                    )}
-                  </>
-                )}
-                {(hasBeenUpdated || leaderboardMode) && (
-                  <span className="shrink-0 self-start rounded-lg bg-amber-500/20 px-3 py-1 font-medium text-amber-700 sm:self-center">
-                    {coins} coins
-                  </span>
-                )}
-              </li>
-            );
-          })}
-        </ul>
-      )}
-    </div>
-  );
-}
-
 function MatchDetailView({
   matchId,
   games,
@@ -3401,7 +3227,8 @@ function MatchDetailView({
   const isOngoing = match.status === "ongoing";
   const hasRoomInfo = !!(match.roomCode && match.roomPassword);
   const maxParticipants = match.maxParticipants ?? 100;
-  const spotsLeft = Math.max(0, maxParticipants - participants.length);
+  const joinedCount = match.participantCount ?? participants.length;
+  const spotsLeft = Math.max(0, maxParticipants - joinedCount);
   const getKills = (p: ParticipantWithStats) =>
     localKills[p.id] ?? (p.teamMembers ?? []).map((t) => t.kills ?? 0);
 
@@ -3464,13 +3291,15 @@ function MatchDetailView({
           <h2 className="text-lg font-bold text-zinc-900">{match.title}</h2>
           <p className="mt-1 text-sm text-zinc-500">
             {leaderboardMode
-              ? `Final results · ${participants.length} player${participants.length === 1 ? "" : "s"}`
-              : `${participants.length} player${participants.length === 1 ? "" : "s"} registered`}
+              ? `Final results · ${joinedCount} slot${joinedCount === 1 ? "" : "s"} filled`
+              : `${joinedCount} / ${maxParticipants} slots filled`}
           </p>
         </div>
 
-        <MatchParticipantsPanel
-          match={match}
+        <AdminMatchSlotsPanel
+          matchType={match.matchType ?? "solo"}
+          maxParticipants={maxParticipants}
+          prizePool={match.prizePool}
           participants={participants}
           isOngoing={isOngoing}
           readOnly={readOnly}
@@ -3552,7 +3381,7 @@ function MatchDetailView({
               { label: "Prize Pool", value: `💵 ${match.prizePool?.totalPrizePool ?? 0}` },
               { label: "Per Kill", value: `💵 ${match.prizePool?.coinsPerKill ?? 0}` },
               { label: "Max Players", value: String(maxParticipants) },
-              { label: "Joined", value: String(participants.length) },
+              { label: "Joined", value: String(joinedCount) },
               { label: "Spots Left", value: String(spotsLeft) },
               { label: "Map", value: (match.map ?? "BERMUDA").toUpperCase() },
               { label: "Type", value: (match.matchType ?? "solo").toUpperCase() },
@@ -3573,11 +3402,11 @@ function MatchDetailView({
           <div className="mt-5 w-full h-2 bg-zinc-100 rounded-full overflow-hidden">
             <div
               className="h-full bg-zinc-900 transition-all"
-              style={{ width: `${Math.min(100, (participants.length / maxParticipants) * 100)}%` }}
+              style={{ width: `${Math.min(100, (joinedCount / maxParticipants) * 100)}%` }}
             />
           </div>
           <p className="mt-2 text-xs text-zinc-500 text-center">
-            Registration: {participants.length} / {maxParticipants}
+            Registration: {joinedCount} / {maxParticipants}
           </p>
         </section>
 
@@ -3592,9 +3421,9 @@ function MatchDetailView({
               <div>
                 <p className="text-sm font-semibold text-zinc-900">See players</p>
                 <p className="mt-1 text-xs text-zinc-500">
-                  {participants.length === 0
+                  {joinedCount === 0
                     ? "No registrations yet"
-                    : `${participants.length} player${participants.length === 1 ? "" : "s"} joined`}
+                    : `${joinedCount} / ${maxParticipants} slots filled`}
                 </p>
               </div>
               <span className="text-lg text-zinc-400" aria-hidden>
