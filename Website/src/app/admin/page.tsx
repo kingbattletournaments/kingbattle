@@ -3178,13 +3178,19 @@ function MatchDetailView({
 
   useEffect(() => {
     if (!match?.participants || formInitialized) return;
+    const showStoredResults =
+      match.status === "ongoing" ||
+      match.status === "ended" ||
+      match.status === "completed";
     const nextKills: Record<string, string> = {};
     const nextRank: Record<string, string> = {};
-    for (const p of match.participants) {
-      const k = p.teamMembers?.[0]?.kills ?? 0;
-      nextKills[p.id] = k > 0 ? String(k) : "";
-      nextRank[p.id] =
-        typeof p.rank === "number" && p.rank >= 1 ? String(p.rank) : "";
+    if (showStoredResults) {
+      for (const p of match.participants) {
+        const k = p.teamMembers?.[0]?.kills ?? 0;
+        nextKills[p.id] = k > 0 ? String(k) : "";
+        nextRank[p.id] =
+          typeof p.rank === "number" && p.rank >= 1 ? String(p.rank) : "";
+      }
     }
     setLocalKills(nextKills);
     setLocalRank(nextRank);

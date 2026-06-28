@@ -109,11 +109,11 @@ function SlotCell({
               </div>
             )}
 
-            {!isOngoing && rank && (
+            {leaderboardMode && rank && (
               <p className="mt-auto pt-2 text-[10px] font-medium text-zinc-600">Rank #{rank}</p>
             )}
 
-            {!isOngoing && parseKillsInput(kills) > 0 && (
+            {leaderboardMode && parseKillsInput(kills) > 0 && (
               <p className="text-[10px] text-zinc-500">{parseKillsInput(kills)} kills</p>
             )}
 
@@ -350,7 +350,7 @@ export function AdminMatchSlotsPanel({
                 leaderboardMode={leaderboardMode}
                 kills={killsDisplay}
                 rank={rankDisplay}
-                winnings={killCoins + rankCoins}
+                winnings={leaderboardMode ? killCoins + rankCoins : undefined}
                 onKillsChange={(v) => setLocalKills((prev) => ({ ...prev, [p.id]: v }))}
                 onRankChange={(v) => setLocalRank((prev) => ({ ...prev, [p.id]: v }))}
               />

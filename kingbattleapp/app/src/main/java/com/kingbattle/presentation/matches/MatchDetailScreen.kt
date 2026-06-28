@@ -661,7 +661,7 @@ fun JoinedMemberTabContent(
 ) {
     val isCompleted = matchStatus?.let {
         val s = it.trim().lowercase()
-        s == "completed" || s == "finished" || s == "complete"
+        s == "completed" || s == "finished" || s == "complete" || s == "ended"
     } ?: false
 
     // Sort participants by rank when completed

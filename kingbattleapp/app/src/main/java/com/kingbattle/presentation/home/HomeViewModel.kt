@@ -166,7 +166,10 @@ class HomeViewModel @Inject constructor(
                     val newKey = HomeCacheStore.bannersFingerprint(banners)
                     if (newKey != previousKey) {
                         if (force || bannerImagesChanged(_banners.value, banners)) {
-                            _contentRefreshEpoch.value = System.currentTimeMillis()
+                            _contentRefreshEpoch.value = HomeCacheStore.imageCacheEpoch(
+                                banners,
+                                _referralSettings.value,
+                            )
                         }
                         _banners.value = banners
                     }
@@ -193,7 +196,10 @@ class HomeViewModel @Inject constructor(
                     val newKey = HomeCacheStore.referralFingerprint(referral)
                     if (newKey != previousKey) {
                         if (force || _referralSettings.value?.bannerUrl != referral.bannerUrl) {
-                            _contentRefreshEpoch.value = System.currentTimeMillis()
+                            _contentRefreshEpoch.value = HomeCacheStore.imageCacheEpoch(
+                                _banners.value,
+                                referral,
+                            )
                         }
                         _referralSettings.value = referral
                     }
@@ -209,6 +215,7 @@ class HomeViewModel @Inject constructor(
                     announcementText = fetchedAnnouncement,
                     referralSettings = fetchedReferral,
                     user = fetchedUser,
+                    imageCacheEpoch = _contentRefreshEpoch.value,
                 )
                 _hasCachedHomeContent.value = true
             } else if (!_hasCachedHomeContent.value) {
@@ -245,9 +252,14 @@ class HomeViewModel @Inject constructor(
             _user.value = it
         }
 
-        val cachedAt = homeCacheStore.getCachedAtMs()
-        if (cachedAt > 0L) {
-            _contentRefreshEpoch.value = cachedAt
+        val cachedBanners = homeCacheStore.getCachedBanners().orEmpty()
+        val cachedReferral = homeCacheStore.getCachedReferralSettings()
+        val storedEpoch = homeCacheStore.getImageCacheEpoch()
+        _contentRefreshEpoch.value = when {
+            storedEpoch != 0L -> storedEpoch
+            cachedBanners.isNotEmpty() || cachedReferral != null ->
+                HomeCacheStore.imageCacheEpoch(cachedBanners, cachedReferral)
+            else -> 0L
         }
 
         _hasCachedHomeContent.value = applied || homeCacheStore.hasCachedPlayOrEarnContent()
