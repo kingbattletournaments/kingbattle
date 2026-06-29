@@ -4054,7 +4054,6 @@ function UserProfileModal({
   const [deleting, setDeleting] = useState(false);
   const [blockReasonDraft, setBlockReasonDraft] = useState("");
   const [showBlockForm, setShowBlockForm] = useState(false);
-  const ref = useRef<HTMLDivElement>(null);
 
   useEffect(() => {
     let cancelled = false;
@@ -4085,17 +4084,20 @@ function UserProfileModal({
   }, [initialUser.id]);
 
   useEffect(() => {
-    const close = (e: MouseEvent) => {
-      if (ref.current && !ref.current.contains(e.target as Node)) onClose();
+    const esc = (e: KeyboardEvent) => {
+      if (e.key !== "Escape") return;
+      if (showBlockForm) {
+        setShowBlockForm(false);
+        setBlockReasonDraft("");
+      } else {
+        onClose();
+      }
     };
-    const esc = (e: KeyboardEvent) => e.key === "Escape" && onClose();
-    document.addEventListener("click", close);
     document.addEventListener("keydown", esc);
     return () => {
-      document.removeEventListener("click", close);
       document.removeEventListener("keydown", esc);
     };
-  }, [onClose]);
+  }, [onClose, showBlockForm]);
 
   const isBlocked = profile.isBlocked === true;
 
@@ -4190,10 +4192,13 @@ function UserProfileModal({
   const normalCoins = Math.max(0, profile.coins - winCoins);
 
   return (
-    <div className="fixed inset-0 top-16 z-50 flex items-center justify-center bg-black/70 p-4">
+    <div
+      className="fixed inset-0 top-16 z-50 flex items-center justify-center bg-black/70 p-4"
+      onClick={onClose}
+    >
       <div
-        ref={ref}
         className="max-h-[calc(100vh-6rem)] w-full max-w-md overflow-y-auto rounded-2xl border border-zinc-200 bg-white p-6 shadow-xl"
+        onClick={(e) => e.stopPropagation()}
       >
         <div className="mb-4 flex items-center justify-between">
           <h2 className="text-lg font-semibold text-zinc-900">User Profile</h2>
@@ -4329,7 +4334,10 @@ function UserProfileModal({
               ) : (
                 <button
                   type="button"
-                  onClick={() => setShowBlockForm(true)}
+                  onClick={(e) => {
+                    e.stopPropagation();
+                    setShowBlockForm(true);
+                  }}
                   disabled={loadingProfile || blocking}
                   className="rounded-lg bg-amber-600 px-4 py-2 text-sm font-medium text-white hover:bg-amber-500 disabled:cursor-not-allowed disabled:opacity-50"
                 >
