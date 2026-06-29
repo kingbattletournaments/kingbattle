@@ -18,6 +18,21 @@ export const brand = {
     welcomeScreen: "/images/welcome-screen.jpg",
     appLogo: "/images/app-logo.jpg",
   },
+
+  /**
+   * Landing page app screenshots (1080×2256 avg — aspect ratio 45:94).
+   * Files: public/images/app-screenshots/
+   */
+  appScreenshots: {
+    aspectRatio: "45 / 94",
+    width: 1080,
+    height: 2256,
+    items: [
+      { src: "/images/app-screenshots/app-ss-for-website-1.jpg", alt: "King Battle home screen" },
+      { src: "/images/app-screenshots/app-ss-for-website-2.jpg", alt: "King Battle tournaments screen" },
+      { src: "/images/app-screenshots/app-ss-for-website-3.jpg", alt: "King Battle account screen" },
+    ],
+  },
   download: {
     apkUrl: process.env.NEXT_PUBLIC_APK_DOWNLOAD_URL ?? "",
     buttonLabel: "Download Now !!",

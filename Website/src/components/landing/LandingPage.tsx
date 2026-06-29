@@ -2,13 +2,14 @@
 
 import { useEffect, useState } from "react";
 import { brand } from "@config/brand";
-import type { LandingPageData } from "@/lib/landing-data";
 
-export default function LandingPage({ data }: { data: LandingPageData }) {
+export default function LandingPage() {
   const [menuOpen, setMenuOpen] = useState(false);
   const [typedIndex, setTypedIndex] = useState(0);
   const phrases = brand.hero.typedPhrases;
   const downloadHref = brand.download.apkUrl || "#download";
+  const screenshots = brand.appScreenshots.items;
+  const screenshotAspectRatio = brand.appScreenshots.aspectRatio;
 
   useEffect(() => {
     const timer = setInterval(() => {
@@ -16,15 +17,6 @@ export default function LandingPage({ data }: { data: LandingPageData }) {
     }, 2800);
     return () => clearInterval(timer);
   }, [phrases.length]);
-
-  const screenshots =
-    data.banners.length > 0
-      ? data.banners
-      : [
-          { id: "1", imageUrl: "", linkUrl: "" },
-          { id: "2", imageUrl: "", linkUrl: "" },
-          { id: "3", imageUrl: "", linkUrl: "" },
-        ];
 
   return (
     <div className="landing-page">
@@ -102,29 +94,21 @@ export default function LandingPage({ data }: { data: LandingPageData }) {
             Check the screenshots below to get an idea of the app flow and features.
           </p>
           <div className="landing-screenshots">
-            {screenshots.map((banner, idx) => (
-              <div key={banner.id} className="landing-screenshot">
-                {banner.imageUrl ? (
-                  // eslint-disable-next-line @next/next/no-img-element
-                  <img src={banner.imageUrl} alt={`App screenshot ${idx + 1}`} />
-                ) : (
-                  <div
-                    style={{
-                      width: "100%",
-                      height: "100%",
-                      background: `linear-gradient(160deg, #14532d, #${idx === 1 ? "166534" : idx === 2 ? "15803d" : "064e3b"})`,
-                      display: "flex",
-                      alignItems: "center",
-                      justifyContent: "center",
-                      color: "#fff",
-                      fontWeight: 700,
-                      padding: "1rem",
-                      textAlign: "center",
-                    }}
-                  >
-                    {brand.appName}
-                  </div>
-                )}
+            {screenshots.map((shot, idx) => (
+              <div
+                key={shot.src}
+                className="landing-screenshot"
+                style={{ aspectRatio: screenshotAspectRatio }}
+              >
+                {/* eslint-disable-next-line @next/next/no-img-element */}
+                <img
+                  src={shot.src}
+                  alt={shot.alt}
+                  width={brand.appScreenshots.width}
+                  height={brand.appScreenshots.height}
+                  loading={idx === 0 ? "eager" : "lazy"}
+                  decoding="async"
+                />
               </div>
             ))}
           </div>
