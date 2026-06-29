@@ -4053,6 +4053,7 @@ function UserProfileModal({
   const [blocking, setBlocking] = useState(false);
   const [deleting, setDeleting] = useState(false);
   const [blockReasonDraft, setBlockReasonDraft] = useState("");
+  const [showBlockForm, setShowBlockForm] = useState(false);
   const ref = useRef<HTMLDivElement>(null);
 
   useEffect(() => {
@@ -4060,6 +4061,7 @@ function UserProfileModal({
     setLoadingProfile(true);
     setProfileError(null);
     setBlockReasonDraft("");
+    setShowBlockForm(false);
 
     (async () => {
       try {
@@ -4101,7 +4103,10 @@ function UserProfileModal({
     const updated = toUserRecord(raw);
     setProfile(updated);
     onUserUpdate(updated);
-    if (!updated.isBlocked) setBlockReasonDraft("");
+    if (!updated.isBlocked) {
+      setBlockReasonDraft("");
+      setShowBlockForm(false);
+    }
   };
 
   const handleAddCoins = async (e: React.FormEvent) => {
@@ -4213,33 +4218,6 @@ function UserProfileModal({
           </p>
         ) : null}
 
-        {!isBlocked ? (
-          <div className="mb-6 rounded-xl border-2 border-amber-300 bg-amber-50 p-4">
-            <label htmlFor="block-reason" className="mb-2 block text-sm font-semibold text-zinc-900">
-              Block reason (required)
-            </label>
-            <p className="mb-3 text-xs text-zinc-600">
-              Enter the reason below, then click Block. The player will see this on their account screen.
-            </p>
-            <textarea
-              id="block-reason"
-              value={blockReasonDraft}
-              onChange={(e) => setBlockReasonDraft(e.target.value)}
-              placeholder="e.g. Using hacks in tournament..."
-              rows={4}
-              disabled={loadingProfile || blocking}
-              className="w-full rounded-lg border border-zinc-300 bg-white px-3 py-2 text-sm text-zinc-900 outline-none focus:border-amber-500 focus:ring-2 focus:ring-amber-200 disabled:opacity-60"
-            />
-          </div>
-        ) : (
-          <div className="mb-6 rounded-xl border border-rose-200 bg-rose-50 p-4">
-            <span className="text-xs font-medium uppercase tracking-wider text-rose-700">Ban reason</span>
-            <p className="mt-2 whitespace-pre-wrap text-sm text-rose-900">
-              {profile.blockReason?.trim() || "No reason recorded."}
-            </p>
-          </div>
-        )}
-
         <dl className="space-y-4 text-zinc-600">
           <div>
             <span className="text-xs font-medium uppercase tracking-wider text-zinc-500">Display Name</span>
@@ -4275,6 +4253,14 @@ function UserProfileModal({
               </span>
             </div>
           </div>
+          {isBlocked ? (
+            <div>
+              <span className="text-xs font-medium uppercase tracking-wider text-zinc-500">Ban Reason</span>
+              <p className="mt-1 whitespace-pre-wrap rounded-lg border border-rose-200 bg-rose-50 px-3 py-2 text-sm text-rose-900">
+                {profile.blockReason?.trim() || "No reason recorded."}
+              </p>
+            </div>
+          ) : null}
         </dl>
         <div className="mt-8 space-y-4 border-t border-zinc-200 pt-6">
           {canAddCoins && !isBlocked && (
@@ -4296,16 +4282,60 @@ function UserProfileModal({
               </button>
             </form>
           )}
+          {!isBlocked && showBlockForm ? (
+            <div className="rounded-xl border-2 border-amber-300 bg-amber-50 p-4">
+              <label htmlFor="block-reason" className="mb-2 block text-sm font-semibold text-zinc-900">
+                Block reason (required)
+              </label>
+              <p className="mb-3 text-xs text-zinc-600">
+                Enter the reason below, then confirm. The player will see this on their account screen.
+              </p>
+              <textarea
+                id="block-reason"
+                value={blockReasonDraft}
+                onChange={(e) => setBlockReasonDraft(e.target.value)}
+                placeholder="e.g. Using hacks in tournament..."
+                rows={4}
+                disabled={loadingProfile || blocking}
+                autoFocus
+                className="w-full rounded-lg border border-zinc-300 bg-white px-3 py-2 text-sm text-zinc-900 outline-none focus:border-amber-500 focus:ring-2 focus:ring-amber-200 disabled:opacity-60"
+              />
+            </div>
+          ) : null}
           <div className="flex flex-wrap gap-2">
             {!isBlocked ? (
-              <button
-                type="button"
-                onClick={handleBlockUser}
-                disabled={loadingProfile || blocking || !blockReasonDraft.trim()}
-                className="rounded-lg bg-amber-600 px-4 py-2 text-sm font-medium text-white hover:bg-amber-500 disabled:cursor-not-allowed disabled:opacity-50"
-              >
-                {blocking ? "Blocking..." : "Block"}
-              </button>
+              showBlockForm ? (
+                <>
+                  <button
+                    type="button"
+                    onClick={handleBlockUser}
+                    disabled={loadingProfile || blocking || !blockReasonDraft.trim()}
+                    className="rounded-lg bg-amber-600 px-4 py-2 text-sm font-medium text-white hover:bg-amber-500 disabled:cursor-not-allowed disabled:opacity-50"
+                  >
+                    {blocking ? "Blocking..." : "Confirm Block"}
+                  </button>
+                  <button
+                    type="button"
+                    onClick={() => {
+                      setShowBlockForm(false);
+                      setBlockReasonDraft("");
+                    }}
+                    disabled={blocking}
+                    className="rounded-lg border border-zinc-300 bg-white px-4 py-2 text-sm font-medium text-zinc-700 hover:bg-zinc-50 disabled:opacity-50"
+                  >
+                    Cancel
+                  </button>
+                </>
+              ) : (
+                <button
+                  type="button"
+                  onClick={() => setShowBlockForm(true)}
+                  disabled={loadingProfile || blocking}
+                  className="rounded-lg bg-amber-600 px-4 py-2 text-sm font-medium text-white hover:bg-amber-500 disabled:cursor-not-allowed disabled:opacity-50"
+                >
+                  Block
+                </button>
+              )
             ) : (
               <button
                 type="button"
