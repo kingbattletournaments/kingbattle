@@ -22,6 +22,7 @@ import androidx.compose.ui.text.input.KeyboardType
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import androidx.hilt.navigation.compose.hiltViewModel
+import com.kingbattle.presentation.components.CoinAmountRow
 import com.kingbattle.presentation.home.AccentOrange
 import com.kingbattle.presentation.home.TextMuted
 import com.kingbattle.presentation.home.TextWhite
@@ -158,7 +159,14 @@ fun WalletWithdrawScreen(
                                 horizontalArrangement = Arrangement.SpaceBetween
                             ) {
                                 Text("Withdrawable Balance:", color = TextMuted, fontSize = 12.sp)
-                                Text("$withdrawableCoins coins", color = Color.White, fontSize = 12.sp, fontWeight = FontWeight.Bold)
+                                CoinAmountRow(
+                                    amount = "$withdrawableCoins",
+                                    suffix = " coins",
+                                    coinSize = 12.dp,
+                                    fontSize = 12.sp,
+                                    color = Color.White,
+                                    fontWeight = FontWeight.Bold,
+                                )
                             }
                             Row(
                                 modifier = Modifier.fillMaxWidth(),
@@ -242,14 +250,26 @@ fun WalletWithdrawScreen(
                                     horizontalArrangement = Arrangement.SpaceBetween
                                 ) {
                                     Text("Requested Amount:", color = TextMuted, fontSize = 11.sp)
-                                    Text("$amtVal coins", color = Color.White, fontSize = 11.sp)
+                                    CoinAmountRow(
+                                        amount = "$amtVal",
+                                        suffix = " coins",
+                                        coinSize = 11.dp,
+                                        fontSize = 11.sp,
+                                        color = Color.White,
+                                    )
                                 }
                                 Row(
                                     modifier = Modifier.fillMaxWidth(),
                                     horizontalArrangement = Arrangement.SpaceBetween
                                 ) {
                                     Text("Fee Deducted ($chargePercent%):", color = TextMuted, fontSize = 11.sp)
-                                    Text("-$fee coins", color = Color.White, fontSize = 11.sp)
+                                    CoinAmountRow(
+                                        amount = "-$fee",
+                                        suffix = " coins",
+                                        coinSize = 11.dp,
+                                        fontSize = 11.sp,
+                                        color = Color.White,
+                                    )
                                 }
                                 HorizontalDivider(modifier = Modifier.padding(vertical = 6.dp), color = ThemeBorderColor)
                                 Row(
@@ -257,7 +277,14 @@ fun WalletWithdrawScreen(
                                     horizontalArrangement = Arrangement.SpaceBetween
                                 ) {
                                     Text("You Will Receive:", color = Color.White, fontSize = 12.sp, fontWeight = FontWeight.Bold)
-                                    Text("$payout coins", color = AccentOrange, fontSize = 12.sp, fontWeight = FontWeight.Bold)
+                                    CoinAmountRow(
+                                        amount = "$payout",
+                                        suffix = " coins",
+                                        coinSize = 12.dp,
+                                        fontSize = 12.sp,
+                                        color = AccentOrange,
+                                        fontWeight = FontWeight.Bold,
+                                    )
                                 }
                             }
                         }

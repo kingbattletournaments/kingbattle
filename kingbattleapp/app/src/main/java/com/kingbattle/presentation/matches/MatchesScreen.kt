@@ -42,6 +42,8 @@ import androidx.compose.foundation.pager.rememberPagerState
 import kotlinx.coroutines.launch
 import com.kingbattle.R
 import com.kingbattle.presentation.components.CachedNetworkImage
+import com.kingbattle.presentation.components.CoinAmountRow
+import com.kingbattle.presentation.components.CoinIcon
 import com.kingbattle.presentation.components.rememberImageDecodeSize
 import com.kingbattle.util.MatchDateTimeFormatter
 import com.kingbattle.domain.model.Match
@@ -122,10 +124,7 @@ fun MatchesScreen(
                         verticalAlignment = Alignment.CenterVertically,
                         horizontalArrangement = Arrangement.spacedBy(4.dp)
                     ) {
-                        Text(
-                            text = "💵",
-                            fontSize = 14.sp
-                        )
+                        CoinIcon(size = 14.dp)
                         Text(
                             text = formattedCoins,
                             color = Color.Black,
@@ -439,7 +438,7 @@ fun MatchCard(
                             verticalAlignment = Alignment.CenterVertically,
                             horizontalArrangement = Arrangement.spacedBy(3.dp)
                         ) {
-                            Text(text = "💵", fontSize = 14.sp)
+                            CoinIcon(size = 14.dp)
                             Text(
                                 text = "${match.prizePool?.total_prize_pool ?: 500}",
                                 color = Color(0xFF1E293B),
@@ -471,7 +470,7 @@ fun MatchCard(
                             verticalAlignment = Alignment.CenterVertically,
                             horizontalArrangement = Arrangement.spacedBy(3.dp)
                         ) {
-                            Text(text = "💵", fontSize = 14.sp)
+                            CoinIcon(size = 14.dp)
                             Text(
                                 text = "${match.prizePool?.coins_per_kill ?: 10}",
                                 color = Color(0xFF1E293B),
@@ -497,7 +496,7 @@ fun MatchCard(
                             verticalAlignment = Alignment.CenterVertically,
                             horizontalArrangement = Arrangement.spacedBy(3.dp)
                         ) {
-                            Text(text = "💵", fontSize = 14.sp)
+                            CoinIcon(size = 14.dp)
                             Text(
                                 text = "${match.entry_fee}",
                                 color = Color(0xFF1E293B),
@@ -609,10 +608,12 @@ fun MatchCard(
                                             fontSize = 12.sp,
                                             fontWeight = FontWeight.SemiBold,
                                         )
-                                        Text(
-                                            "💵 ${reward.coins} coins",
-                                            color = Color(0xFF1E293B),
+                                        CoinAmountRow(
+                                            amount = "${reward.coins}",
+                                            suffix = " coins",
+                                            coinSize = 12.dp,
                                             fontSize = 12.sp,
+                                            color = Color(0xFF1E293B),
                                             fontWeight = FontWeight.ExtraBold,
                                         )
                                     }

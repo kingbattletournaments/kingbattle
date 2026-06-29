@@ -17,6 +17,7 @@ export const brand = {
   images: {
     welcomeScreen: "/images/welcome-screen.jpg",
     appLogo: "/images/app-logo.jpg",
+    coin: "/images/coin.png",
   },
 
   /**

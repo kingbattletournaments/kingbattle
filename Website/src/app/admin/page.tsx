@@ -23,6 +23,7 @@ import {
 } from "@/lib/admin-nav";
 import { AdminTabIcon } from "@/components/admin/AdminTabIcon";
 import { AdminMatchCard, getAdminMatchBanner } from "@/components/admin/AdminMatchCard";
+import { CoinAmount } from "@/components/ui/CoinIcon";
 import { AdminMatchSlotsPanel } from "@/components/admin/AdminMatchSlotsPanel";
 import {
   AdminBannerGridSkeleton,
@@ -3417,9 +3418,9 @@ function MatchDetailView({
           </h3>
           <div className="grid grid-cols-2 sm:grid-cols-3 gap-4">
             {[
-              { label: "Entry Fee", value: `💵 ${match.entryFee}` },
-              { label: "Prize Pool", value: `💵 ${match.prizePool?.totalPrizePool ?? 0}` },
-              { label: "Per Kill", value: `💵 ${match.prizePool?.coinsPerKill ?? 0}` },
+              { label: "Entry Fee", value: <CoinAmount amount={match.entryFee} size={12} /> },
+              { label: "Prize Pool", value: <CoinAmount amount={match.prizePool?.totalPrizePool ?? 0} size={12} /> },
+              { label: "Per Kill", value: <CoinAmount amount={match.prizePool?.coinsPerKill ?? 0} size={12} /> },
               { label: "Max Players", value: String(maxParticipants) },
               { label: "Joined", value: String(joinedCount) },
               { label: "Spots Left", value: String(spotsLeft) },
@@ -3488,7 +3489,7 @@ function MatchDetailView({
                         ? `Rank ${r.fromRank}`
                         : `Ranks ${r.fromRank}–${r.toRank}`}
                     </span>
-                    <span className="font-semibold text-zinc-900">💵 {r.coins}</span>
+                    <CoinAmount amount={r.coins} suffix=" coins" size={12} className="font-semibold text-zinc-900" />
                   </li>
                 ))}
               </ul>
@@ -3967,9 +3968,9 @@ function UsersSection({
                     <tr key={u.id}>
                       <td className="font-semibold text-zinc-900">{u.displayName}</td>
                       <td className="font-mono text-zinc-500">{u.username || u.id}</td>
-                      <td className="text-right font-medium text-amber-300">💵 {normalCoins}</td>
-                      <td className="text-right font-medium text-zinc-900">💵 {winCoins}</td>
-                      <td className="text-right font-bold text-zinc-900">💵 {u.coins}</td>
+                      <td className="text-right font-medium text-amber-300"><CoinAmount amount={normalCoins} size={14} className="justify-end" /></td>
+                      <td className="text-right font-medium text-zinc-900"><CoinAmount amount={winCoins} size={14} className="justify-end" /></td>
+                      <td className="text-right font-bold text-zinc-900"><CoinAmount amount={u.coins} size={14} className="justify-end" /></td>
                       <td className="text-center">
                         <span
                           className={`inline-block px-2.5 py-1 text-xs font-semibold rounded-full ${
@@ -4239,16 +4240,16 @@ function UserProfileModal({
           <div className="grid grid-cols-2 gap-4">
             <div>
               <span className="text-xs font-medium uppercase tracking-wider text-zinc-500">Normal Coins</span>
-              <p className="mt-1 font-semibold text-amber-300">💵 {normalCoins}</p>
+              <p className="mt-1 font-semibold text-amber-300"><CoinAmount amount={normalCoins} size={16} /></p>
             </div>
             <div>
               <span className="text-xs font-medium uppercase tracking-wider text-zinc-500">Won Coins</span>
-              <p className="mt-1 font-semibold text-zinc-900">💵 {winCoins}</p>
+              <p className="mt-1 font-semibold text-zinc-900"><CoinAmount amount={winCoins} size={16} /></p>
             </div>
           </div>
           <div>
             <span className="text-xs font-medium uppercase tracking-wider text-zinc-500">Total Coins</span>
-            <p className="mt-1 font-bold text-zinc-900 text-lg">💵 {profile.coins}</p>
+            <p className="mt-1 font-bold text-zinc-900 text-lg"><CoinAmount amount={profile.coins} size={18} /></p>
           </div>
           <div>
             <span className="text-xs font-medium uppercase tracking-wider text-zinc-500">Status</span>
@@ -4658,7 +4659,7 @@ function MoneyOrdersSection({
                         <p className="font-mono font-medium text-zinc-600">{d.utr}</p>
                         <p className="text-xs text-zinc-500 mt-0.5">{new Date(d.createdAt).toLocaleString()}</p>
                       </td>
-                      <td className="text-right font-bold text-amber-300">💵 {d.amount}</td>
+                      <td className="text-right font-bold text-amber-300"><CoinAmount amount={d.amount} size={14} className="justify-end" /></td>
                       <td className="text-center">
                         <span className="inline-block px-2.5 py-1 text-xs font-semibold rounded-full bg-emerald-500/20 text-emerald-300">
                           succeeded
@@ -4868,7 +4869,7 @@ function WithdrawalsSection({
                         <p className="font-medium text-zinc-600">{w.upiId}</p>
                         <p className="text-xs text-zinc-500 mt-0.5">{new Date(w.createdAt).toLocaleString()}</p>
                       </td>
-                      <td className="text-right font-semibold text-rose-400">- 💵 {w.amount}</td>
+                      <td className="text-right font-semibold text-rose-400"><CoinAmount amount={`- ${w.amount}`} size={14} className="justify-end" /></td>
                       <td className="text-right font-bold text-zinc-900">₹ {netPayout}</td>
                       <td className="text-center">
                         <span
@@ -5481,7 +5482,7 @@ function AddCoinsSection({
               <p className="font-mono text-sm text-zinc-500">{displayUser.id}</p>
               <p className="font-semibold text-zinc-900">{displayUser.displayName}</p>
               <p className="text-sm text-zinc-500">{displayUser.email}</p>
-              <p className="mt-1 text-sm font-medium text-amber-300">{displayUser.coins} coins</p>
+              <p className="mt-1 text-sm font-medium text-amber-300"><CoinAmount amount={displayUser.coins} suffix=" coins" size={14} /></p>
             </div>
             <div>
               <label className="mb-2 block text-sm font-medium text-zinc-600">Amount to Add</label>
@@ -6139,7 +6140,7 @@ function ReferralsSection() {
                   <tr key={r.id}>
                     <td className="font-medium text-zinc-900">{r.referrerName}</td>
                     <td>{r.referredName}</td>
-                    <td className="text-right text-amber-300 font-bold">{r.rewardCoins} coins</td>
+                    <td className="text-right text-amber-300 font-bold"><CoinAmount amount={r.rewardCoins} suffix=" coins" size={14} className="justify-end" /></td>
                     <td className="text-center">
                       {r.rewardGranted ? (
                         <span className="inline-block rounded bg-emerald-500/20 px-2 py-0.5 text-xs text-zinc-900 font-medium">

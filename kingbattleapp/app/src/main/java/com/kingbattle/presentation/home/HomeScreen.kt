@@ -35,7 +35,8 @@ import androidx.compose.material.icons.filled.ContentCopy
 import androidx.compose.material.icons.filled.Description
 import androidx.compose.material.icons.filled.EmojiEvents
 import androidx.compose.material.icons.filled.ExitToApp
-import androidx.compose.material.icons.filled.MonetizationOn
+import com.kingbattle.presentation.components.CoinIcon
+import com.kingbattle.presentation.components.CoinAmountRow
 import androidx.compose.material.icons.filled.Share
 import androidx.compose.material.icons.filled.SupportAgent
 import androidx.compose.ui.graphics.vector.ImageVector
@@ -600,10 +601,7 @@ fun HeaderSection(user: com.kingbattle.domain.model.User?, onBalanceClick: () ->
             verticalAlignment = Alignment.CenterVertically,
             horizontalArrangement = Arrangement.spacedBy(6.dp)
         ) {
-            Text(
-                text = "💵", // 2D Green Cash Bundle Emoji/Icon
-                fontSize = 16.sp
-            )
+            CoinIcon(size = 16.dp)
             Text(
                 text = formattedCoins,
                 color = Color.White,
@@ -1409,12 +1407,7 @@ fun AccountTabContent(
                           verticalAlignment = Alignment.CenterVertically,
                           horizontalArrangement = Arrangement.spacedBy(4.dp)
                         ) {
-                            Icon(
-                                imageVector = Icons.Filled.MonetizationOn,
-                                contentDescription = null,
-                                modifier = Modifier.size(18.dp),
-                                tint = AccentGold
-                            )
+                            CoinIcon(size = 18.dp)
                             Text(
                                 text = "${user?.lifetime_earned_points ?: 0}",
                                 color = AccentGold,
@@ -2052,7 +2045,7 @@ fun PodiumStep(
                 verticalAlignment = Alignment.CenterVertically,
                 horizontalArrangement = Arrangement.spacedBy(2.dp)
             ) {
-                Text(text = "🪙", fontSize = 11.sp)
+                CoinIcon(size = 12.dp)
                 Text(
                     text = "${player.coins}",
                     color = scoreColor,
@@ -2120,7 +2113,7 @@ fun LeaderboardItem(rankString: String, player: com.kingbattle.domain.model.Lead
                 verticalAlignment = Alignment.CenterVertically,
                 horizontalArrangement = Arrangement.spacedBy(4.dp)
             ) {
-                Text(text = "🪙", fontSize = 14.sp)
+                CoinIcon(size = 14.dp)
                 Text(
                     text = "${player.coins}",
                     color = Color(0xFF0099FF),

@@ -2,6 +2,7 @@
 
 import { useRef, useCallback, useState } from "react";
 import { formatMatchDateTime } from "@/lib/format-match-datetime";
+import { CoinAmount, CoinIcon } from "@/components/ui/CoinIcon";
 
 export type MatchType = "solo" | "duo" | "squad";
 export type RankReward = { fromRank: number; toRank: number; coins: number };
@@ -239,7 +240,7 @@ export function AdminMatchCard({
         >
           <p className="text-[10px] text-zinc-500 font-bold uppercase tracking-wider">Prize Pool</p>
           <div className="flex items-center justify-center gap-1 mt-1">
-            <span className="text-xs">💵</span>
+            <CoinIcon size={12} />
             <span className="text-xs font-bold text-zinc-900">{item.prizePool?.totalPrizePool ?? 0}</span>
             <span className="text-[10px] text-zinc-500">{expanded ? "▲" : "▼"}</span>
           </div>
@@ -247,14 +248,14 @@ export function AdminMatchCard({
         <div>
           <p className="text-[10px] text-zinc-500 font-bold uppercase tracking-wider">Per Kill</p>
           <div className="flex items-center justify-center gap-1 mt-1">
-            <span className="text-xs">💵</span>
+            <CoinIcon size={12} />
             <span className="text-xs font-bold text-zinc-900">{item.prizePool?.coinsPerKill ?? 0}</span>
           </div>
         </div>
         <div>
           <p className="text-[10px] text-zinc-500 font-bold uppercase tracking-wider">Entry Fee</p>
           <div className="flex items-center justify-center gap-1 mt-1">
-            <span className="text-xs">💵</span>
+            <CoinIcon size={12} />
             <span className="text-xs font-bold text-zinc-900">{item.entryFee}</span>
           </div>
         </div>
@@ -290,7 +291,7 @@ export function AdminMatchCard({
                       ? reward.fromRank
                       : `${reward.fromRank} - ${reward.toRank}`}
                   </span>
-                  <span className="font-semibold text-zinc-900">💵 {reward.coins} coins</span>
+                  <CoinAmount amount={reward.coins} suffix=" coins" size={12} className="font-semibold text-zinc-900" />
                 </div>
               ))}
             </div>

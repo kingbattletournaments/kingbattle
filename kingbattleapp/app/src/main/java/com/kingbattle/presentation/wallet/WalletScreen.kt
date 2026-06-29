@@ -27,6 +27,8 @@ import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
+import com.kingbattle.presentation.components.CoinAmountRow
+import com.kingbattle.presentation.components.CoinIcon
 import androidx.hilt.navigation.compose.hiltViewModel
 import androidx.lifecycle.Lifecycle
 import androidx.lifecycle.LifecycleEventObserver
@@ -201,10 +203,7 @@ fun BalanceCard(
                     verticalAlignment = Alignment.CenterVertically,
                     horizontalArrangement = Arrangement.spacedBy(8.dp)
                 ) {
-                    Text(
-                        text = "💵",
-                        fontSize = 28.sp
-                    )
+                    CoinIcon(size = 28.dp)
                     Text(
                         text = String.format("%.2f", balance),
                         color = Color.White,
@@ -353,11 +352,12 @@ fun TransactionHistoryItem(tx: Transaction) {
             Column(
                 horizontalAlignment = Alignment.End
             ) {
-                Text(
-                    text = if (isCredit) "+$amountAbs" else "-$amountAbs",
-                    color = if (isCredit) Color(0xFF0099FF) else Color(0xFFEF4444),
+                CoinAmountRow(
+                    amount = if (isCredit) "+$amountAbs" else "-$amountAbs",
+                    coinSize = 14.dp,
                     fontSize = 16.sp,
-                    fontWeight = FontWeight.Bold
+                    color = if (isCredit) Color(0xFF0099FF) else Color(0xFFEF4444),
+                    fontWeight = FontWeight.Bold,
                 )
                 Text(
                     text = "coins",

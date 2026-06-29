@@ -34,6 +34,8 @@ import android.content.Context
 import androidx.hilt.navigation.compose.hiltViewModel
 import com.kingbattle.R
 import com.kingbattle.presentation.components.CachedNetworkImage
+import com.kingbattle.presentation.components.CoinAmountRow
+import com.kingbattle.presentation.components.CoinIcon
 import com.kingbattle.presentation.components.rememberImageDecodeSize
 import com.kingbattle.util.MatchDateTimeFormatter
 import androidx.compose.material3.TabRowDefaults.tabIndicatorOffset
@@ -121,10 +123,7 @@ fun MatchDetailScreen(
                         verticalAlignment = Alignment.CenterVertically,
                         horizontalArrangement = Arrangement.spacedBy(4.dp)
                     ) {
-                        Text(
-                            text = "💵",
-                            fontSize = 14.sp
-                        )
+                        CoinIcon(size = 14.dp)
                         Text(
                             text = formattedCoins,
                             color = Color.Black,
@@ -444,8 +443,9 @@ fun DescriptionTabContent(match: Match, isJoined: Boolean = false) {
                 modifier = Modifier.weight(1f)
             )
             DetailGridCard(
-                label = "Entry Fee 🪙",
+                label = "Entry Fee",
                 value = "${match.entry_fee}",
+                showCoin = true,
                 modifier = Modifier.weight(1f)
             )
         }
@@ -489,11 +489,13 @@ fun DescriptionTabContent(match: Match, isJoined: Boolean = false) {
             DetailGridCard(
                 label = "Winning Prize",
                 value = "${match.prizePool?.total_prize_pool ?: 500}",
+                showCoin = true,
                 modifier = Modifier.weight(1f)
             )
             DetailGridCard(
                 label = "Per Kill",
                 value = "${match.prizePool?.coins_per_kill ?: 10}",
+                showCoin = true,
                 modifier = Modifier.weight(1f)
             )
         }
@@ -567,11 +569,13 @@ fun DescriptionTabContent(match: Match, isJoined: Boolean = false) {
                                 fontSize = 13.sp,
                                 fontWeight = FontWeight.SemiBold
                             )
-                            Text(
-                                text = "💵 ${reward.coins} coins",
-                                color = Color(0xFF0099FF),
+                            CoinAmountRow(
+                                amount = "${reward.coins}",
+                                suffix = " coins",
+                                coinSize = 12.dp,
                                 fontSize = 13.sp,
-                                fontWeight = FontWeight.Bold
+                                color = Color(0xFF0099FF),
+                                fontWeight = FontWeight.Bold,
                             )
                         }
                     }
@@ -623,7 +627,8 @@ fun DescriptionTabContent(match: Match, isJoined: Boolean = false) {
 fun DetailGridCard(
     label: String,
     value: String,
-    modifier: Modifier = Modifier
+    modifier: Modifier = Modifier,
+    showCoin: Boolean = false,
 ) {
     Card(
         modifier = modifier,
@@ -644,12 +649,22 @@ fun DetailGridCard(
                 fontSize = 10.sp,
                 fontWeight = FontWeight.SemiBold
             )
-            Text(
-                text = value,
-                color = TextWhite,
-                fontSize = 13.sp,
-                fontWeight = FontWeight.Bold
-            )
+            if (showCoin) {
+                CoinAmountRow(
+                    amount = value,
+                    coinSize = 12.dp,
+                    fontSize = 13.sp,
+                    color = TextWhite,
+                    fontWeight = FontWeight.Bold,
+                )
+            } else {
+                Text(
+                    text = value,
+                    color = TextWhite,
+                    fontSize = 13.sp,
+                    fontWeight = FontWeight.Bold
+                )
+            }
         }
     }
 }
@@ -798,11 +813,12 @@ fun JoinedMemberTabContent(
 
                         // Right: Coins won (only when completed)
                         if (isCompleted && coinsWon > 0) {
-                            Text(
-                                text = "💵 $coinsWon",
-                                color = Color(0xFF0099FF),
+                            CoinAmountRow(
+                                amount = "$coinsWon",
+                                coinSize = 12.dp,
                                 fontSize = 13.sp,
-                                fontWeight = FontWeight.Bold
+                                color = Color(0xFF0099FF),
+                                fontWeight = FontWeight.Bold,
                             )
                         }
                     }
