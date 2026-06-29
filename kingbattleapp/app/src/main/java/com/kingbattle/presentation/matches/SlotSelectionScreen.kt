@@ -5,23 +5,28 @@ import androidx.compose.foundation.background
 import androidx.compose.foundation.border
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.*
+import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.grid.GridCells
 import androidx.compose.foundation.lazy.grid.LazyVerticalGrid
 import androidx.compose.foundation.lazy.grid.items
+import androidx.compose.foundation.lazy.items
 import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.foundation.text.KeyboardOptions
 import androidx.compose.foundation.verticalScroll
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.automirrored.filled.ArrowBack
+import androidx.compose.material.icons.filled.Check
 import androidx.compose.material3.*
 import androidx.compose.runtime.*
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.draw.clip
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.input.KeyboardType
+import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import androidx.hilt.navigation.compose.hiltViewModel
@@ -73,27 +78,29 @@ fun SlotSelectionScreen(
             modifier = Modifier
                 .fillMaxSize()
                 .padding(padding)
-                .padding(16.dp),
+                .padding(horizontal = 12.dp, vertical = 10.dp),
         ) {
-            Text(matchTitle, color = TextWhite, fontWeight = FontWeight.Bold, fontSize = 16.sp)
+            Text(matchTitle, color = TextWhite, fontWeight = FontWeight.Bold, fontSize = 15.sp)
             slotsData?.let { data ->
                 val fee = data.entryFee * selected.size.coerceAtLeast(1)
                 Text(
                     "${data.matchType.uppercase()} · ${selected.size} selected · $fee coins total",
                     color = TextMuted,
-                    fontSize = 12.sp,
-                    modifier = Modifier.padding(top = 4.dp, bottom = 12.dp),
+                    fontSize = 11.sp,
+                    modifier = Modifier.padding(top = 2.dp, bottom = 8.dp),
                 )
 
                 if (data.teamSize == 1) {
                     LazyVerticalGrid(
-                        columns = GridCells.Adaptive(56.dp),
+                        columns = GridCells.Adaptive(minSize = 44.dp),
                         modifier = Modifier.weight(1f),
-                        horizontalArrangement = Arrangement.spacedBy(8.dp),
-                        verticalArrangement = Arrangement.spacedBy(8.dp),
+                        horizontalArrangement = Arrangement.spacedBy(6.dp),
+                        verticalArrangement = Arrangement.spacedBy(6.dp),
+                        contentPadding = PaddingValues(bottom = 4.dp),
                     ) {
-                        items(data.slots) { slot ->
-                            SoloSlotChip(
+                        items(data.slots, key = { it.slotIndex }) { slot ->
+                            CompactSlotCheckbox(
+                                slotLabel = "${slot.slotIndex}",
                                 slot = slot,
                                 selected = selected.contains(slot.slotIndex),
                                 onClick = { viewModel.toggleSlot(slot) },
@@ -101,16 +108,17 @@ fun SlotSelectionScreen(
                         }
                     }
                 } else {
-                    Column(
-                        modifier = Modifier
-                            .weight(1f)
-                            .verticalScroll(rememberScrollState()),
-                        verticalArrangement = Arrangement.spacedBy(10.dp),
+                    LazyColumn(
+                        modifier = Modifier.weight(1f),
+                        verticalArrangement = Arrangement.spacedBy(6.dp),
+                        contentPadding = PaddingValues(bottom = 4.dp),
                     ) {
-                        (1..data.teamCount).forEach { teamNum ->
-                            TeamSlotBox(
+                        items((1..data.teamCount).toList(), key = { it }) { teamNum ->
+                            TeamSlotRow(
                                 teamNumber = teamNum,
-                                slots = data.slots.filter { it.teamNumber == teamNum },
+                                slots = data.slots
+                                    .filter { it.teamNumber == teamNum }
+                                    .sortedBy { it.positionInTeam },
                                 selected = selected,
                                 onToggle = { viewModel.toggleSlot(it) },
                             )
@@ -126,7 +134,9 @@ fun SlotSelectionScreen(
                     viewModel.holdAndProceed(matchId) { onNavigateToDetails() }
                 },
                 enabled = selected.isNotEmpty() && !isHolding,
-                modifier = Modifier.fillMaxWidth().padding(top = 12.dp),
+                modifier = Modifier
+                    .fillMaxWidth()
+                    .padding(top = 8.dp),
                 colors = ButtonDefaults.buttonColors(containerColor = AccentOrange),
             ) {
                 Text(if (isHolding) "Reserving..." else "Continue", color = Color.White)
@@ -136,71 +146,94 @@ fun SlotSelectionScreen(
 }
 
 @Composable
-private fun SoloSlotChip(slot: SlotInfo, selected: Boolean, onClick: () -> Unit) {
+private fun CompactSlotCheckbox(
+    slotLabel: String,
+    slot: SlotInfo,
+    selected: Boolean,
+    onClick: () -> Unit,
+) {
     val available = slot.status == "available" || slot.heldByMe
-    val bg = when {
+    val boxColor = when {
         selected -> AccentOrange
         slot.status == "confirmed" -> Color(0xFF334155)
-        slot.status == "held" -> Color(0xFF475569)
-        else -> Color(0xFF1E293B)
+        slot.status == "held" && !slot.heldByMe -> Color(0xFF475569)
+        else -> Color(0xFF0F172A)
     }
-    Box(
+    val borderColor = when {
+        selected -> Color.White
+        !available -> Color(0xFF334155)
+        else -> Color(0xFF64748B)
+    }
+
+    Column(
         modifier = Modifier
-            .size(52.dp)
-            .background(bg, RoundedCornerShape(8.dp))
-            .border(
-                width = if (selected) 2.dp else 1.dp,
-                color = if (selected) Color.White else Color(0xFF475569),
-                shape = RoundedCornerShape(8.dp),
-            )
+            .widthIn(min = 36.dp)
             .clickable(enabled = available) { onClick() },
-        contentAlignment = Alignment.Center,
+        horizontalAlignment = Alignment.CenterHorizontally,
     ) {
-        Text("${slot.slotIndex}", color = if (available) Color.White else TextMuted, fontWeight = FontWeight.Bold)
+        Box(
+            modifier = Modifier
+                .size(22.dp)
+                .clip(RoundedCornerShape(4.dp))
+                .background(boxColor)
+                .border(1.dp, borderColor, RoundedCornerShape(4.dp)),
+            contentAlignment = Alignment.Center,
+        ) {
+            if (selected) {
+                Icon(
+                    imageVector = Icons.Default.Check,
+                    contentDescription = null,
+                    tint = Color.White,
+                    modifier = Modifier.size(14.dp),
+                )
+            }
+        }
+        Text(
+            text = slotLabel,
+            color = if (available) TextWhite else TextMuted,
+            fontSize = 11.sp,
+            fontWeight = FontWeight.SemiBold,
+            textAlign = TextAlign.Center,
+            modifier = Modifier.padding(top = 3.dp),
+        )
     }
 }
 
 @Composable
-private fun TeamSlotBox(
+private fun TeamSlotRow(
     teamNumber: Int,
     slots: List<SlotInfo>,
     selected: Set<Int>,
     onToggle: (SlotInfo) -> Unit,
 ) {
-    Card(
-        colors = CardDefaults.cardColors(containerColor = Color(0xFF1E293B)),
-        shape = RoundedCornerShape(10.dp),
+    Row(
+        modifier = Modifier
+            .fillMaxWidth()
+            .clip(RoundedCornerShape(8.dp))
+            .background(Color(0xFF1E293B))
+            .padding(start = 10.dp, end = 10.dp, top = 7.dp, bottom = 7.dp),
+        verticalAlignment = Alignment.CenterVertically,
     ) {
-        Column(Modifier.padding(12.dp)) {
-            Text("Team $teamNumber", color = TextWhite, fontWeight = FontWeight.Bold, fontSize = 13.sp)
-            Spacer(Modifier.height(8.dp))
-            Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
-                slots.forEach { slot ->
-                    val available = slot.status == "available" || slot.heldByMe
-                    val isSelected = selected.contains(slot.slotIndex)
-                    val bg = when {
-                        isSelected -> AccentOrange
-                        slot.status == "confirmed" -> Color(0xFF334155)
-                        slot.status == "held" -> Color(0xFF475569)
-                        else -> Color(0xFF0F172A)
-                    }
-                    Column(
-                        modifier = Modifier
-                            .weight(1f)
-                            .background(bg, RoundedCornerShape(8.dp))
-                            .border(
-                                1.dp,
-                                if (isSelected) Color.White else Color(0xFF475569),
-                                RoundedCornerShape(8.dp),
-                            )
-                            .clickable(enabled = available) { onToggle(slot) }
-                            .padding(vertical = 12.dp),
-                        horizontalAlignment = Alignment.CenterHorizontally,
-                    ) {
-                        Text("Slot ${slot.positionInTeam}", color = TextMuted, fontSize = 10.sp)
-                        Text("#${slot.slotIndex}", color = Color.White, fontWeight = FontWeight.Bold)
-                    }
-                }
+        Text(
+            text = "Team $teamNumber",
+            color = TextWhite,
+            fontWeight = FontWeight.Bold,
+            fontSize = 12.sp,
+        )
+
+        Row(
+            modifier = Modifier.weight(1f),
+            verticalAlignment = Alignment.CenterVertically,
+        ) {
+            Spacer(modifier = Modifier.weight(1f))
+            slots.forEach { slot ->
+                CompactSlotCheckbox(
+                    slotLabel = "${slot.positionInTeam}",
+                    slot = slot,
+                    selected = selected.contains(slot.slotIndex),
+                    onClick = { onToggle(slot) },
+                )
+                Spacer(modifier = Modifier.weight(1f))
             }
         }
     }
@@ -256,7 +289,7 @@ fun JoinSlotDetailsScreen(
                     Column(Modifier.padding(12.dp), verticalArrangement = Arrangement.spacedBy(8.dp)) {
                         Text(
                             if (slotsData?.teamSize == 1) "Slot ${entry.slotIndex}"
-                            else "Team ${entry.teamNumber} · Slot ${entry.positionInTeam} (#${entry.slotIndex})",
+                            else "Team ${entry.teamNumber} · Slot ${entry.positionInTeam}",
                             color = TextWhite,
                             fontWeight = FontWeight.Bold,
                         )

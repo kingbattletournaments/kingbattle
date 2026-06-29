@@ -42,6 +42,10 @@ data class User(
     @SerializedName("total_kills", alternate = ["totalKills"])
     val total_kills: Int = 0,
     val username: String? = null,
+    @SerializedName("isBlocked", alternate = ["is_blocked"])
+    val is_blocked: Boolean = false,
+    @SerializedName("blockReason", alternate = ["block_reason"])
+    val block_reason: String? = null,
     @SerializedName("created_at", alternate = ["createdAt"])
     val created_at: String? = null,
     @SerializedName("updated_at", alternate = ["updatedAt"])

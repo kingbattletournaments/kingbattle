@@ -66,6 +66,8 @@ import com.kingbattle.domain.model.LeaderboardUser
 import com.kingbattle.presentation.auth.AuthViewModel
 import com.kingbattle.presentation.components.BannerSkeleton
 import com.kingbattle.presentation.components.CachedNetworkImage
+import com.kingbattle.presentation.components.rememberBannerDecodeSize
+import com.kingbattle.presentation.components.rememberImageDecodeSize
 import com.kingbattle.presentation.components.LeaderboardSkeleton
 import com.kingbattle.presentation.components.ModesGridSkeleton
 import androidx.compose.foundation.pager.HorizontalPager
@@ -115,8 +117,8 @@ fun buildAppShareMessage(
 }
 
 // Custom ImageVectors for navbar icons (since SportsEsports and Leaderboard are not in the core Material icons library)
-val SportsEsportsIcon: ImageVector
-    get() = ImageVector.Builder(
+val SportsEsportsIcon: ImageVector by lazy {
+    ImageVector.Builder(
         name = "SportsEsports",
         defaultWidth = 24.dp,
         defaultHeight = 24.dp,
@@ -216,9 +218,10 @@ val SportsEsportsIcon: ImageVector
         lineToRelative(3.63f, 3.63f)
         close()
     }.build()
+}
 
-val EarnIcon: ImageVector
-    get() = ImageVector.Builder(
+val EarnIcon: ImageVector by lazy {
+    ImageVector.Builder(
         name = "Earn",
         defaultWidth = 24.dp,
         defaultHeight = 24.dp,
@@ -286,6 +289,7 @@ val EarnIcon: ImageVector
         verticalLineTo(11.0f)
         close()
     }.build()
+}
 
 enum class HomeTab {
     EARN, PLAY, ACCOUNT
@@ -317,6 +321,15 @@ fun HomeScreen(
     val contentRefreshEpochState = homeViewModel.contentRefreshEpoch.collectAsState()
     val hasCachedHomeContentState = homeViewModel.hasCachedHomeContent.collectAsState()
     val errorState = homeViewModel.errorMessage.collectAsState()
+    val referralSettingsState = homeViewModel.referralSettings.collectAsState()
+    val leaderboardState = homeViewModel.leaderboard.collectAsState()
+    val isAccountBlocked = userState.value?.is_blocked == true
+
+    LaunchedEffect(isAccountBlocked) {
+        if (isAccountBlocked) {
+            activeTab = HomeTab.ACCOUNT
+        }
+    }
 
     LaunchedEffect(activeTab) {
         if (activeTab == HomeTab.ACCOUNT) {
@@ -327,17 +340,17 @@ fun HomeScreen(
     if (showReferScreen) {
         ReferScreen(
             user = userState.value,
-            referralSettings = homeViewModel.referralSettings.collectAsState().value,
+            referralSettings = referralSettingsState.value,
             isRefreshing = isRefreshingState.value,
             onRefresh = { homeViewModel.refreshHomeContent() },
             onBack = { showReferScreen = false }
         )
     } else if (showLeaderboard) {
         LeaderboardScreen(
-            leaderboard = homeViewModel.leaderboard.collectAsState().value,
-            isLoading = homeViewModel.isLoading.collectAsState().value,
+            leaderboard = leaderboardState.value,
+            isLoading = isLoadingState.value,
             isRefreshing = isRefreshingState.value,
-            errorMessage = homeViewModel.errorMessage.collectAsState().value,
+            errorMessage = errorState.value,
             onBack = { showLeaderboard = false },
             onRefresh = { homeViewModel.refreshHomeContent() },
             onRetry = { homeViewModel.refreshHomeContent() }
@@ -347,7 +360,12 @@ fun HomeScreen(
             bottomBar = {
                 BottomNavigationBar(
                     activeTab = activeTab,
-                    onTabSelected = { activeTab = it }
+                    onTabSelected = { tab ->
+                        if (!isAccountBlocked) {
+                            activeTab = tab
+                        }
+                    },
+                    accountOnly = isAccountBlocked,
                 )
             },
             containerColor = ThemeDarkBg
@@ -357,8 +375,24 @@ fun HomeScreen(
                     .fillMaxSize()
                     .padding(paddingValues)
             ) {
-                when (activeTab) {
-                    HomeTab.PLAY -> {
+                when {
+                    isAccountBlocked || activeTab == HomeTab.ACCOUNT -> {
+                        AccountTabContent(
+                            user = userState.value,
+                            referralSettings = referralSettingsState.value,
+                            isRefreshing = isRefreshingState.value,
+                            onRefresh = { homeViewModel.refreshHomeContent() },
+                            onCustomerSupportClick = { homeViewModel.openCustomerSupport(context) },
+                            onLogoutClick = {
+                                authViewModel.logout()
+                                onLogout()
+                            },
+                            onWalletClick = onNavigateToWallet,
+                            onLeaderboardClick = { showLeaderboard = true },
+                            onMyMatchesClick = { onNavigateToMatches("my_matches", 2) }
+                        )
+                    }
+                    activeTab == HomeTab.PLAY -> {
                         PlayTabContent(
                             user = userState.value,
                             announcementText = announcementState.value,
@@ -377,10 +411,10 @@ fun HomeScreen(
                             onBalanceClick = onNavigateToWallet
                         )
                     }
-                    HomeTab.EARN -> {
+                    else -> {
                         EarnTabContent(
                             banners = bannersState.value,
-                            referralSettings = homeViewModel.referralSettings.collectAsState().value,
+                            referralSettings = referralSettingsState.value,
                             isLoading = isLoadingState.value,
                             isRefreshing = isRefreshingState.value,
                             hasCachedContent = hasCachedHomeContentState.value,
@@ -389,22 +423,6 @@ fun HomeScreen(
                             onRefresh = { homeViewModel.refreshHomeContent() },
                             onRetry = { homeViewModel.refreshHomeContent() },
                             onReferClick = { showReferScreen = true }
-                        )
-                    }
-                    HomeTab.ACCOUNT -> {
-                        AccountTabContent(
-                            user = userState.value,
-                            referralSettings = homeViewModel.referralSettings.collectAsState().value,
-                            isRefreshing = isRefreshingState.value,
-                            onRefresh = { homeViewModel.refreshHomeContent() },
-                            onCustomerSupportClick = { homeViewModel.openCustomerSupport(context) },
-                            onLogoutClick = {
-                                authViewModel.logout()
-                                onLogout()
-                            },
-                            onWalletClick = onNavigateToWallet,
-                            onLeaderboardClick = { showLeaderboard = true },
-                            onMyMatchesClick = { onNavigateToMatches("my_matches", 2) }
                         )
                     }
                 }
@@ -658,7 +676,8 @@ fun BannerSection(
     contentRefreshEpoch: Long = 0L,
 ) {
     val context = LocalContext.current
-    val carouselBanners = banners.filter { it.imageUrl.isNotBlank() }
+    val carouselBanners = remember(banners) { banners.filter { it.imageUrl.isNotBlank() } }
+    val bannerDecodeSize = rememberBannerDecodeSize()
 
     if (isOffline && carouselBanners.isEmpty()) {
         Card(
@@ -703,26 +722,24 @@ fun BannerSection(
     ) {
         Box(modifier = Modifier.fillMaxSize()) {
             val pagerState = rememberPagerState(pageCount = { carouselBanners.size })
-            var pauseAutoScroll by remember { mutableStateOf(false) }
 
-            LaunchedEffect(pagerState) {
-                snapshotFlow { pagerState.isScrollInProgress }
-                    .collect { scrolling -> pauseAutoScroll = scrolling }
-            }
-
-            LaunchedEffect(carouselBanners.size, pauseAutoScroll) {
+            LaunchedEffect(carouselBanners.map { it.id }) {
+                if (carouselBanners.size <= 1) return@LaunchedEffect
                 while (true) {
-                    kotlinx.coroutines.delay(5000)
-                    if (!pauseAutoScroll && carouselBanners.size > 1) {
-                        val nextPage = (pagerState.currentPage + 1) % carouselBanners.size
-                        pagerState.animateScrollToPage(nextPage)
+                    kotlinx.coroutines.delay(5_000)
+                    while (pagerState.isScrollInProgress) {
+                        kotlinx.coroutines.delay(100)
                     }
+                    val nextPage = (pagerState.settledPage + 1) % carouselBanners.size
+                    pagerState.animateScrollToPage(nextPage)
                 }
             }
 
             HorizontalPager(
                 state = pagerState,
-                modifier = Modifier.fillMaxSize()
+                modifier = Modifier.fillMaxSize(),
+                beyondViewportPageCount = 0,
+                key = { carouselBanners[it].id },
             ) { page ->
                 val banner = carouselBanners[page]
                 Card(
@@ -748,11 +765,13 @@ fun BannerSection(
                         modifier = Modifier.fillMaxSize(),
                         contentScale = ContentScale.Crop,
                         cacheKey = bannerImageCacheKey(banner.id, banner.imageUrl, contentRefreshEpoch),
+                        decodeSize = bannerDecodeSize,
                     )
                 }
             }
 
             if (carouselBanners.size > 1) {
+                val selectedPage by remember { derivedStateOf { pagerState.currentPage } }
                 Row(
                     modifier = Modifier
                         .align(Alignment.BottomCenter)
@@ -761,7 +780,7 @@ fun BannerSection(
                     verticalAlignment = Alignment.CenterVertically
                 ) {
                     repeat(carouselBanners.size) { index ->
-                        val isSelected = pagerState.currentPage == index
+                        val isSelected = selectedPage == index
                         Box(
                             modifier = Modifier
                                 .size(if (isSelected) 8.dp else 6.dp)
@@ -781,6 +800,7 @@ fun ReferralBannerCard(
     onClick: () -> Unit,
     cacheKey: String? = null,
 ) {
+    val bannerDecodeSize = rememberBannerDecodeSize()
     Card(
         modifier = Modifier
             .fillMaxWidth()
@@ -798,6 +818,7 @@ fun ReferralBannerCard(
                     .aspectRatio(16f / 9f),
                 contentScale = ContentScale.Crop,
                 cacheKey = cacheKey,
+                decodeSize = bannerDecodeSize,
             )
         } else {
             Image(
@@ -922,6 +943,7 @@ fun ModeCardItem(
     onClick: () -> Unit,
     modifier: Modifier = Modifier
 ) {
+    val modeImageSize = rememberImageDecodeSize(width = 180.dp, height = 200.dp)
     Card(
         modifier = modifier
             .aspectRatio(0.85f)
@@ -958,7 +980,8 @@ fun ModeCardItem(
                         url = mode.image_url,
                         contentDescription = mode.name,
                         modifier = Modifier.fillMaxSize(),
-                        contentScale = ContentScale.Crop
+                        contentScale = ContentScale.Crop,
+                        decodeSize = modeImageSize,
                     )
                 } else {
                     Text(
@@ -1012,6 +1035,7 @@ fun EarnTabContent(
     val earnBanners = remember(banners) {
         banners.filter { it.displayEarn }
     }
+    val bannerDecodeSize = rememberBannerDecodeSize()
     val referralBannerUrl = referralSettings?.bannerUrl?.trim().orEmpty()
 
     Column(
@@ -1093,6 +1117,7 @@ fun EarnTabContent(
                                         .aspectRatio(16f / 9f),
                                     contentScale = ContentScale.Crop,
                                     cacheKey = bannerImageCacheKey(banner.id, imageUrl, contentRefreshEpoch),
+                                    decodeSize = bannerDecodeSize,
                                 )
                             }
                         }
@@ -1104,6 +1129,65 @@ fun EarnTabContent(
 }
 
 // ==================== ACCOUNT TAB CONTENT ====================
+@Composable
+private fun BlockedAccountContent(
+    reason: String?,
+    onCustomerSupportClick: () -> Unit,
+    modifier: Modifier = Modifier,
+) {
+    Column(
+        modifier = modifier
+            .fillMaxSize()
+            .background(ThemeDarkBg)
+            .padding(24.dp),
+        horizontalAlignment = Alignment.CenterHorizontally,
+        verticalArrangement = Arrangement.Center,
+    ) {
+        Text(
+            text = "Account Restricted",
+            color = Color(0xFFFCA5A5),
+            fontSize = 22.sp,
+            fontWeight = FontWeight.Bold,
+            textAlign = TextAlign.Center,
+        )
+        Spacer(modifier = Modifier.height(20.dp))
+        Card(
+            modifier = Modifier.fillMaxWidth(),
+            shape = RoundedCornerShape(12.dp),
+            colors = CardDefaults.cardColors(containerColor = ThemeCardBg),
+            border = BorderStroke(1.dp, Color(0xFF7F1D1D)),
+        ) {
+            Text(
+                text = reason?.takeIf { it.isNotBlank() }
+                    ?: "Your account has been restricted. Please contact customer support for assistance.",
+                color = TextWhite,
+                fontSize = 15.sp,
+                lineHeight = 22.sp,
+                modifier = Modifier.padding(18.dp),
+            )
+        }
+        Spacer(modifier = Modifier.height(24.dp))
+        Button(
+            onClick = onCustomerSupportClick,
+            modifier = Modifier.fillMaxWidth(),
+            colors = ButtonDefaults.buttonColors(containerColor = AccentOrange),
+            shape = RoundedCornerShape(10.dp),
+        ) {
+            Icon(
+                imageVector = Icons.Filled.SupportAgent,
+                contentDescription = null,
+                modifier = Modifier.size(20.dp),
+            )
+            Spacer(modifier = Modifier.width(8.dp))
+            Text(
+                text = "Customer Support",
+                fontSize = 16.sp,
+                fontWeight = FontWeight.Bold,
+            )
+        }
+    }
+}
+
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable
 fun AccountTabContent(
@@ -1123,6 +1207,14 @@ fun AccountTabContent(
 
     var showAboutDialog by remember { mutableStateOf(false) }
     var showTermsDialog by remember { mutableStateOf(false) }
+
+    if (user?.is_blocked == true) {
+        BlockedAccountContent(
+            reason = user.block_reason,
+            onCustomerSupportClick = onCustomerSupportClick,
+        )
+        return
+    }
 
     Box(
         modifier = Modifier
@@ -1508,18 +1600,23 @@ fun AccountTabContent(
 @Composable
 fun BottomNavigationBar(
     activeTab: HomeTab,
-    onTabSelected: (HomeTab) -> Unit
+    onTabSelected: (HomeTab) -> Unit,
+    accountOnly: Boolean = false,
 ) {
     NavigationBar(
         containerColor = ThemeFooterBg,
         tonalElevation = 8.dp,
         modifier = Modifier.border(width = 1.dp, color = ThemeBorderColor, shape = RoundedCornerShape(topStart = 16.dp, topEnd = 16.dp))
     ) {
-        val items = listOf(
-            Triple(HomeTab.EARN, "Earn", EarnIcon),
-            Triple(HomeTab.PLAY, "Play", SportsEsportsIcon),
-            Triple(HomeTab.ACCOUNT, "Account", Icons.Filled.Person)
-        )
+        val items = if (accountOnly) {
+            listOf(Triple(HomeTab.ACCOUNT, "Account", Icons.Filled.Person))
+        } else {
+            listOf(
+                Triple(HomeTab.EARN, "Earn", EarnIcon),
+                Triple(HomeTab.PLAY, "Play", SportsEsportsIcon),
+                Triple(HomeTab.ACCOUNT, "Account", Icons.Filled.Person)
+            )
+        }
 
         items.forEach { (tab, label, icon) ->
             NavigationBarItem(

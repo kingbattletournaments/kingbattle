@@ -1,6 +1,8 @@
 import { NextResponse } from "next/server";
 import { getStore } from "@/lib/store";
 import { getAdminSession } from "@/lib/admin-auth";
+import { invalidateAdminApiCache } from "@/lib/admin-api-cache";
+import { normalizeAdminUser, serializeAdminUser } from "@/lib/admin-user";
 
 export async function GET(
   _request: Request,
@@ -12,7 +14,7 @@ export async function GET(
   const { id } = await params;
   const user = await getStore().getUser(id);
   if (!user) return NextResponse.json({ error: "User not found" }, { status: 404 });
-  return NextResponse.json(user);
+  return NextResponse.json(serializeAdminUser(normalizeAdminUser(user)));
 }
 
 export async function DELETE(
@@ -25,5 +27,6 @@ export async function DELETE(
   const { id } = await params;
   const ok = await getStore().deleteUser(id);
   if (!ok) return NextResponse.json({ error: "User not found" }, { status: 404 });
+  invalidateAdminApiCache("users");
   return NextResponse.json({ success: true });
 }

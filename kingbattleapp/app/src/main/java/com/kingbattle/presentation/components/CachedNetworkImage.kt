@@ -12,7 +12,8 @@ import androidx.compose.ui.layout.ContentScale
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.sp
-import coil.compose.SubcomposeAsyncImage
+import coil.compose.AsyncImage
+import coil.request.CachePolicy
 import coil.request.ImageRequest
 import com.kingbattle.presentation.home.TextMuted
 import com.kingbattle.presentation.home.ThemeCardBg
@@ -24,6 +25,8 @@ fun CachedNetworkImage(
     modifier: Modifier = Modifier,
     contentScale: ContentScale = ContentScale.Crop,
     cacheKey: String? = null,
+    decodeSize: ImageDecodeSize? = null,
+    crossfade: Boolean = false,
 ) {
     if (url.isBlank()) {
         ImagePlaceholder(modifier = modifier)
@@ -31,10 +34,15 @@ fun CachedNetworkImage(
     }
 
     val context = LocalContext.current
-    val model = remember(url, cacheKey) {
+    val model = remember(url, cacheKey, decodeSize, crossfade) {
         ImageRequest.Builder(context)
             .data(url)
+            .crossfade(crossfade)
+            .allowHardware(true)
+            .memoryCachePolicy(CachePolicy.ENABLED)
+            .diskCachePolicy(CachePolicy.ENABLED)
             .apply {
+                decodeSize?.let { size(it.widthPx, it.heightPx) }
                 if (!cacheKey.isNullOrBlank()) {
                     memoryCacheKey(cacheKey)
                     diskCacheKey(cacheKey)
@@ -43,26 +51,16 @@ fun CachedNetworkImage(
             .build()
     }
 
-    SubcomposeAsyncImage(
+    AsyncImage(
         model = model,
         contentDescription = contentDescription,
-        modifier = modifier,
+        modifier = modifier.background(ThemeCardBg),
         contentScale = contentScale,
-        loading = {
-            Box(
-                modifier = Modifier
-                    .fillMaxSize()
-                    .shimmerEffect(),
-            )
-        },
-        error = {
-            ImagePlaceholder(modifier = Modifier.fillMaxSize())
-        },
     )
 }
 
 @Composable
-private fun ImagePlaceholder(modifier: Modifier = Modifier) {
+fun ImagePlaceholder(modifier: Modifier = Modifier) {
     Box(
         modifier = modifier.background(ThemeCardBg),
         contentAlignment = Alignment.Center,

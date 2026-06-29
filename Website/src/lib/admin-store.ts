@@ -72,6 +72,7 @@ export type User = {
   coins: number;
   wonCoins: number;
   isBlocked?: boolean;
+  blockReason?: string | null;
   lifetimeEarnedPoints?: number;
   matchesPlayed?: number;
   totalKills?: number;
@@ -1203,16 +1204,20 @@ export const adminStore = {
       : [...coinTransactions];
     return list.sort((a, b) => new Date(b.createdAt).getTime() - new Date(a.createdAt).getTime());
   },
-  blockUser: (userId: string) => {
+  blockUser: (userId: string, reason: string) => {
     const u = users.find((x) => x.id === userId);
     if (!u) return false;
+    const trimmed = reason.trim();
+    if (!trimmed) return false;
     u.isBlocked = true;
+    u.blockReason = trimmed;
     return true;
   },
   unblockUser: (userId: string) => {
     const u = users.find((x) => x.id === userId);
     if (!u) return false;
     u.isBlocked = false;
+    u.blockReason = null;
     return true;
   },
   deleteUser: (userId: string) => {

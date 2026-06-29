@@ -42,6 +42,7 @@ import {
   removeAdminClientCache,
   writeAdminClientCache,
 } from "@/lib/admin-client-cache";
+import { normalizeAdminUser } from "@/lib/admin-user";
 
 type Tab = "dashboard" | "modes" | "presets" | "moneyorders" | "withdrawals" | "admins" | "notifications" | "appsettings" | "banners" | "referrals" | "users";
 type Game = { id: string; name: string; imageUrl: string | null };
@@ -78,7 +79,7 @@ type MatchPreset = {
   prizePool?: PrizePool;
   image?: string | null;
 };
-type User = { id: string; email: string; displayName: string; coins: number; wonCoins?: number; isBlocked?: boolean; username?: string };
+type User = { id: string; email: string; displayName: string; coins: number; wonCoins?: number; isBlocked?: boolean; blockReason?: string | null; username?: string };
 
 type AdminSession = {
   id: string;
@@ -109,6 +110,23 @@ type AdminTabCachePayload = {
 function adminTabClientKey(tab: Tab, modeId?: string | null): string {
   const cacheKey = tab === "modes" && modeId ? `modes:${modeId}` : tab;
   return `tab:${cacheKey}`;
+}
+
+function normalizeUsersList(data: unknown): User[] {
+  if (!Array.isArray(data)) return [];
+  return data.map((row) => {
+    const u = normalizeAdminUser(row);
+    return {
+      id: u.id,
+      email: u.email,
+      displayName: u.displayName,
+      coins: u.coins,
+      wonCoins: u.wonCoins,
+      isBlocked: u.isBlocked,
+      blockReason: u.blockReason,
+      username: u.username,
+    };
+  });
 }
 
 function hasAdminTabCache(tab: Tab, modeId?: string | null): boolean {
@@ -342,7 +360,7 @@ function AdminPageInner() {
               setMatchPresets(cached.data.presets);
             }
           }
-          if (cached.data.users) setUsers(cached.data.users);
+          if (cached.data.users) setUsers(normalizeUsersList(cached.data.users));
           if (cached.data.deposits) setDeposits(cached.data.deposits);
           if (cached.data.withdrawals) setWithdrawals(cached.data.withdrawals);
           loadedTabsRef.current.add(cacheKey);
@@ -383,7 +401,8 @@ function AdminPageInner() {
             if (canAccessAdminTab(adminSession, "users")) {
               const uRes = await fetch("/api/admin/users", { cache: "no-store" });
               if (uRes.ok) {
-                payload.users = await uRes.json();
+                const data = await uRes.json();
+                payload.users = normalizeUsersList(data);
                 setUsers(payload.users!);
               }
             }
@@ -418,7 +437,8 @@ function AdminPageInner() {
               tasks.push(
                 fetch("/api/admin/users", { cache: "no-store" }).then(async (r) => {
                   if (r.ok) {
-                    payload.users = await r.json();
+                    const data = await r.json();
+                    payload.users = normalizeUsersList(data);
                     setUsers(payload.users!);
                   }
                 }),
@@ -446,7 +466,8 @@ function AdminPageInner() {
               tasks.push(
                 fetch("/api/admin/users", { cache: "no-store" }).then(async (r) => {
                   if (r.ok) {
-                    payload.users = await r.json();
+                    const data = await r.json();
+                    payload.users = normalizeUsersList(data);
                     setUsers(payload.users!);
                   }
                 }),
@@ -461,8 +482,9 @@ function AdminPageInner() {
             const uRes = await fetch("/api/admin/users", { cache: "no-store" });
             if (uRes.ok) {
               const data = await uRes.json();
-              setUsers(data);
-              writeAdminClientCache(clientKey, { users: data }, ADMIN_CLIENT_CACHE_TTL.users);
+              const normalized = normalizeUsersList(data);
+              setUsers(normalized);
+              writeAdminClientCache(clientKey, { users: normalized }, ADMIN_CLIENT_CACHE_TTL.users);
             }
             loadedTabsRef.current.add(cacheKey);
             break;
@@ -485,6 +507,23 @@ function AdminPageInner() {
     removeAdminClientCache("dashboard");
     setDashboardStats(null);
   };
+
+  const patchUserInList = useCallback((updated: User) => {
+    const normalized = normalizeAdminUser(updated);
+    const next: User = {
+      id: normalized.id,
+      email: normalized.email,
+      displayName: normalized.displayName,
+      coins: normalized.coins,
+      wonCoins: normalized.wonCoins,
+      isBlocked: normalized.isBlocked,
+      blockReason: normalized.blockReason,
+      username: normalized.username,
+    };
+    setUsers((prev) => prev.map((u) => (u.id === next.id ? next : u)));
+    removeAdminClientCache(adminTabClientKey("users"));
+    loadedTabsRef.current.delete("users");
+  }, []);
 
   const refreshCurrentTab = async (showLoading = true) => {
     if (!session) return;
@@ -777,7 +816,13 @@ function AdminPageInner() {
                 <UsersSection
                   users={users}
                   canAddCoins={canAccessAdminTab(session, "moneyorders") || canAccessAdminTab(session, "withdrawals")}
-                  onSuccess={() => { refreshCurrentTab(false); showMsg("ok", "Users list updated"); }}
+                  onPatchUser={patchUserInList}
+                  onUserRemoved={(userId) => {
+                    setUsers((prev) => prev.filter((u) => u.id !== userId));
+                    removeAdminClientCache(adminTabClientKey("users"));
+                    loadedTabsRef.current.delete("users");
+                    showMsg("ok", "User deleted");
+                  }}
                 />
               )}
             </>
@@ -3841,11 +3886,13 @@ function CreateAdminSection({
 function UsersSection({
   users,
   canAddCoins,
-  onSuccess,
+  onPatchUser,
+  onUserRemoved,
 }: {
   users: User[];
   canAddCoins: boolean;
-  onSuccess: () => void;
+  onPatchUser: (user: User) => void;
+  onUserRemoved: (userId: string) => void;
 }) {
   const [selectedUser, setSelectedUser] = useState<User | null>(null);
   const [usersTab, setUsersTab] = useState<"all" | "blocked">("all");
@@ -3853,7 +3900,7 @@ function UsersSection({
 
   const searchTrimmed = searchQuery.trim().toLowerCase();
   const filteredUsers = users
-    .filter((u) => (usersTab === "blocked" ? u.isBlocked : true))
+    .filter((u) => (usersTab === "blocked" ? u.isBlocked === true : true))
     .filter((u) => {
       if (!searchTrimmed) return true;
       const username = (u.username || u.id).toLowerCase();
@@ -3926,12 +3973,12 @@ function UsersSection({
                       <td className="text-center">
                         <span
                           className={`inline-block px-2.5 py-1 text-xs font-semibold rounded-full ${
-                            u.isBlocked
+                            u.isBlocked === true
                               ? "bg-rose-500/20 text-rose-300 border border-rose-500/20"
                               : "bg-emerald-500/20 text-emerald-300 border border-emerald-500/20"
                           }`}
                         >
-                          {u.isBlocked ? "Blocked" : "Active"}
+                          {u.isBlocked === true ? "Blocked" : "Active"}
                         </span>
                       </td>
                       <td className="text-right">
@@ -3958,11 +4005,11 @@ function UsersSection({
           canAddCoins={canAddCoins}
           onClose={() => setSelectedUser(null)}
           onUserUpdate={(updated) => {
-            onSuccess();
+            onPatchUser(updated);
             setSelectedUser(updated);
           }}
           onDelete={() => {
-            onSuccess();
+            onUserRemoved(selectedUser.id);
             setSelectedUser(null);
           }}
         />
@@ -3972,7 +4019,7 @@ function UsersSection({
 }
 
 function UserProfileModal({
-  user,
+  user: initialUser,
   canAddCoins,
   onClose,
   onUserUpdate,
@@ -3984,11 +4031,56 @@ function UserProfileModal({
   onUserUpdate: (user: User) => void;
   onDelete: () => void;
 }) {
+  const toUserRecord = (raw: unknown): User => {
+    const u = normalizeAdminUser(raw);
+    return {
+      id: u.id,
+      email: u.email,
+      displayName: u.displayName,
+      coins: u.coins,
+      wonCoins: u.wonCoins,
+      isBlocked: u.isBlocked,
+      blockReason: u.blockReason,
+      username: u.username,
+    };
+  };
+
+  const [profile, setProfile] = useState<User>(() => toUserRecord(initialUser));
+  const [loadingProfile, setLoadingProfile] = useState(true);
+  const [profileError, setProfileError] = useState<string | null>(null);
   const [amount, setAmount] = useState("");
   const [submitting, setSubmitting] = useState(false);
   const [blocking, setBlocking] = useState(false);
   const [deleting, setDeleting] = useState(false);
+  const [blockReasonDraft, setBlockReasonDraft] = useState("");
   const ref = useRef<HTMLDivElement>(null);
+
+  useEffect(() => {
+    let cancelled = false;
+    setLoadingProfile(true);
+    setProfileError(null);
+    setBlockReasonDraft("");
+
+    (async () => {
+      try {
+        const res = await fetch(`/api/admin/users/${initialUser.id}`, { cache: "no-store" });
+        if (!res.ok) throw new Error(await res.text());
+        const fresh = toUserRecord(await res.json());
+        if (!cancelled) setProfile(fresh);
+      } catch {
+        if (!cancelled) {
+          setProfileError("Could not load the latest profile. Showing cached data.");
+          setProfile(toUserRecord(initialUser));
+        }
+      } finally {
+        if (!cancelled) setLoadingProfile(false);
+      }
+    })();
+
+    return () => {
+      cancelled = true;
+    };
+  }, [initialUser.id]);
 
   useEffect(() => {
     const close = (e: MouseEvent) => {
@@ -4003,21 +4095,29 @@ function UserProfileModal({
     };
   }, [onClose]);
 
+  const isBlocked = profile.isBlocked === true;
+
+  const applyUpdatedUser = (raw: unknown) => {
+    const updated = toUserRecord(raw);
+    setProfile(updated);
+    onUserUpdate(updated);
+    if (!updated.isBlocked) setBlockReasonDraft("");
+  };
+
   const handleAddCoins = async (e: React.FormEvent) => {
     e.preventDefault();
     const num = Number(amount);
     if (isNaN(num) || num <= 0) return;
     setSubmitting(true);
     try {
-      const res = await fetch(`/api/admin/users/${user.id}/coins`, {
+      const res = await fetch(`/api/admin/users/${profile.id}/coins`, {
         method: "POST",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({ amount: num }),
       });
       if (!res.ok) throw new Error(await res.text());
-      const updated = await res.json();
+      applyUpdatedUser(await res.json());
       setAmount("");
-      onUserUpdate(updated);
     } catch {
       alert("Failed to add coins");
     } finally {
@@ -4025,16 +4125,43 @@ function UserProfileModal({
     }
   };
 
-  const handleBlockUnblock = async () => {
+  const handleBlockUser = async () => {
+    const reason = blockReasonDraft.trim();
+    if (!reason) {
+      alert("Please enter a reason before blocking this user.");
+      return;
+    }
+    if (!confirm(`Block ${profile.displayName}? They will see this reason in the app:\n\n"${reason}"`)) {
+      return;
+    }
     setBlocking(true);
     try {
-      const endpoint = user.isBlocked ? "unblock" : "block";
-      const res = await fetch(`/api/admin/users/${user.id}/${endpoint}`, { method: "POST" });
+      const res = await fetch(`/api/admin/users/${profile.id}/block`, {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ reason }),
+      });
+      if (!res.ok) {
+        const errText = await res.text();
+        throw new Error(errText || "Failed to block user");
+      }
+      applyUpdatedUser(await res.json());
+    } catch (err) {
+      alert(err instanceof Error ? err.message : "Failed to block user");
+    } finally {
+      setBlocking(false);
+    }
+  };
+
+  const handleUnblock = async () => {
+    if (!confirm(`Unblock ${profile.displayName}?`)) return;
+    setBlocking(true);
+    try {
+      const res = await fetch(`/api/admin/users/${profile.id}/unblock`, { method: "POST" });
       if (!res.ok) throw new Error(await res.text());
-      const updated = await res.json();
-      onUserUpdate(updated);
+      applyUpdatedUser(await res.json());
     } catch {
-      alert("Failed to update block status");
+      alert("Failed to unblock user");
     } finally {
       setBlocking(false);
     }
@@ -4044,7 +4171,7 @@ function UserProfileModal({
     if (!confirm("Are you sure you want to delete this user? This cannot be undone.")) return;
     setDeleting(true);
     try {
-      const res = await fetch(`/api/admin/users/${user.id}`, { method: "DELETE" });
+      const res = await fetch(`/api/admin/users/${profile.id}`, { method: "DELETE" });
       if (!res.ok) throw new Error(await res.text());
       onDelete();
     } catch {
@@ -4054,8 +4181,8 @@ function UserProfileModal({
     }
   };
 
-  const winCoins = user.wonCoins ?? 0;
-  const normalCoins = Math.max(0, user.coins - winCoins);
+  const winCoins = profile.wonCoins ?? 0;
+  const normalCoins = Math.max(0, profile.coins - winCoins);
 
   return (
     <div className="fixed inset-0 top-16 z-50 flex items-center justify-center bg-black/70 p-4">
@@ -4063,7 +4190,7 @@ function UserProfileModal({
         ref={ref}
         className="max-h-[calc(100vh-6rem)] w-full max-w-md overflow-y-auto rounded-2xl border border-zinc-200 bg-white p-6 shadow-xl"
       >
-        <div className="mb-6 flex items-center justify-between">
+        <div className="mb-4 flex items-center justify-between">
           <h2 className="text-lg font-semibold text-zinc-900">User Profile</h2>
           <button
             type="button"
@@ -4076,18 +4203,55 @@ function UserProfileModal({
             </svg>
           </button>
         </div>
+
+        {loadingProfile ? (
+          <p className="mb-4 text-sm text-zinc-500">Loading latest profile…</p>
+        ) : null}
+        {profileError ? (
+          <p className="mb-4 rounded-lg border border-amber-200 bg-amber-50 px-3 py-2 text-sm text-amber-900">
+            {profileError}
+          </p>
+        ) : null}
+
+        {!isBlocked ? (
+          <div className="mb-6 rounded-xl border-2 border-amber-300 bg-amber-50 p-4">
+            <label htmlFor="block-reason" className="mb-2 block text-sm font-semibold text-zinc-900">
+              Block reason (required)
+            </label>
+            <p className="mb-3 text-xs text-zinc-600">
+              Enter the reason below, then click Block. The player will see this on their account screen.
+            </p>
+            <textarea
+              id="block-reason"
+              value={blockReasonDraft}
+              onChange={(e) => setBlockReasonDraft(e.target.value)}
+              placeholder="e.g. Using hacks in tournament..."
+              rows={4}
+              disabled={loadingProfile || blocking}
+              className="w-full rounded-lg border border-zinc-300 bg-white px-3 py-2 text-sm text-zinc-900 outline-none focus:border-amber-500 focus:ring-2 focus:ring-amber-200 disabled:opacity-60"
+            />
+          </div>
+        ) : (
+          <div className="mb-6 rounded-xl border border-rose-200 bg-rose-50 p-4">
+            <span className="text-xs font-medium uppercase tracking-wider text-rose-700">Ban reason</span>
+            <p className="mt-2 whitespace-pre-wrap text-sm text-rose-900">
+              {profile.blockReason?.trim() || "No reason recorded."}
+            </p>
+          </div>
+        )}
+
         <dl className="space-y-4 text-zinc-600">
           <div>
             <span className="text-xs font-medium uppercase tracking-wider text-zinc-500">Display Name</span>
-            <p className="mt-1 font-medium text-zinc-900">{user.displayName}</p>
+            <p className="mt-1 font-medium text-zinc-900">{profile.displayName}</p>
           </div>
           <div>
             <span className="text-xs font-medium uppercase tracking-wider text-zinc-500">Email</span>
-            <p className="mt-1 text-zinc-700">{user.email}</p>
+            <p className="mt-1 text-zinc-700">{profile.email}</p>
           </div>
           <div>
             <span className="text-xs font-medium uppercase tracking-wider text-zinc-500">Username / ID</span>
-            <p className="mt-1 font-mono text-sm text-zinc-500">{user.username || user.id}</p>
+            <p className="mt-1 font-mono text-sm text-zinc-500">{profile.username || profile.id}</p>
           </div>
           <div className="grid grid-cols-2 gap-4">
             <div>
@@ -4101,19 +4265,19 @@ function UserProfileModal({
           </div>
           <div>
             <span className="text-xs font-medium uppercase tracking-wider text-zinc-500">Total Coins</span>
-            <p className="mt-1 font-bold text-zinc-900 text-lg">💵 {user.coins}</p>
+            <p className="mt-1 font-bold text-zinc-900 text-lg">💵 {profile.coins}</p>
           </div>
           <div>
             <span className="text-xs font-medium uppercase tracking-wider text-zinc-500">Status</span>
             <div className="mt-1">
-              <span className={`inline-block px-2.5 py-0.5 text-xs font-medium rounded ${user.isBlocked ? "bg-rose-500/20 text-rose-300" : "bg-emerald-500/20 text-emerald-300"}`}>
-                {user.isBlocked ? "Blocked" : "Active"}
+              <span className={`inline-block px-2.5 py-0.5 text-xs font-medium rounded ${isBlocked ? "bg-rose-500/20 text-rose-300" : "bg-emerald-500/20 text-emerald-300"}`}>
+                {isBlocked ? "Blocked" : "Active"}
               </span>
             </div>
           </div>
         </dl>
         <div className="mt-8 space-y-4 border-t border-zinc-200 pt-6">
-          {canAddCoins && (
+          {canAddCoins && !isBlocked && (
             <form onSubmit={handleAddCoins} className="flex gap-2">
               <input
                 type="number"
@@ -4133,18 +4297,25 @@ function UserProfileModal({
             </form>
           )}
           <div className="flex flex-wrap gap-2">
-            <button
-              type="button"
-              onClick={handleBlockUnblock}
-              disabled={blocking}
-              className={`rounded-lg px-4 py-2 text-sm font-medium disabled:opacity-50 ${
-                user.isBlocked
-                  ? "admin-btn-primary"
-                  : "bg-amber-600/80 text-zinc-900 hover:bg-amber-500/80"
-              }`}
-            >
-              {blocking ? "..." : user.isBlocked ? "Unblock" : "Block"}
-            </button>
+            {!isBlocked ? (
+              <button
+                type="button"
+                onClick={handleBlockUser}
+                disabled={loadingProfile || blocking || !blockReasonDraft.trim()}
+                className="rounded-lg bg-amber-600 px-4 py-2 text-sm font-medium text-white hover:bg-amber-500 disabled:cursor-not-allowed disabled:opacity-50"
+              >
+                {blocking ? "Blocking..." : "Block"}
+              </button>
+            ) : (
+              <button
+                type="button"
+                onClick={handleUnblock}
+                disabled={loadingProfile || blocking}
+                className="admin-btn-primary rounded-lg px-4 py-2 text-sm font-medium disabled:opacity-50"
+              >
+                {blocking ? "Unblocking..." : "Unblock"}
+              </button>
+            )}
             <button
               type="button"
               onClick={handleDelete}

@@ -41,6 +41,8 @@ import androidx.compose.foundation.pager.HorizontalPager
 import androidx.compose.foundation.pager.rememberPagerState
 import kotlinx.coroutines.launch
 import com.kingbattle.R
+import com.kingbattle.presentation.components.CachedNetworkImage
+import com.kingbattle.presentation.components.rememberImageDecodeSize
 import com.kingbattle.util.MatchDateTimeFormatter
 import com.kingbattle.domain.model.Match
 import com.kingbattle.presentation.home.ThemeDarkBg
@@ -185,7 +187,8 @@ fun MatchesScreen(
             ) {
                 HorizontalPager(
                 state = pagerState,
-                modifier = Modifier.fillMaxSize()
+                modifier = Modifier.fillMaxSize(),
+                beyondViewportPageCount = 0,
             ) { page ->
                 fun canonicalStatus(raw: String?): String {
                     return raw
@@ -269,7 +272,7 @@ fun MatchesScreen(
                             contentPadding = PaddingValues(16.dp),
                             verticalArrangement = Arrangement.spacedBy(16.dp)
                         ) {
-                            items(filteredMatches) { match ->
+                            items(filteredMatches, key = { it.id }) { match ->
                                 MatchCard(
                                     match = match,
                                     isJoined = joinedMatchesState.value.contains(match.id),
@@ -314,6 +317,7 @@ fun MatchCard(
 ) {
     var rewardsExpanded by remember { mutableStateOf(false) }
     val context = LocalContext.current
+    val bannerDecodeSize = rememberImageDecodeSize(width = 400.dp, height = 180.dp)
 
     // Determine if image is a URL or local resource
     val isImageUrl = remember(match.image) {
@@ -345,13 +349,12 @@ fun MatchCard(
                     .height(180.dp)
             ) {
                 if (isImageUrl) {
-                    coil.compose.AsyncImage(
-                        model = match.image,
+                    CachedNetworkImage(
+                        url = match.image.orEmpty(),
                         contentDescription = "Match Banner",
                         modifier = Modifier.fillMaxSize(),
                         contentScale = ContentScale.Crop,
-                        error = painterResource(id = fallbackRes),
-                        placeholder = painterResource(id = fallbackRes)
+                        decodeSize = bannerDecodeSize,
                     )
                 } else {
                     // Try local resource name, otherwise use fallback
@@ -374,15 +377,15 @@ fun MatchCard(
             Row(
                 modifier = Modifier
                     .fillMaxWidth()
-                    .padding(horizontal = 16.dp, vertical = 12.dp),
+                    .padding(horizontal = 14.dp, vertical = 8.dp),
                 verticalAlignment = Alignment.CenterVertically,
-                horizontalArrangement = Arrangement.spacedBy(12.dp)
+                horizontalArrangement = Arrangement.spacedBy(10.dp)
             ) {
                 Image(
                     painter = painterResource(id = R.drawable.app_logo),
                     contentDescription = "Clash War Logo",
                     modifier = Modifier
-                        .size(42.dp)
+                        .size(44.dp)
                         .clip(RoundedCornerShape(6.dp))
                         .border(1.dp, Color(0xFFE2E8F0), RoundedCornerShape(6.dp)),
                     contentScale = ContentScale.Crop
@@ -392,29 +395,29 @@ fun MatchCard(
                     Text(
                         text = match.title,
                         color = Color(0xFF1E293B),
-                        fontSize = 14.sp,
-                        fontWeight = FontWeight.Bold,
+                        fontSize = 16.sp,
+                        fontWeight = FontWeight.ExtraBold,
                         maxLines = 1,
                         overflow = TextOverflow.Ellipsis
                     )
-                    Spacer(modifier = Modifier.height(2.dp))
+                    Spacer(modifier = Modifier.height(1.dp))
                     Text(
                         text = MatchDateTimeFormatter.format(match.starts_at),
-                        color = Color(0xFF64748B),
-                        fontSize = 11.sp,
-                        fontWeight = FontWeight.Medium
+                        color = Color(0xFF475569),
+                        fontSize = 12.sp,
+                        fontWeight = FontWeight.SemiBold
                     )
                 }
             }
 
-            Divider(modifier = Modifier.padding(horizontal = 16.dp), color = Color(0xFFF1F5F9))
+            Divider(modifier = Modifier.padding(horizontal = 14.dp), color = Color(0xFFF1F5F9))
 
             // 3. Stats Grid (3 columns, 2 rows)
             Column(
                 modifier = Modifier
                     .fillMaxWidth()
-                    .padding(16.dp),
-                verticalArrangement = Arrangement.spacedBy(16.dp)
+                    .padding(horizontal = 12.dp, vertical = 10.dp),
+                verticalArrangement = Arrangement.spacedBy(10.dp)
             ) {
                 // Row 1: Prize Pool, Per Kill, Entry Fee
                 Row(modifier = Modifier.fillMaxWidth()) {
@@ -428,26 +431,26 @@ fun MatchCard(
                         Text(
                             text = "PRIZE POOL",
                             color = Color(0xFF64748B),
-                            fontSize = 10.sp,
-                            fontWeight = FontWeight.Bold
+                            fontSize = 11.sp,
+                            fontWeight = FontWeight.ExtraBold
                         )
-                        Spacer(modifier = Modifier.height(4.dp))
+                        Spacer(modifier = Modifier.height(2.dp))
                         Row(
                             verticalAlignment = Alignment.CenterVertically,
-                            horizontalArrangement = Arrangement.spacedBy(4.dp)
+                            horizontalArrangement = Arrangement.spacedBy(3.dp)
                         ) {
-                            Text(text = "💵", fontSize = 13.sp)
+                            Text(text = "💵", fontSize = 14.sp)
                             Text(
                                 text = "${match.prizePool?.total_prize_pool ?: 500}",
                                 color = Color(0xFF1E293B),
-                                fontSize = 13.sp,
-                                fontWeight = FontWeight.Bold
+                                fontSize = 15.sp,
+                                fontWeight = FontWeight.ExtraBold
                             )
                             Icon(
                                 imageVector = if (rewardsExpanded) Icons.Default.KeyboardArrowUp else Icons.Default.KeyboardArrowDown,
                                 contentDescription = "Rewards Toggle",
                                 tint = Color(0xFF64748B),
-                                modifier = Modifier.size(16.dp)
+                                modifier = Modifier.size(18.dp)
                             )
                         }
                     }
@@ -460,20 +463,20 @@ fun MatchCard(
                         Text(
                             text = "PER KILL",
                             color = Color(0xFF64748B),
-                            fontSize = 10.sp,
-                            fontWeight = FontWeight.Bold
+                            fontSize = 11.sp,
+                            fontWeight = FontWeight.ExtraBold
                         )
-                        Spacer(modifier = Modifier.height(4.dp))
+                        Spacer(modifier = Modifier.height(2.dp))
                         Row(
                             verticalAlignment = Alignment.CenterVertically,
-                            horizontalArrangement = Arrangement.spacedBy(4.dp)
+                            horizontalArrangement = Arrangement.spacedBy(3.dp)
                         ) {
-                            Text(text = "💵", fontSize = 13.sp)
+                            Text(text = "💵", fontSize = 14.sp)
                             Text(
                                 text = "${match.prizePool?.coins_per_kill ?: 10}",
                                 color = Color(0xFF1E293B),
-                                fontSize = 13.sp,
-                                fontWeight = FontWeight.Bold
+                                fontSize = 15.sp,
+                                fontWeight = FontWeight.ExtraBold
                             )
                         }
                     }
@@ -486,20 +489,20 @@ fun MatchCard(
                         Text(
                             text = "ENTRY FEE",
                             color = Color(0xFF64748B),
-                            fontSize = 10.sp,
-                            fontWeight = FontWeight.Bold
+                            fontSize = 11.sp,
+                            fontWeight = FontWeight.ExtraBold
                         )
-                        Spacer(modifier = Modifier.height(4.dp))
+                        Spacer(modifier = Modifier.height(2.dp))
                         Row(
                             verticalAlignment = Alignment.CenterVertically,
-                            horizontalArrangement = Arrangement.spacedBy(4.dp)
+                            horizontalArrangement = Arrangement.spacedBy(3.dp)
                         ) {
-                            Text(text = "💵", fontSize = 13.sp)
+                            Text(text = "💵", fontSize = 14.sp)
                             Text(
                                 text = "${match.entry_fee}",
                                 color = Color(0xFF1E293B),
-                                fontSize = 13.sp,
-                                fontWeight = FontWeight.Bold
+                                fontSize = 15.sp,
+                                fontWeight = FontWeight.ExtraBold
                             )
                         }
                     }
@@ -514,15 +517,15 @@ fun MatchCard(
                         Text(
                             text = "TYPE",
                             color = Color(0xFF64748B),
-                            fontSize = 10.sp,
-                            fontWeight = FontWeight.Bold
+                            fontSize = 11.sp,
+                            fontWeight = FontWeight.ExtraBold
                         )
-                        Spacer(modifier = Modifier.height(4.dp))
+                        Spacer(modifier = Modifier.height(2.dp))
                         Text(
                             text = match.matchType?.replaceFirstChar { it.uppercase() } ?: "Solo",
                             color = Color(0xFF1E293B),
-                            fontSize = 13.sp,
-                            fontWeight = FontWeight.Bold
+                            fontSize = 15.sp,
+                            fontWeight = FontWeight.ExtraBold
                         )
                     }
 
@@ -533,15 +536,15 @@ fun MatchCard(
                         Text(
                             text = "VERSION",
                             color = Color(0xFF64748B),
-                            fontSize = 10.sp,
-                            fontWeight = FontWeight.Bold
+                            fontSize = 11.sp,
+                            fontWeight = FontWeight.ExtraBold
                         )
-                        Spacer(modifier = Modifier.height(4.dp))
+                        Spacer(modifier = Modifier.height(2.dp))
                         Text(
                             text = "TPP",
                             color = Color(0xFF1E293B),
-                            fontSize = 13.sp,
-                            fontWeight = FontWeight.Bold
+                            fontSize = 15.sp,
+                            fontWeight = FontWeight.ExtraBold
                         )
                     }
 
@@ -552,15 +555,15 @@ fun MatchCard(
                         Text(
                             text = "MAP",
                             color = Color(0xFF64748B),
-                            fontSize = 10.sp,
-                            fontWeight = FontWeight.Bold
+                            fontSize = 11.sp,
+                            fontWeight = FontWeight.ExtraBold
                         )
-                        Spacer(modifier = Modifier.height(4.dp))
+                        Spacer(modifier = Modifier.height(2.dp))
                         Text(
                             text = match.map ?: "BERMUDA",
                             color = Color(0xFF1E293B),
-                            fontSize = 13.sp,
-                            fontWeight = FontWeight.Bold
+                            fontSize = 15.sp,
+                            fontWeight = FontWeight.ExtraBold
                         )
                     }
                 }
@@ -573,20 +576,21 @@ fun MatchCard(
                         colors = CardDefaults.cardColors(containerColor = Color(0xFFF8FAFC)),
                         border = BorderStroke(1.dp, Color(0xFFE2E8F0))
                     ) {
-                        Column(modifier = Modifier.padding(10.dp)) {
+                        Column(modifier = Modifier.padding(8.dp)) {
                             Text(
                                 text = "RANK DISTRIBUTION REWARDS",
                                 color = Color(0xFF475569),
-                                fontSize = 10.sp,
-                                fontWeight = FontWeight.Bold
+                                fontSize = 11.sp,
+                                fontWeight = FontWeight.ExtraBold
                             )
-                            Spacer(modifier = Modifier.height(6.dp))
+                            Spacer(modifier = Modifier.height(4.dp))
                             val rewards = match.prizePool?.rank_rewards ?: emptyList()
                             if (rewards.isEmpty()) {
                                 Text(
                                     text = "All prizes distributed via per-kill earnings.",
                                     color = Color(0xFF64748B),
-                                    fontSize = 11.sp
+                                    fontSize = 12.sp,
+                                    fontWeight = FontWeight.SemiBold
                                 )
                             } else {
                                 rewards.forEach { reward ->
@@ -596,11 +600,21 @@ fun MatchCard(
                                         "Rank ${reward.from_rank} - ${reward.to_rank}"
                                     }
                                     Row(
-                                        modifier = Modifier.fillMaxWidth().padding(vertical = 2.dp),
+                                        modifier = Modifier.fillMaxWidth().padding(vertical = 1.dp),
                                         horizontalArrangement = Arrangement.SpaceBetween
                                     ) {
-                                        Text(rankText, color = Color(0xFF475569), fontSize = 11.sp)
-                                        Text("💵 ${reward.coins} coins", color = Color(0xFF1E293B), fontSize = 11.sp, fontWeight = FontWeight.Bold)
+                                        Text(
+                                            rankText,
+                                            color = Color(0xFF475569),
+                                            fontSize = 12.sp,
+                                            fontWeight = FontWeight.SemiBold,
+                                        )
+                                        Text(
+                                            "💵 ${reward.coins} coins",
+                                            color = Color(0xFF1E293B),
+                                            fontSize = 12.sp,
+                                            fontWeight = FontWeight.ExtraBold,
+                                        )
                                     }
                                 }
                             }
@@ -615,7 +629,7 @@ fun MatchCard(
                 Row(
                     modifier = Modifier.fillMaxWidth(),
                     verticalAlignment = Alignment.CenterVertically,
-                    horizontalArrangement = Arrangement.spacedBy(16.dp)
+                    horizontalArrangement = Arrangement.spacedBy(10.dp)
                 ) {
                     Column(modifier = Modifier.weight(1f)) {
                         LinearProgressIndicator(
@@ -624,15 +638,15 @@ fun MatchCard(
                             trackColor = Color(0xFFF1F5F9),
                             modifier = Modifier
                                 .fillMaxWidth()
-                                .height(6.dp)
+                                .height(7.dp)
                                 .clip(RoundedCornerShape(3.dp))
                         )
-                        Spacer(modifier = Modifier.height(4.dp))
+                        Spacer(modifier = Modifier.height(2.dp))
                         Text(
                             text = "$spotsTaken/${match.max_participants}",
-                            color = Color(0xFF64748B),
-                            fontSize = 11.sp,
-                            fontWeight = FontWeight.Bold
+                            color = Color(0xFF475569),
+                            fontSize = 12.sp,
+                            fontWeight = FontWeight.ExtraBold
                         )
                     }
 
@@ -672,13 +686,13 @@ fun MatchCard(
                             disabledContentColor = if (isJoined) joinedButtonContent else Color(0xFF94A3B8)
                         ),
                         shape = RoundedCornerShape(6.dp),
-                        modifier = Modifier.height(36.dp),
-                        contentPadding = PaddingValues(horizontal = 24.dp)
+                        modifier = Modifier.height(38.dp),
+                        contentPadding = PaddingValues(horizontal = 22.dp)
                     ) {
                         Text(
                             text = btnText,
-                            fontSize = 12.sp,
-                            fontWeight = FontWeight.Bold
+                            fontSize = 13.sp,
+                            fontWeight = FontWeight.ExtraBold
                         )
                     }
                 }

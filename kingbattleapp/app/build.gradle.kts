@@ -87,9 +87,6 @@ dependencies {
     implementation("androidx.hilt:hilt-navigation-compose:1.1.0")
     kapt("com.google.dagger:hilt-compiler:2.48")
 
-    // Google Sign-In SDK
-    implementation("com.google.android.gms:play-services-auth:21.2.0")
-
     // Firebase Cloud Messaging
     implementation(platform(libs.firebase.bom))
     implementation(libs.firebase.messaging)

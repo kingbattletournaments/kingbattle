@@ -9,7 +9,7 @@ import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.*
 import androidx.compose.ui.draw.alpha
 import androidx.compose.foundation.lazy.LazyColumn
-import androidx.compose.foundation.lazy.items
+import androidx.compose.foundation.lazy.itemsIndexed
 import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.foundation.verticalScroll
@@ -32,8 +32,9 @@ import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import android.content.Context
 import androidx.hilt.navigation.compose.hiltViewModel
-import coil.compose.AsyncImage
 import com.kingbattle.R
+import com.kingbattle.presentation.components.CachedNetworkImage
+import com.kingbattle.presentation.components.rememberImageDecodeSize
 import com.kingbattle.util.MatchDateTimeFormatter
 import androidx.compose.material3.TabRowDefaults.tabIndicatorOffset
 import com.kingbattle.domain.model.Match
@@ -252,6 +253,7 @@ fun MatchDetailScreen(
                             else -> R.drawable.solo
                         }
                     }
+                    val bannerDecodeSize = rememberImageDecodeSize(width = 400.dp, height = 180.dp)
 
                     Column(modifier = Modifier.fillMaxSize()) {
                         // 1. Top Banner Image (16:9)
@@ -261,13 +263,12 @@ fun MatchDetailScreen(
                                 .height(180.dp)
                         ) {
                             if (isImageUrl) {
-                                AsyncImage(
-                                    model = match.image,
+                                CachedNetworkImage(
+                                    url = match.image.orEmpty(),
                                     contentDescription = "Match Banner",
                                     modifier = Modifier.fillMaxSize(),
                                     contentScale = ContentScale.Crop,
-                                    error = painterResource(id = fallbackRes),
-                                    placeholder = painterResource(id = fallbackRes)
+                                    decodeSize = bannerDecodeSize,
                                 )
                             } else if (match.image != null) {
                                 // Try local resource name
@@ -702,7 +703,7 @@ fun JoinedMemberTabContent(
                 }
             }
 
-            items(sortedParticipants) { participant ->
+            itemsIndexed(sortedParticipants, key = { _, participant -> participant.id }) { index, participant ->
                 val playerName = participant.team_members?.firstOrNull()?.inGameName
                     ?: participant.in_game_name
                     ?: "Unknown Player"
@@ -760,7 +761,7 @@ fun JoinedMemberTabContent(
                                 }
                             } else {
                                 // Serial number for non-completed matches
-                                val index = sortedParticipants.indexOf(participant) + 1
+                                val serialNumber = index + 1
                                 Box(
                                     modifier = Modifier
                                         .size(32.dp)
@@ -768,7 +769,7 @@ fun JoinedMemberTabContent(
                                     contentAlignment = Alignment.Center
                                 ) {
                                     Text(
-                                        text = "$index",
+                                        text = "$serialNumber",
                                         color = TextMuted,
                                         fontSize = 12.sp,
                                         fontWeight = FontWeight.Bold

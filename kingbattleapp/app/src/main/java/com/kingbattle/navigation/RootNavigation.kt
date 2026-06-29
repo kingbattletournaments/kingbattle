@@ -4,7 +4,7 @@ import androidx.compose.runtime.Composable
 import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.remember
 import androidx.compose.runtime.collectAsState
-import androidx.hilt.navigation.compose.hiltViewModel
+import androidx.compose.runtime.getValue
 import androidx.hilt.navigation.compose.hiltViewModel
 import androidx.navigation.NavHostController
 import androidx.navigation.compose.NavHost
@@ -50,17 +50,28 @@ fun RootNavigation() {
     ) {
         composable(Screen.Welcome.route) {
             WelcomeScreen(
-                onNavigateToHome = {
+                onNavigateNext = {
                     if (isLoggedIn.value) {
                         navController.navigate(Screen.Home.route) {
                             popUpTo(Screen.Welcome.route) { inclusive = true }
                         }
                     } else {
-                        navController.navigate(Screen.SignIn.route) {
+                        navController.navigate(Screen.Onboarding.route) {
                             popUpTo(Screen.Welcome.route) { inclusive = true }
                         }
                     }
                 }
+            )
+        }
+
+        composable(Screen.Onboarding.route) {
+            com.kingbattle.presentation.auth.OnboardingRoute(
+                onNavigateToLogin = {
+                    navController.navigate(Screen.SignIn.route)
+                },
+                onNavigateToRegister = {
+                    navController.navigate(Screen.SignUp.route)
+                },
             )
         }
 
@@ -234,6 +245,7 @@ fun RootNavigation() {
 
 sealed class Screen(val route: String) {
     object Welcome : Screen("welcome")
+    object Onboarding : Screen("onboarding")
     object SignIn : Screen("sign_in")
     object SignUp : Screen("sign_up")
     object Home : Screen("home")

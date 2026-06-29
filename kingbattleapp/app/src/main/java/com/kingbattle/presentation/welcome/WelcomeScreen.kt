@@ -15,13 +15,13 @@ import kotlinx.coroutines.delay
 
 @Composable
 fun WelcomeScreen(
-    onNavigateToHome: () -> Unit
+    onNavigateNext: () -> Unit
 ) {
     val context = LocalContext.current.applicationContext
+    val welcomePainter = painterResource(R.drawable.welcome_screen)
 
-    // Play welcome sound immediately on entry using the application context
-    // so it plays fully until the end regardless of the screen transition.
     LaunchedEffect(Unit) {
+        delay(300)
         try {
             val mediaPlayer = MediaPlayer.create(context, R.raw.welcome_sound)
             mediaPlayer.setOnCompletionListener { mp ->
@@ -33,17 +33,16 @@ fun WelcomeScreen(
         }
     }
 
-    // Delay for at least 2 seconds before navigating directly to home screen
     LaunchedEffect(Unit) {
         delay(2000)
-        onNavigateToHome()
+        onNavigateNext()
     }
 
     Box(
         modifier = Modifier.fillMaxSize()
     ) {
         Image(
-            painter = painterResource(id = R.drawable.welcome_screen),
+            painter = welcomePainter,
             contentDescription = "Welcome Screen Image",
             modifier = Modifier.fillMaxSize(),
             contentScale = ContentScale.Crop

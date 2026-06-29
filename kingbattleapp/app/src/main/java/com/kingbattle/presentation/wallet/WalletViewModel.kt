@@ -40,6 +40,8 @@ class WalletViewModel @Inject constructor(
     private val _errorMessage = MutableStateFlow<String?>(null)
     val errorMessage: StateFlow<String?> = _errorMessage.asStateFlow()
 
+    private var lastLoadedAtMs = 0L
+
     init {
         loadData()
     }
@@ -50,6 +52,10 @@ class WalletViewModel @Inject constructor(
 
     fun loadData(force: Boolean = false) {
         viewModelScope.launch {
+            val now = System.currentTimeMillis()
+            if (!force && lastLoadedAtMs > 0L && now - lastLoadedAtMs < REFRESH_COOLDOWN_MS) {
+                return@launch
+            }
             if (!force && _user.value == null) {
                 _isLoading.value = true
             } else if (force) {
@@ -108,8 +114,13 @@ class WalletViewModel @Inject constructor(
             } finally {
                 _isLoading.value = false
                 _isRefreshing.value = false
+                lastLoadedAtMs = System.currentTimeMillis()
             }
         }
+    }
+
+    companion object {
+        private const val REFRESH_COOLDOWN_MS = 30_000L
     }
 
     fun createWithdrawal(

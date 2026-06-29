@@ -26,7 +26,8 @@ class KingBattleApp : Application(), ImageLoaderFactory {
 
         return ImageLoader.Builder(this)
             .okHttpClient(okHttpClient)
-            .crossfade(true)
+            .crossfade(false)
+            .allowHardware(true)
             .memoryCache {
                 MemoryCache.Builder(this)
                     .maxSizePercent(0.25)
@@ -35,7 +36,7 @@ class KingBattleApp : Application(), ImageLoaderFactory {
             .diskCache {
                 DiskCache.Builder()
                     .directory(cacheDir.resolve("image_cache"))
-                    .maxSizePercent(0.04)
+                    .maxSizePercent(0.08)
                     .build()
             }
             .build()

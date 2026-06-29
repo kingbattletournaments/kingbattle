@@ -1,6 +1,8 @@
 import { NextResponse } from "next/server";
 import { getStore } from "@/lib/store";
 import { getAdminSession } from "@/lib/admin-auth";
+import { invalidateAdminApiCache } from "@/lib/admin-api-cache";
+import { normalizeAdminUser, serializeAdminUser } from "@/lib/admin-user";
 
 export async function POST(
   request: Request,
@@ -26,5 +28,6 @@ export async function POST(
   if (!user) {
     return NextResponse.json({ error: "User not found" }, { status: 404 });
   }
-  return NextResponse.json(user);
+  invalidateAdminApiCache("users");
+  return NextResponse.json(serializeAdminUser(normalizeAdminUser(user)));
 }

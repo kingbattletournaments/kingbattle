@@ -33,13 +33,13 @@ class AuthViewModel @Inject constructor(
     private val _errorMessage = MutableStateFlow<String?>(null)
     val errorMessage: StateFlow<String?> = _errorMessage.asStateFlow()
 
-    fun signIn(email: String, password: String) {
+    fun signIn(usernameOrEmail: String, password: String) {
         viewModelScope.launch {
             _isLoading.value = true
             _errorMessage.value = null
 
             try {
-                val response = api.signIn(AuthRequest(email, password))
+                val response = api.signIn(AuthRequest(usernameOrEmail, password))
                 if (response.isSuccessful && response.body() != null) {
                     val authResponse = response.body()!!
                     tokenManager.saveToken(authResponse.session.access_token)
@@ -60,13 +60,27 @@ class AuthViewModel @Inject constructor(
         }
     }
 
-    fun signUp(email: String, password: String, displayName: String, referredBy: String? = null) {
+    fun signUp(
+        email: String,
+        password: String,
+        displayName: String,
+        username: String? = null,
+        referredBy: String? = null,
+    ) {
         viewModelScope.launch {
             _isLoading.value = true
             _errorMessage.value = null
 
             try {
-                val response = api.signUp(SignUpRequest(email, password, displayName, referred_by = referredBy))
+                val response = api.signUp(
+                    SignUpRequest(
+                        email = email,
+                        password = password,
+                        display_name = displayName,
+                        username = username,
+                        referred_by = referredBy,
+                    ),
+                )
                 if (response.isSuccessful && response.body() != null) {
                     val authResponse = response.body()!!
                     tokenManager.saveToken(authResponse.session.access_token)
@@ -80,38 +94,6 @@ class AuthViewModel @Inject constructor(
                 }
             } catch (e: Exception) {
                 _errorMessage.value = "Network error: ${e.localizedMessage}"
-                e.printStackTrace()
-            } finally {
-                _isLoading.value = false
-            }
-        }
-    }
-
-    fun signInWithGoogle(idToken: String, onSuccess: () -> Unit, onError: (String) -> Unit) {
-        viewModelScope.launch {
-            _isLoading.value = true
-            _errorMessage.value = null
-
-            try {
-                val response = api.googleSignIn(com.kingbattle.data.api.GoogleAuthRequest(idToken))
-                if (response.isSuccessful && response.body() != null) {
-                    val authResponse = response.body()!!
-                    tokenManager.saveToken(authResponse.session.access_token)
-                    authResponse.session.refresh_token?.let { tokenManager.saveRefreshToken(it) }
-                    tokenManager.saveUserId(authResponse.user.id)
-                    _isLoggedIn.value = true
-                    _errorMessage.value = null
-                    syncFcmToken(authResponse.user.id)
-                    onSuccess()
-                } else {
-                    val errorMsg = "Google sign in failed: ${response.errorBody()?.string() ?: "Unknown error"}"
-                    _errorMessage.value = errorMsg
-                    onError(errorMsg)
-                }
-            } catch (e: Exception) {
-                val errorMsg = "Network error: ${e.localizedMessage}"
-                _errorMessage.value = errorMsg
-                onError(errorMsg)
                 e.printStackTrace()
             } finally {
                 _isLoading.value = false

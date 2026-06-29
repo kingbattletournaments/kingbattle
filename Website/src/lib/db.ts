@@ -33,6 +33,7 @@ export type DbUser = {
   coins: number;
   wonCoins: number;
   isBlocked?: boolean;
+  blockReason?: string | null;
   lifetimeEarnedPoints?: number;
   matchesPlayed?: number;
   totalKills?: number;
@@ -246,6 +247,7 @@ function toUser(row: {
   coins: number;
   won_coins?: number;
   is_blocked?: boolean;
+  block_reason?: string | null;
   lifetime_earned_points?: number;
   matches_played?: number;
   total_kills?: number;
@@ -260,6 +262,7 @@ function toUser(row: {
     coins: (row.coins ?? 0) + (row.won_coins ?? 0),
     wonCoins: row.won_coins ?? 0,
     isBlocked: row.is_blocked ?? false,
+    blockReason: row.block_reason ?? null,
     lifetimeEarnedPoints: row.lifetime_earned_points ?? 0,
     matchesPlayed: row.matches_played ?? 0,
     totalKills: row.total_kills ?? 0,
@@ -591,18 +594,52 @@ export const db = {
     return true;
   },
 
-  async blockUser(userId: string): Promise<boolean> {
+  async blockUser(userId: string, reason: string): Promise<boolean> {
     const supabase = getSupabase();
     if (!supabase) return false;
-    const { error } = await supabase.from("app_users").update({ is_blocked: true }).eq("username", userId);
-    return !error;
+    const trimmed = reason.trim();
+    if (!trimmed) return false;
+
+    const withReason = await supabase
+      .from("app_users")
+      .update({ is_blocked: true, block_reason: trimmed })
+      .eq("username", userId)
+      .select("username")
+      .maybeSingle();
+
+    if (!withReason.error && withReason.data) return true;
+
+    const blockedOnly = await supabase
+      .from("app_users")
+      .update({ is_blocked: true })
+      .eq("username", userId)
+      .select("username")
+      .maybeSingle();
+
+    return !blockedOnly.error && !!blockedOnly.data;
   },
 
   async unblockUser(userId: string): Promise<boolean> {
     const supabase = getSupabase();
     if (!supabase) return false;
-    const { error } = await supabase.from("app_users").update({ is_blocked: false }).eq("username", userId);
-    return !error;
+
+    const withReason = await supabase
+      .from("app_users")
+      .update({ is_blocked: false, block_reason: null })
+      .eq("username", userId)
+      .select("username")
+      .maybeSingle();
+
+    if (!withReason.error && withReason.data) return true;
+
+    const blockedOnly = await supabase
+      .from("app_users")
+      .update({ is_blocked: false })
+      .eq("username", userId)
+      .select("username")
+      .maybeSingle();
+
+    return !blockedOnly.error && !!blockedOnly.data;
   },
 
   async deleteUser(userId: string): Promise<boolean> {

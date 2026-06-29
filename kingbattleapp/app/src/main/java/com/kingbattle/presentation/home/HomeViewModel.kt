@@ -6,8 +6,6 @@ import android.net.Uri
 import android.widget.Toast
 import androidx.lifecycle.ViewModel
 import androidx.lifecycle.viewModelScope
-import coil.Coil
-import coil.annotation.ExperimentalCoilApi
 import com.kingbattle.data.api.KingBattleApi
 import com.kingbattle.data.local.HomeCacheStore
 import com.kingbattle.domain.model.AppBanner
@@ -108,7 +106,6 @@ class HomeViewModel @Inject constructor(
             _isOffline.value = false
             if (force) {
                 _contentRefreshEpoch.value = System.currentTimeMillis()
-                clearImageCaches()
             }
             fetchFromNetwork(force = force)
             _isLoading.value = false
@@ -135,9 +132,7 @@ class HomeViewModel @Inject constructor(
                 val referralDef = async { runCatching { api.getReferralSettings() } }
 
                 userDef.await().getOrNull()?.takeIf { it.isSuccessful }?.body()?.let { user ->
-                    if (user != fetchedUser) {
-                        _user.value = user
-                    }
+                    _user.value = user
                     fetchedUser = user
                     hadSuccessfulFetch = true
                 }
@@ -269,15 +264,6 @@ class HomeViewModel @Inject constructor(
         val oldImages = old.associate { it.id to it.imageUrl }
         val newImages = new.associate { it.id to it.imageUrl }
         return oldImages != newImages
-    }
-
-    @OptIn(ExperimentalCoilApi::class)
-    private fun clearImageCaches() {
-        runCatching {
-            val loader = Coil.imageLoader(context)
-            loader.memoryCache?.clear()
-            loader.diskCache?.clear()
-        }
     }
 
     fun refreshSupportUrl() {
