@@ -204,6 +204,9 @@ class MatchesViewModel @Inject constructor(
                     )
                 }
             } else if (!append) {
+                if (response.code() == 401 && modeId == "my_matches") {
+                    _errorMessage.value = "Session expired. Please sign in again."
+                }
                 updateTab(tab) { MatchTabState(initialLoaded = true, hasMore = false) }
             }
         } catch (e: Exception) {

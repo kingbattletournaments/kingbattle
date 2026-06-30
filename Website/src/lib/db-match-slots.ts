@@ -21,6 +21,36 @@ import {
   type TeamGroup,
 } from "./admin-match-teams";
 
+const MATCH_ID_UUID =
+  /^[0-9a-f]{8}-[0-9a-f]{4}-[1-5][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i;
+
+function isMatchUuid(value: string): boolean {
+  return MATCH_ID_UUID.test(value);
+}
+
+export { isMatchUuid };
+
+/** Confirmed slot bookings — primary source for app join flow. */
+export async function getJoinedMatchIdsFromSlotBookings(userId: string): Promise<string[]> {
+  const supabase = getSupabase();
+  if (!supabase) return [];
+  const { data, error } = await supabase
+    .from("match_slot_bookings")
+    .select("match_id")
+    .eq("app_user_id", userId)
+    .eq("status", "confirmed");
+  if (error) {
+    console.error("getJoinedMatchIdsFromSlotBookings:", error.message);
+    return [];
+  }
+  const ids = new Set<string>();
+  for (const row of data ?? []) {
+    const id = row.match_id as string | undefined;
+    if (id && isMatchUuid(id)) ids.add(id);
+  }
+  return Array.from(ids);
+}
+
 export type SlotBookingRow = {
   id: string;
   match_id: string;

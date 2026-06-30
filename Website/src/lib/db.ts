@@ -18,7 +18,9 @@ import {
   confirmSlotBookings,
   fetchConfirmedSlotParticipants,
   finishMatchSlotPayouts,
+  getJoinedMatchIdsFromSlotBookings,
   getMatchSlotAvailability,
+  isMatchUuid,
   getParticipantCountsForMatches,
   holdMatchSlots,
   refundSlotBookingsForMatch,
@@ -1160,21 +1162,29 @@ export const db = {
     const supabase = getSupabase();
     if (!supabase) return [];
     const ids = new Set<string>();
+
+    const slotMatchIds = await getJoinedMatchIdsFromSlotBookings(userId);
+    for (const id of slotMatchIds) ids.add(id);
+
     const { data: parts } = await supabase
       .from("app_match_participants")
       .select("match_id")
       .eq("app_user_id", userId);
     for (const r of parts ?? []) {
-      if (r.match_id) ids.add(r.match_id as string);
+      const id = r.match_id as string | undefined;
+      if (id && isMatchUuid(id)) ids.add(id);
     }
+
     const { data: txs } = await supabase
       .from("app_coin_transactions")
       .select("reference_id")
       .eq("user_id", userId)
       .eq("type", "match_entry");
     for (const t of txs ?? []) {
-      if (t.reference_id) ids.add(t.reference_id as string);
+      const id = t.reference_id as string | undefined;
+      if (id && isMatchUuid(id)) ids.add(id);
     }
+
     return Array.from(ids);
   },
 
@@ -1234,7 +1244,10 @@ export const db = {
     const from = (opts.page - 1) * opts.pageSize;
     const to = from + opts.pageSize - 1;
     const { data, count, error } = await q.range(from, to);
-    if (error) return buildPaginatedResult([], 0, opts.page, opts.pageSize);
+    if (error) {
+      console.error("matchesPaginatedForUser:", error.message, { userId: opts.userId, status: opts.status });
+      return buildPaginatedResult([], 0, opts.page, opts.pageSize);
+    }
     const matchesList = (data ?? []).map(toMatch);
     const matchIds = matchesList.map((m) => m.id);
     if (matchIds.length > 0) {

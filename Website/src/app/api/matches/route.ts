@@ -24,16 +24,16 @@ export async function GET(request: Request) {
   const { page, pageSize, status } = parseMatchListParams(searchParams);
   const store = getStore();
 
-  const result =
-    modeId === "my_matches"
-      ? await (async () => {
-          const userId = await getAppUserId();
-          if (!userId) {
-            return { items: [], page, pageSize, total: 0, totalPages: 1, hasMore: false };
-          }
-          return store.matchesPaginatedForUser({ userId, page, pageSize, status });
-        })()
-      : await store.matchesPaginated({ modeId, page, pageSize, status });
+  let result;
+  if (modeId === "my_matches") {
+    const userId = await getAppUserId();
+    if (!userId) {
+      return NextResponse.json({ error: "Unauthorized" }, { status: 401, headers: NO_STORE });
+    }
+    result = await store.matchesPaginatedForUser({ userId, page, pageSize, status });
+  } else {
+    result = await store.matchesPaginated({ modeId, page, pageSize, status });
+  }
 
   const items = result.items.map((m) => ({ ...m, startsAt: m.scheduledAt }));
   return NextResponse.json({ ...result, items }, { headers: NO_STORE });
