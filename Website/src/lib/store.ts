@@ -31,6 +31,9 @@ export function getStore() {
       canAccessGames: (adminId: string) =>
         db.getAdminById(adminId).then((a) => !!(a && (a.isMasterAdmin || a.gamesAccessType === "all" || a.allowedGameIds.length > 0))),
       matches: (modeId?: string) => db.matches(modeId),
+      matchesPaginated: (opts: Parameters<typeof db.matchesPaginated>[0]) => db.matchesPaginated(opts),
+      matchesPaginatedForUser: (opts: Parameters<typeof db.matchesPaginatedForUser>[0]) =>
+        db.matchesPaginatedForUser(opts),
       addMatch: (
         gameModeId: string,
         title: string,
@@ -201,6 +204,10 @@ export function getStore() {
     getMode: (id: string) => Promise.resolve(adminStore.getMode(id)),
     canAccessGames: (adminId: string) => Promise.resolve(adminStore.canAccessGames(adminId)),
     matches: (modeId?: string) => Promise.resolve(adminStore.matches(modeId)),
+    matchesPaginated: (opts: Parameters<typeof adminStore.matchesPaginated>[0]) =>
+      Promise.resolve(adminStore.matchesPaginated(opts)),
+    matchesPaginatedForUser: (opts: Parameters<typeof adminStore.matchesPaginatedForUser>[0]) =>
+      Promise.resolve(adminStore.matchesPaginatedForUser(opts)),
     addMatch: (
       gameModeId: string,
       title: string,

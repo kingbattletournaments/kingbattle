@@ -25,7 +25,7 @@ import {
 } from "./db-match-slots";
 import { buildMatchTitle, formatMatchLabel, stripMatchSuffix } from "./id-formats";
 import { insertCoinTransaction } from "./coin-transaction-db";
-import { buildPaginatedResult, type PaginatedResult } from "./pagination";
+import { buildPaginatedResult, type MatchListStatus, type PaginatedResult } from "./pagination";
 
 
 // Types matching admin-store
@@ -1153,6 +1153,96 @@ export const db = {
       m.participantCount = countMap[m.id] ?? 0;
     }
     return matchesList;
+  },
+
+  async getJoinedMatchIdsForUser(userId: string): Promise<string[]> {
+    const supabase = getSupabase();
+    if (!supabase) return [];
+    const ids = new Set<string>();
+    const { data: parts } = await supabase
+      .from("app_match_participants")
+      .select("match_id")
+      .eq("app_user_id", userId);
+    for (const r of parts ?? []) {
+      if (r.match_id) ids.add(r.match_id as string);
+    }
+    const { data: txs } = await supabase
+      .from("app_coin_transactions")
+      .select("reference_id")
+      .eq("user_id", userId)
+      .eq("type", "match_entry");
+    for (const t of txs ?? []) {
+      if (t.reference_id) ids.add(t.reference_id as string);
+    }
+    return Array.from(ids);
+  },
+
+  async matchesPaginated(opts: {
+    modeId: string;
+    page: number;
+    pageSize: number;
+    status: MatchListStatus;
+  }): Promise<PaginatedResult<DbMatch>> {
+    const supabase = getSupabase();
+    if (!supabase) return buildPaginatedResult([], 0, opts.page, opts.pageSize);
+    let q = supabase
+      .from("matches")
+      .select("*", { count: "exact" })
+      .neq("status", "cancelled")
+      .eq("game_mode_id", opts.modeId);
+    if (opts.status === "ongoing") q = q.eq("status", "ongoing");
+    else if (opts.status === "upcoming") q = q.eq("status", "upcoming");
+    else q = q.in("status", ["completed", "ended", "finished"]);
+    const ascending = opts.status !== "completed";
+    q = q.order("starts_at", { ascending, nullsFirst: false });
+    const from = (opts.page - 1) * opts.pageSize;
+    const to = from + opts.pageSize - 1;
+    const { data, count, error } = await q.range(from, to);
+    if (error) return buildPaginatedResult([], 0, opts.page, opts.pageSize);
+    const matchesList = (data ?? []).map(toMatch);
+    const matchIds = matchesList.map((m) => m.id);
+    if (matchIds.length > 0) {
+      const countMap = await getParticipantCountsForMatches(matchIds);
+      for (const m of matchesList) {
+        m.participantCount = countMap[m.id] ?? 0;
+      }
+    }
+    return buildPaginatedResult(matchesList, count ?? 0, opts.page, opts.pageSize);
+  },
+
+  async matchesPaginatedForUser(opts: {
+    userId: string;
+    page: number;
+    pageSize: number;
+    status: MatchListStatus;
+  }): Promise<PaginatedResult<DbMatch>> {
+    const supabase = getSupabase();
+    if (!supabase) return buildPaginatedResult([], 0, opts.page, opts.pageSize);
+    const joinedIds = await db.getJoinedMatchIdsForUser(opts.userId);
+    if (joinedIds.length === 0) return buildPaginatedResult([], 0, opts.page, opts.pageSize);
+    let q = supabase
+      .from("matches")
+      .select("*", { count: "exact" })
+      .neq("status", "cancelled")
+      .in("id", joinedIds);
+    if (opts.status === "ongoing") q = q.eq("status", "ongoing");
+    else if (opts.status === "upcoming") q = q.eq("status", "upcoming");
+    else q = q.in("status", ["completed", "ended", "finished"]);
+    const ascending = opts.status !== "completed";
+    q = q.order("starts_at", { ascending, nullsFirst: false });
+    const from = (opts.page - 1) * opts.pageSize;
+    const to = from + opts.pageSize - 1;
+    const { data, count, error } = await q.range(from, to);
+    if (error) return buildPaginatedResult([], 0, opts.page, opts.pageSize);
+    const matchesList = (data ?? []).map(toMatch);
+    const matchIds = matchesList.map((m) => m.id);
+    if (matchIds.length > 0) {
+      const countMap = await getParticipantCountsForMatches(matchIds);
+      for (const m of matchesList) {
+        m.participantCount = countMap[m.id] ?? 0;
+      }
+    }
+    return buildPaginatedResult(matchesList, count ?? 0, opts.page, opts.pageSize);
   },
 
   async addMatch(

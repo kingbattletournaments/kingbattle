@@ -51,7 +51,7 @@ export function invalidateAdminApiCache(prefix?: string): void {
   }
 }
 
-/** Call after any match create/update/delete so admin + app lists stay in sync. */
+/** @deprecated Match lists are never server-cached; kept for call-site compatibility. */
 export function invalidateMatchListCaches(): void {
   invalidateAdminApiCache("matches:");
   invalidateAdminApiCache("public:matches:");

@@ -347,12 +347,6 @@ function AdminPageInner() {
       if (!force) {
         const cached = readAdminClientCache<AdminTabCachePayload>(clientKey);
         if (cached) {
-          if (cached.data.matches && selectedModeId) {
-            setMatches((prev) => [
-              ...prev.filter((m) => m.gameModeId !== selectedModeId),
-              ...cached.data.matches!,
-            ]);
-          }
           if (cached.data.presets) {
             if (selectedModeId) {
               setMatchPresets((prev) => [
@@ -367,7 +361,7 @@ function AdminPageInner() {
           if (cached.data.deposits) setDeposits(cached.data.deposits);
           if (cached.data.withdrawals) setWithdrawals(cached.data.withdrawals);
           loadedTabsRef.current.add(cacheKey);
-          if (!cached.stale) return;
+          if (!cached.stale && (t !== "modes" || !selectedModeId)) return;
         } else if (loadedTabsRef.current.has(cacheKey)) {
           return;
         }
@@ -386,7 +380,6 @@ function AdminPageInner() {
               ]);
               if (matRes.ok) {
                 const modeMatches = await matRes.json();
-                payload.matches = modeMatches;
                 setMatches((prev) => [
                   ...prev.filter((m) => m.gameModeId !== selectedModeId),
                   ...modeMatches,
@@ -409,7 +402,7 @@ function AdminPageInner() {
                 setUsers(payload.users!);
               }
             }
-            writeAdminClientCache(clientKey, payload, ADMIN_CLIENT_CACHE_TTL.matches);
+            writeAdminClientCache(clientKey, { presets: payload.presets, users: payload.users }, ADMIN_CLIENT_CACHE_TTL.presets);
             loadedTabsRef.current.add(cacheKey);
             break;
           }

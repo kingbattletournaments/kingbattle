@@ -4,7 +4,7 @@ import okhttp3.CacheControl
 import okhttp3.Interceptor
 import okhttp3.Response
 
-/** Prevent stale match list counts from HTTP caches on CDN/proxy layers. */
+/** Prevent stale match/mode data from any HTTP cache layer. */
 class NoCacheInterceptor : Interceptor {
     override fun intercept(chain: Interceptor.Chain): Response {
         val request = chain.request()
@@ -19,9 +19,13 @@ class NoCacheInterceptor : Interceptor {
         }
         val noCacheRequest = request.newBuilder()
             .cacheControl(CacheControl.FORCE_NETWORK)
-            .header("Cache-Control", "no-cache")
+            .header("Cache-Control", "no-cache, no-store")
             .header("Pragma", "no-cache")
             .build()
-        return chain.proceed(noCacheRequest)
+        val response = chain.proceed(noCacheRequest)
+        return response.newBuilder()
+            .header("Cache-Control", "no-store, no-cache, must-revalidate")
+            .header("Pragma", "no-cache")
+            .build()
     }
 }

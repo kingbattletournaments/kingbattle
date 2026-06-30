@@ -25,14 +25,20 @@ interface KingBattleApi {
     suspend fun getGames(): Response<List<Game>>
 
     @GET("modes")
-    suspend fun getGameModes(@Query("gameId") gameId: String? = null): Response<List<GameMode>>
+    suspend fun getGameModes(
+        @Query("gameId") gameId: String? = null,
+        @Query("_ts") cacheBust: Long? = null,
+    ): Response<List<GameMode>>
 
-    // ===== Matches =====
+    // ===== Matches (always live from server — paginated, never cached) =====
     @GET("matches")
     suspend fun getMatches(
-        @Query("modeId") modeId: String? = null,
+        @Query("modeId") modeId: String,
+        @Query("status") status: String,
+        @Query("page") page: Int = 1,
+        @Query("limit") limit: Int = 5,
         @Query("_ts") cacheBust: Long? = null,
-    ): Response<List<Match>>
+    ): Response<PaginatedMatchesResponse>
 
     @GET("matches/{id}")
     suspend fun getMatch(@Path("id") matchId: String): Response<Match>
@@ -128,6 +134,15 @@ interface KingBattleApi {
 }
 
 // Request Models
+data class PaginatedMatchesResponse(
+    val items: List<Match> = emptyList(),
+    val page: Int = 1,
+    @SerializedName("pageSize") val pageSize: Int = 5,
+    val total: Int = 0,
+    @SerializedName("totalPages") val totalPages: Int = 1,
+    @SerializedName("hasMore") val hasMore: Boolean = false,
+)
+
 data class JoinMatchResponse(
     val success: Boolean = true,
     @SerializedName("slotsBooked") val slotsBooked: Int? = null,

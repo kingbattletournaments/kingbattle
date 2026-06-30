@@ -10,6 +10,8 @@ import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.*
 import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.items
+import androidx.compose.foundation.lazy.rememberLazyListState
+import androidx.compose.runtime.snapshotFlow
 import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.shape.RoundedCornerShape
@@ -71,7 +73,7 @@ fun MatchesScreen(
     viewModel: MatchesViewModel = hiltViewModel()
 ) {
     val context = LocalContext.current
-    val matchesState = viewModel.matches.collectAsState()
+    val tabStates = viewModel.tabStates.collectAsState()
     val userState = viewModel.user.collectAsState()
     val isLoadingState = viewModel.isLoading.collectAsState()
     val isRefreshingState = viewModel.isRefreshing.collectAsState()
@@ -84,8 +86,8 @@ fun MatchesScreen(
     val coroutineScope = rememberCoroutineScope()
     val pagerState = rememberPagerState(initialPage = initialTab, pageCount = { tabs.size })
 
-    LaunchedEffect(modeId) {
-        viewModel.loadData(modeId)
+    LaunchedEffect(modeId, initialTab) {
+        viewModel.loadData(modeId, MatchTab.fromPage(initialTab))
     }
 
     val lifecycleOwner = LocalLifecycleOwner.current
@@ -203,56 +205,39 @@ fun MatchesScreen(
                 modifier = Modifier.fillMaxSize(),
                 beyondViewportPageCount = 0,
             ) { page ->
-                fun canonicalStatus(raw: String?): String {
-                    return raw
-                        ?.trim()
-                        ?.lowercase()
-                        .let { s ->
-                            when (s) {
-                                null -> ""
-                                "open", "opened" -> "open"
-                                "start", "started" -> "start"
-                                "pending", "scheduled" -> "upcoming"
-                                "upcoming" -> "upcoming"
-                                "ongoing" -> "ongoing"
-                                "complete", "completed", "finished" -> "completed"
-                                "cancelled", "canceled", "void" -> "cancelled"
-                                else -> s
-                            }
-                        }
+                val tab = MatchTab.fromPage(page)
+                val tabState = tabStates.value[tab] ?: MatchTabState()
+                val listState = rememberLazyListState()
+
+                LaunchedEffect(modeId, tab) {
+                    viewModel.ensureTabLoaded(modeId, tab)
                 }
 
-                // Determine if a match has been started by admin (room code/password set)
-                val filteredMatches = remember(matchesState.value, page) {
-                    matchesState.value.filter { match ->
-                        val status = canonicalStatus(match.status)
-                        when (page) {
-                            0 -> status == "ongoing"
-                            1 -> status == "upcoming"
-                            2 -> status == "completed" || status == "ended" || status == "finished"
-                            else -> false
-                        }
+                LaunchedEffect(listState, tabState.hasMore, tabState.isLoadingMore) {
+                    snapshotFlow {
+                        val info = listState.layoutInfo
+                        val lastVisible = info.visibleItemsInfo.lastOrNull()?.index ?: 0
+                        info.totalItemsCount > 0 && lastVisible >= info.totalItemsCount - 2
+                    }.collect { nearEnd ->
+                        if (nearEnd) viewModel.loadMore(modeId, tab)
                     }
                 }
-                    // Duplicate filteredMatches block removed
-
-
 
                 Box(
                     modifier = Modifier
                         .fillMaxSize()
                         .background(Color(0xFF030D1E)) // Dark blue/navy page background
                 ) {
-                    if (isLoadingState.value && matchesState.value.isEmpty()) {
+                    if (isLoadingState.value && !tabState.initialLoaded) {
                         Column(
                             modifier = Modifier
                                 .align(Alignment.TopCenter)
                                 .fillMaxWidth()
                                 .padding(16.dp),
                         ) {
-                            MatchListSkeleton(count = 4)
+                            MatchListSkeleton(count = 3)
                         }
-                    } else if (filteredMatches.isEmpty()) {
+                    } else if (tabState.items.isEmpty() && tabState.initialLoaded) {
                         Column(
                             modifier = Modifier
                                 .fillMaxSize()
@@ -281,11 +266,12 @@ fun MatchesScreen(
                         }
                     } else {
                         LazyColumn(
+                            state = listState,
                             modifier = Modifier.fillMaxSize(),
                             contentPadding = PaddingValues(16.dp),
                             verticalArrangement = Arrangement.spacedBy(16.dp)
                         ) {
-                            items(filteredMatches, key = { it.id }) { match ->
+                            items(tabState.items, key = { it.id }) { match ->
                                 MatchCard(
                                     match = match,
                                     isJoined = joinedMatchesState.value.contains(match.id),
@@ -309,6 +295,22 @@ fun MatchesScreen(
                                         onNavigateToMatchDetail(match.id)
                                     }
                                 )
+                            }
+                            if (tabState.isLoadingMore) {
+                                item(key = "loading_more_${tab.name}") {
+                                    Box(
+                                        modifier = Modifier
+                                            .fillMaxWidth()
+                                            .padding(vertical = 12.dp),
+                                        contentAlignment = Alignment.Center,
+                                    ) {
+                                        CircularProgressIndicator(
+                                            modifier = Modifier.size(28.dp),
+                                            color = AccentOrange,
+                                            strokeWidth = 2.dp,
+                                        )
+                                    }
+                                }
                             }
                         }
                     }

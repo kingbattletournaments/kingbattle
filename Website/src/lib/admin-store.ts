@@ -13,7 +13,7 @@ import {
 } from "./admin-tabs";
 import type { DashboardStats } from "./dashboard-stats";
 import { buildMatchTitle, formatMatchLabel, generateTransactionId, stripMatchSuffix } from "./id-formats";
-import { buildPaginatedResult, type PaginatedResult } from "./pagination";
+import { buildPaginatedResult, type MatchListStatus, type PaginatedResult } from "./pagination";
 
 export type Game = { id: string; name: string; imageUrl: string | null };
 export type GameMode = { id: string; gameId: string; name: string; imageUrl: string | null };
@@ -715,6 +715,63 @@ export const adminStore = {
       const count = matchParticipants.filter((mp) => mp.matchId === m.id).length;
       return { ...m, participantCount: count };
     });
+  },
+  matchesPaginated(opts: {
+    modeId: string;
+    page: number;
+    pageSize: number;
+    status: MatchListStatus;
+  }): PaginatedResult<Match & { participantCount?: number }> {
+    let list = matches.filter((m) => m.gameModeId === opts.modeId && m.status !== "cancelled");
+    if (opts.status === "ongoing") list = list.filter((m) => m.status === "ongoing");
+    else if (opts.status === "upcoming") list = list.filter((m) => m.status === "upcoming");
+    else list = list.filter((m) => m.status === "ended" || m.status === "completed");
+    list.sort((a, b) => {
+      const ta = new Date(a.scheduledAt).getTime();
+      const tb = new Date(b.scheduledAt).getTime();
+      return opts.status === "completed" ? tb - ta : ta - tb;
+    });
+    const enriched = list.map((m) => ({
+      ...m,
+      participantCount: matchParticipants.filter((mp) => mp.matchId === m.id).length,
+    }));
+    const total = enriched.length;
+    const from = (opts.page - 1) * opts.pageSize;
+    return buildPaginatedResult(enriched.slice(from, from + opts.pageSize), total, opts.page, opts.pageSize);
+  },
+  getJoinedMatchIdsForUser(userId: string): string[] {
+    const ids = new Set<string>();
+    for (const p of matchParticipants) {
+      if (p.userId === userId) ids.add(p.matchId);
+    }
+    for (const t of coinTransactions) {
+      if (t.userId === userId && t.type === "match_entry" && t.referenceId) ids.add(t.referenceId);
+    }
+    return Array.from(ids);
+  },
+  matchesPaginatedForUser(opts: {
+    userId: string;
+    page: number;
+    pageSize: number;
+    status: MatchListStatus;
+  }): PaginatedResult<Match & { participantCount?: number }> {
+    const joined = new Set(adminStore.getJoinedMatchIdsForUser(opts.userId));
+    let list = matches.filter((m) => joined.has(m.id) && m.status !== "cancelled");
+    if (opts.status === "ongoing") list = list.filter((m) => m.status === "ongoing");
+    else if (opts.status === "upcoming") list = list.filter((m) => m.status === "upcoming");
+    else list = list.filter((m) => m.status === "ended" || m.status === "completed");
+    list.sort((a, b) => {
+      const ta = new Date(a.scheduledAt).getTime();
+      const tb = new Date(b.scheduledAt).getTime();
+      return opts.status === "completed" ? tb - ta : ta - tb;
+    });
+    const enriched = list.map((m) => ({
+      ...m,
+      participantCount: matchParticipants.filter((mp) => mp.matchId === m.id).length,
+    }));
+    const total = enriched.length;
+    const from = (opts.page - 1) * opts.pageSize;
+    return buildPaginatedResult(enriched.slice(from, from + opts.pageSize), total, opts.page, opts.pageSize);
   },
   addMatch: (
     gameModeId: string,

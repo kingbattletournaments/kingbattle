@@ -4,33 +4,31 @@ import { getProductionStoreError } from "@/lib/store-config";
 import { getAdminSession } from "@/lib/admin-auth";
 import { toScheduledAtIso } from "@/lib/app-timezone";
 import { validateMaxParticipants, normalizeMaxParticipants } from "@/lib/match-slots";
-import {
-  ADMIN_API_CACHE_TTL,
-  getAdminApiCache,
-  invalidateMatchListCaches,
-  setAdminApiCache,
-} from "@/lib/admin-api-cache";
 import { invalidateAdminDashboardStatsCache } from "@/lib/admin-dashboard-cache";
+
+export const dynamic = "force-dynamic";
+export const revalidate = 0;
+
+const NO_STORE = {
+  "Cache-Control": "private, no-store, no-cache, must-revalidate, max-age=0",
+  Pragma: "no-cache",
+  Expires: "0",
+} as const;
 
 export async function GET(request: Request) {
   const admin = await getAdminSession();
-  if (!admin) return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
+  if (!admin) return NextResponse.json({ error: "Unauthorized" }, { status: 401, headers: NO_STORE });
   const { searchParams } = new URL(request.url);
   const modeId = searchParams.get("modeId");
   const store = getStore();
   if (modeId && admin.gamesAccessType === "specific" && !admin.isMasterAdmin) {
     const mode = await store.getMode(modeId);
     if (mode && !admin.allowedGameIds.includes(mode.gameId)) {
-      return NextResponse.json({ error: "No access to this mode" }, { status: 403 });
+      return NextResponse.json({ error: "No access to this mode" }, { status: 403, headers: NO_STORE });
     }
   }
-  const cacheKey = `matches:${modeId ?? "all"}`;
-  const cached = getAdminApiCache<unknown>(cacheKey, ADMIN_API_CACHE_TTL.matches);
-  if (cached) return NextResponse.json(cached);
-
   const matches = await store.matches(modeId ?? undefined);
-  setAdminApiCache(cacheKey, matches);
-  return NextResponse.json(matches);
+  return NextResponse.json(matches, { headers: NO_STORE });
 }
 
 export async function POST(request: Request) {
@@ -92,7 +90,6 @@ export async function POST(request: Request) {
     image
   );
   if (!match) return NextResponse.json({ error: "Failed to create match" }, { status: 500 });
-  invalidateMatchListCaches();
   invalidateAdminDashboardStatsCache();
-  return NextResponse.json(match);
+  return NextResponse.json(match, { headers: NO_STORE });
 }
