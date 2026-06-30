@@ -1,6 +1,8 @@
 import { NextResponse } from "next/server";
 import { getStore } from "@/lib/store";
 import { getAdminSession } from "@/lib/admin-auth";
+import { invalidateMatchListCaches } from "@/lib/admin-api-cache";
+import { invalidateAdminDashboardStatsCache } from "@/lib/admin-dashboard-cache";
 
 async function checkMatchAccess(adminId: string, matchId: string): Promise<boolean> {
   const store = getStore();
@@ -27,5 +29,7 @@ export async function POST(
   if (!match) {
     return NextResponse.json({ error: "Match not found or not upcoming" }, { status: 404 });
   }
+  invalidateMatchListCaches();
+  invalidateAdminDashboardStatsCache();
   return NextResponse.json({ ok: true, deleted: true, match });
 }

@@ -1,6 +1,8 @@
 import { NextResponse } from "next/server";
 import { getStore } from "@/lib/store";
 import { getAdminSession } from "@/lib/admin-auth";
+import { invalidateMatchListCaches } from "@/lib/admin-api-cache";
+import { invalidateAdminDashboardStatsCache } from "@/lib/admin-dashboard-cache";
 
 async function checkMatchAccess(adminId: string, matchId: string): Promise<boolean> {
   const store = getStore();
@@ -42,6 +44,8 @@ export async function POST(
       { status: 400 },
     );
   }
+  invalidateMatchListCaches();
+  invalidateAdminDashboardStatsCache();
   const full = await store.getMatch(id);
   return NextResponse.json(full ?? match);
 }

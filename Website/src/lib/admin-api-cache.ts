@@ -50,3 +50,9 @@ export function invalidateAdminApiCache(prefix?: string): void {
     if (key.startsWith(prefix)) map.delete(key);
   }
 }
+
+/** Call after any match create/update/delete so admin + app lists stay in sync. */
+export function invalidateMatchListCaches(): void {
+  invalidateAdminApiCache("matches:");
+  invalidateAdminApiCache("public:matches:");
+}

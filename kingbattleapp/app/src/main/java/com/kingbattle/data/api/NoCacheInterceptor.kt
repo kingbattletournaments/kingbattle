@@ -1,5 +1,6 @@
 package com.kingbattle.data.api
 
+import okhttp3.CacheControl
 import okhttp3.Interceptor
 import okhttp3.Response
 
@@ -17,6 +18,7 @@ class NoCacheInterceptor : Interceptor {
             return chain.proceed(request)
         }
         val noCacheRequest = request.newBuilder()
+            .cacheControl(CacheControl.FORCE_NETWORK)
             .header("Cache-Control", "no-cache")
             .header("Pragma", "no-cache")
             .build()

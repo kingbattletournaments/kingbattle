@@ -4,6 +4,8 @@ import { getProductionStoreError } from "@/lib/store-config";
 import { getAdminSession } from "@/lib/admin-auth";
 import { buildMatchScheduleTimes } from "@/lib/match-preset-schedule";
 import { toScheduledAtIso } from "@/lib/app-timezone";
+import { invalidateMatchListCaches } from "@/lib/admin-api-cache";
+import { invalidateAdminDashboardStatsCache } from "@/lib/admin-dashboard-cache";
 
 export async function POST(request: Request) {
   const storeError = getProductionStoreError();
@@ -56,5 +58,7 @@ export async function POST(request: Request) {
     return NextResponse.json({ error: "Failed to create matches" }, { status: 500 });
   }
 
+  invalidateMatchListCaches();
+  invalidateAdminDashboardStatsCache();
   return NextResponse.json({ count: matches.length, matches });
 }

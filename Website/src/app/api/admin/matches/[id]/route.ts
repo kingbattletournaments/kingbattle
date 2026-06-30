@@ -3,6 +3,8 @@ import { getStore } from "@/lib/store";
 import { getAdminSession } from "@/lib/admin-auth";
 import { toScheduledAtIso } from "@/lib/app-timezone";
 import { validateMaxParticipants } from "@/lib/match-slots";
+import { invalidateMatchListCaches } from "@/lib/admin-api-cache";
+import { invalidateAdminDashboardStatsCache } from "@/lib/admin-dashboard-cache";
 
 async function checkMatchAccess(adminId: string, matchId: string): Promise<boolean> {
   const store = getStore();
@@ -66,6 +68,8 @@ export async function DELETE(
   const store = getStore();
   const ok = await store.deleteMatch(id);
   if (!ok) return NextResponse.json({ error: "Match not found" }, { status: 404 });
+  invalidateMatchListCaches();
+  invalidateAdminDashboardStatsCache();
   return NextResponse.json({ success: true });
 }
 
@@ -107,6 +111,8 @@ export async function PATCH(
     if (Object.keys(updates).length > 0) {
       const updated = await store.updateMatch(id, updates as Parameters<typeof store.updateMatch>[1]);
       if (updated) {
+        invalidateMatchListCaches();
+        invalidateAdminDashboardStatsCache();
         const full = await store.getMatch(id);
         return NextResponse.json(full!);
       }
@@ -119,10 +125,14 @@ export async function PATCH(
   if (match.status === "upcoming" && body.roomCode != null && body.roomPassword != null) {
     const updated = await store.updateMatchRoomInfo(id, String(body.roomCode), String(body.roomPassword));
     if (updated) {
+      invalidateMatchListCaches();
+      invalidateAdminDashboardStatsCache();
       const full = await store.getMatch(id);
       return NextResponse.json(full!);
     }
   }
+  invalidateMatchListCaches();
+  invalidateAdminDashboardStatsCache();
   const updated = await store.getMatch(id);
   return NextResponse.json(updated!);
 }

@@ -2,6 +2,8 @@ import { NextResponse } from "next/server";
 import { getStore } from "@/lib/store";
 import { getAdminSession } from "@/lib/admin-auth";
 import { notifyMatchParticipantsRoomInfo } from "@/lib/match-notifications";
+import { invalidateMatchListCaches } from "@/lib/admin-api-cache";
+import { invalidateAdminDashboardStatsCache } from "@/lib/admin-dashboard-cache";
 
 async function checkMatchAccess(adminId: string, matchId: string): Promise<boolean> {
   const store = getStore();
@@ -65,5 +67,7 @@ export async function POST(
     console.error("Match start push notification failed:", error);
   }
 
+  invalidateMatchListCaches();
+  invalidateAdminDashboardStatsCache();
   return NextResponse.json({ ...(full ?? updated), notifications });
 }

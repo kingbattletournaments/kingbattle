@@ -121,7 +121,7 @@ class MatchesViewModel @Inject constructor(
                         coroutineScope {
                             serverModes.map { mode ->
                                 async {
-                                    runCatching { api.getMatches(mode.id) }
+                                    runCatching { api.getMatches(mode.id, System.currentTimeMillis()) }
                                         .getOrNull()
                                         ?.takeIf { it.isSuccessful }
                                         ?.body()
@@ -169,7 +169,7 @@ class MatchesViewModel @Inject constructor(
                         ?.let { _modeName.value = it.name.uppercase() + " MATCHES" }
 
                     try {
-                        val response = api.getMatches(modeId)
+                        val response = api.getMatches(modeId, System.currentTimeMillis())
                         if (response.isSuccessful && response.body() != null) {
                             _matches.value = mergeParticipantCounts(response.body()!!)
                         } else {

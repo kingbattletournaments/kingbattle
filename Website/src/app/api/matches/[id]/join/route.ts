@@ -1,5 +1,5 @@
 import { NextResponse } from "next/server";
-import { invalidateAdminApiCache } from "@/lib/admin-api-cache";
+import { invalidateMatchListCaches } from "@/lib/admin-api-cache";
 import { getParticipantCountsForMatches } from "@/lib/db-match-slots";
 import { getStore } from "@/lib/store";
 import { getAppUserId } from "@/lib/app-auth";
@@ -36,7 +36,7 @@ export async function POST(
       if (result?.error) {
         return NextResponse.json({ error: result.error }, { status: 400 });
       }
-      invalidateAdminApiCache("public:matches:");
+      invalidateMatchListCaches();
       const countMap = await getParticipantCountsForMatches([matchId]);
       const participantCount = countMap[matchId] ?? slots.length;
       return NextResponse.json({ success: true, slotsBooked: slots.length, participantCount });
@@ -67,7 +67,7 @@ export async function POST(
     if (result?.error) {
       return NextResponse.json({ error: result.error }, { status: 400 });
     }
-    invalidateAdminApiCache("public:matches:");
+    invalidateMatchListCaches();
     const countMap = await getParticipantCountsForMatches([matchId]);
     return NextResponse.json({
       success: true,

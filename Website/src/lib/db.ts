@@ -1447,9 +1447,13 @@ export const db = {
   async deleteMatch(id: string): Promise<boolean> {
     const supabase = getSupabase();
     if (!supabase) return false;
+    await supabase.from("match_slot_bookings").delete().eq("match_id", id);
     await supabase.from("app_match_participants").delete().eq("match_id", id);
     await supabase.from("match_participants").delete().eq("match_id", id);
     const { error } = await supabase.from("matches").delete().eq("id", id);
+    if (error) {
+      console.error("deleteMatch failed:", error.message);
+    }
     return !error;
   },
 

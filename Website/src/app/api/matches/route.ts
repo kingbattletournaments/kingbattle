@@ -4,8 +4,11 @@ import { getStore } from "@/lib/store";
 export const dynamic = "force-dynamic";
 
 const NO_STORE = {
-  "Cache-Control": "no-store, no-cache, must-revalidate",
+  "Cache-Control": "private, no-store, no-cache, must-revalidate, max-age=0",
   Pragma: "no-cache",
+  Expires: "0",
+  "CDN-Cache-Control": "no-store",
+  "Vercel-CDN-Cache-Control": "no-store",
 } as const;
 
 export async function GET(request: Request) {

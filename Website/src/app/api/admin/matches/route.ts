@@ -7,7 +7,7 @@ import { validateMaxParticipants, normalizeMaxParticipants } from "@/lib/match-s
 import {
   ADMIN_API_CACHE_TTL,
   getAdminApiCache,
-  invalidateAdminApiCache,
+  invalidateMatchListCaches,
   setAdminApiCache,
 } from "@/lib/admin-api-cache";
 import { invalidateAdminDashboardStatsCache } from "@/lib/admin-dashboard-cache";
@@ -92,8 +92,7 @@ export async function POST(request: Request) {
     image
   );
   if (!match) return NextResponse.json({ error: "Failed to create match" }, { status: 500 });
-  invalidateAdminApiCache("matches:");
-  invalidateAdminApiCache("public:matches:");
+  invalidateMatchListCaches();
   invalidateAdminDashboardStatsCache();
   return NextResponse.json(match);
 }
