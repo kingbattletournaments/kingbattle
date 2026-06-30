@@ -30,6 +30,7 @@ import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import androidx.hilt.navigation.compose.hiltViewModel
+import com.kingbattle.BuildConfig
 import com.kingbattle.data.api.SlotInfo
 import com.kingbattle.presentation.home.AccentOrange
 import com.kingbattle.presentation.home.TextMuted
@@ -251,6 +252,7 @@ fun JoinSlotDetailsScreen(
     val slotsData by viewModel.slotsData.collectAsState()
     val isSubmitting by viewModel.isSubmitting.collectAsState()
     val context = LocalContext.current
+    val requireUid = BuildConfig.REQUIRE_IN_GAME_UID && slotsData?.requireInGameUid == true
     val totalFee = (slotsData?.entryFee ?: 0) * entries.size
 
     Scaffold(
@@ -276,7 +278,11 @@ fun JoinSlotDetailsScreen(
             verticalArrangement = Arrangement.spacedBy(16.dp),
         ) {
             Text(
-                "Enter in-game details for each booked slot. Total fee: $totalFee coins.",
+                if (requireUid) {
+                    "Enter in-game name and UID for each booked slot. Total fee: $totalFee coins."
+                } else {
+                    "Enter in-game name for each booked slot. Total fee: $totalFee coins."
+                },
                 color = TextMuted,
                 fontSize = 13.sp,
             )
@@ -305,19 +311,21 @@ fun JoinSlotDetailsScreen(
                                 unfocusedBorderColor = Color(0xFF475569),
                             ),
                         )
-                        OutlinedTextField(
-                            value = entry.inGameUid,
-                            onValueChange = { viewModel.updateFormEntry(index, uid = it.filter { c -> c.isDigit() }) },
-                            label = { Text("In-Game UID") },
-                            keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.Number),
-                            modifier = Modifier.fillMaxWidth(),
-                            colors = OutlinedTextFieldDefaults.colors(
-                                focusedTextColor = Color.White,
-                                unfocusedTextColor = Color.White,
-                                focusedBorderColor = AccentOrange,
-                                unfocusedBorderColor = Color(0xFF475569),
-                            ),
-                        )
+                        if (requireUid) {
+                            OutlinedTextField(
+                                value = entry.inGameUid,
+                                onValueChange = { viewModel.updateFormEntry(index, uid = it.filter { c -> c.isDigit() }) },
+                                label = { Text("In-Game UID") },
+                                keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.Number),
+                                modifier = Modifier.fillMaxWidth(),
+                                colors = OutlinedTextFieldDefaults.colors(
+                                    focusedTextColor = Color.White,
+                                    unfocusedTextColor = Color.White,
+                                    focusedBorderColor = AccentOrange,
+                                    unfocusedBorderColor = Color(0xFF475569),
+                                ),
+                            )
+                        }
                     }
                 }
             }

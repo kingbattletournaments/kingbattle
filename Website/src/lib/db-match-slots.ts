@@ -13,6 +13,7 @@ import {
   validateSlotSelection,
   type SlotAvailability,
 } from "./match-slots";
+import { isInGameUidRequired, validateJoinPlayerDetails } from "./match-join-config";
 import {
   computeTeamOrdinals,
   calcRankRewardCoins,
@@ -94,6 +95,7 @@ export async function getMatchSlotAvailability(
       teamCount: number;
       entryFee: number;
       joinedCount: number;
+      requireInGameUid: boolean;
       slots: SlotAvailability[];
     }
   | { error: string }
@@ -132,6 +134,7 @@ export async function getMatchSlotAvailability(
     teamCount: Math.floor(maxParticipants / teamSize),
     entryFee: match.entry_fee ?? 0,
     joinedCount,
+    requireInGameUid: isInGameUidRequired(),
     slots,
   };
 }
@@ -201,9 +204,16 @@ export async function confirmSlotBookings(
   const validation = validateSlotSelection(slotIndices, matchType, maxParticipants);
   if (validation) return { error: validation };
 
-  if (slots.some((s) => !s.inGameName?.trim() || !s.inGameUid?.trim())) {
-    return { error: "In-game name and UID required for each slot" };
+  for (const s of slots) {
+    const detailErr = validateJoinPlayerDetails(s.inGameName, s.inGameUid);
+    if (detailErr) return { error: detailErr };
   }
+
+  const normalizedSlots = slots.map((s) => ({
+    ...s,
+    inGameName: s.inGameName.trim(),
+    inGameUid: s.inGameUid.trim(),
+  }));
 
   const { data: heldRows, error: heldErr } = await supabase
     .from("match_slot_bookings")
@@ -218,17 +228,17 @@ export async function confirmSlotBookings(
   }
 
   const heldIndices = new Set(heldRows.map((r: SlotBookingRow) => r.slot_index));
-  for (const s of slots) {
+  for (const s of normalizedSlots) {
     if (!heldIndices.has(s.slotIndex)) {
       return { error: "Selected slots do not match your hold. Please try again." };
     }
   }
-  if (slots.length !== heldRows.length) {
+  if (normalizedSlots.length !== heldRows.length) {
     return { error: "Provide details for every held slot" };
   }
 
   const entryFee = match.entry_fee ?? 0;
-  const totalFee = entryFee * slots.length;
+  const totalFee = entryFee * normalizedSlots.length;
 
   const { data: user } = await supabase
     .from("app_users")
@@ -241,13 +251,13 @@ export async function confirmSlotBookings(
   if (totalBalance < totalFee) return { error: "Insufficient coins" };
 
   const now = new Date().toISOString();
-  for (const s of slots) {
+  for (const s of normalizedSlots) {
     const { error: updErr } = await supabase
       .from("match_slot_bookings")
       .update({
         status: "confirmed",
-        in_game_name: s.inGameName.trim(),
-        in_game_uid: s.inGameUid.trim(),
+        in_game_name: s.inGameName,
+        in_game_uid: s.inGameUid,
         hold_expires_at: null,
         confirmed_at: now,
       })

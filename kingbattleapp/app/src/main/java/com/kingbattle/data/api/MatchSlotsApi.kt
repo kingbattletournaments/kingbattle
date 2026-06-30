@@ -9,6 +9,7 @@ data class MatchSlotsResponse(
     @SerializedName("teamCount") val teamCount: Int,
     @SerializedName("entryFee") val entryFee: Int,
     @SerializedName("joinedCount") val joinedCount: Int? = null,
+    @SerializedName("requireInGameUid") val requireInGameUid: Boolean = false,
     val slots: List<SlotInfo>,
 )
 
@@ -32,5 +33,5 @@ data class HoldSlotsResponse(
 data class SlotBookingInput(
     @SerializedName("slot_index") val slotIndex: Int,
     @SerializedName("in_game_name") val inGameName: String,
-    @SerializedName("in_game_uid") val inGameUid: String,
+    @SerializedName("in_game_uid") val inGameUid: String = "",
 )

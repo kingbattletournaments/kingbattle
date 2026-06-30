@@ -23,6 +23,7 @@ import {
   holdMatchSlots,
   refundSlotBookingsForMatch,
 } from "./db-match-slots";
+import { validateJoinPlayerDetails } from "./match-join-config";
 import { buildMatchTitle, formatMatchLabel, stripMatchSuffix } from "./id-formats";
 import { insertCoinTransaction } from "./coin-transaction-db";
 import { buildPaginatedResult, type MatchListStatus, type PaginatedResult } from "./pagination";
@@ -1379,6 +1380,14 @@ export const db = {
   ): Promise<{ error?: string } | null> {
     if (slotJoin?.holdId && slotJoin.slots?.length) {
       return confirmSlotBookings(matchId, appUserId, slotJoin.holdId, slotJoin.slots);
+    }
+    const detailErr = validateJoinPlayerDetails(inGameName, inGameUid);
+    if (detailErr) return { error: detailErr };
+    if (teamMembers?.length) {
+      for (const m of teamMembers) {
+        const err = validateJoinPlayerDetails(m.inGameName, m.inGameUid);
+        if (err) return { error: err };
+      }
     }
     const supabase = getSupabase();
     if (!supabase) return { error: "Database not configured" };

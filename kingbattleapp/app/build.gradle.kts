@@ -18,6 +18,9 @@ android {
         versionCode = 1
         versionName = "1.0"
 
+        // White-label: set true for clients that require in-game UID at join
+        buildConfigField("boolean", "REQUIRE_IN_GAME_UID", "false")
+
         testInstrumentationRunner = "androidx.test.runner.AndroidJUnitRunner"
     }
 

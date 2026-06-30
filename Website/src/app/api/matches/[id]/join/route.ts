@@ -3,6 +3,7 @@ import { invalidateMatchListCaches } from "@/lib/admin-api-cache";
 import { getParticipantCountsForMatches } from "@/lib/db-match-slots";
 import { getStore } from "@/lib/store";
 import { getAppUserId } from "@/lib/app-auth";
+import { validateJoinPlayerDetails } from "@/lib/match-join-config";
 export async function POST(
   request: Request,
   { params }: { params: Promise<{ id: string }> },
@@ -24,6 +25,12 @@ export async function POST(
           inGameUid: String(s.inGameUid ?? s.in_game_uid ?? "").trim(),
         }),
       );
+      for (const s of slots) {
+        const detailErr = validateJoinPlayerDetails(s.inGameName, s.inGameUid);
+        if (detailErr) {
+          return NextResponse.json({ error: detailErr }, { status: 400 });
+        }
+      }
       const store = getStore();
       const result = await store.joinMatch(
         matchId,
@@ -45,18 +52,16 @@ export async function POST(
     const inGameName = body.inGameName || body.in_game_name;
     const inGameUid = body.inGameUid || body.in_game_uid;
     const teamMembers = body.teamMembers || body.team_members;
-    if (!inGameName || !inGameUid) {
-      return NextResponse.json(
-        { error: "Select slots first, or provide inGameName and inGameUid" },
-        { status: 400 },
-      );
+    const detailErr = validateJoinPlayerDetails(inGameName, inGameUid);
+    if (detailErr) {
+      return NextResponse.json({ error: detailErr }, { status: 400 });
     }
     const store = getStore();
     const result = await store.joinMatch(
       matchId,
       userId,
       String(inGameName).trim(),
-      String(inGameUid).trim(),
+      String(inGameUid ?? "").trim(),
       Array.isArray(teamMembers)
         ? teamMembers.slice(0, 3).map((t: { inGameName?: string; inGameUid?: string }) => ({
             inGameName: String(t?.inGameName ?? "").trim(),

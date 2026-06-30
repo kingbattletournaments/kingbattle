@@ -2,6 +2,7 @@ package com.kingbattle.presentation.matches
 
 import androidx.lifecycle.ViewModel
 import androidx.lifecycle.viewModelScope
+import com.kingbattle.BuildConfig
 import com.kingbattle.data.api.HoldSlotsRequest
 import com.kingbattle.data.api.JoinMatchRequest
 import com.kingbattle.data.api.KingBattleApi
@@ -156,7 +157,12 @@ class SlotSelectionViewModel @Inject constructor(
             return
         }
         val entries = _formEntries.value
-        if (entries.any { it.inGameName.isBlank() || it.inGameUid.length < 6 }) {
+        val requireUid = BuildConfig.REQUIRE_IN_GAME_UID && _slotsData.value?.requireInGameUid == true
+        if (entries.any { it.inGameName.isBlank() }) {
+            onError("Enter in-game name for each slot")
+            return
+        }
+        if (requireUid && entries.any { it.inGameUid.length < 6 }) {
             onError("Enter valid in-game name and UID for each slot")
             return
         }
