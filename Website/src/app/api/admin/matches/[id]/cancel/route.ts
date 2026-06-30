@@ -27,7 +27,10 @@ export async function POST(
   const store = getStore();
   const match = await store.cancelMatch(id);
   if (!match) {
-    return NextResponse.json({ error: "Match not found or not upcoming" }, { status: 404 });
+    return NextResponse.json(
+      { error: "Match not found or cannot be cancelled (only upcoming/ongoing matches can be voided)" },
+      { status: 404 },
+    );
   }
   invalidateMatchListCaches();
   invalidateAdminDashboardStatsCache();

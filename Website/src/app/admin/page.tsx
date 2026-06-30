@@ -1929,10 +1929,13 @@ function MatchesSection({
       spots > 0
         ? ` All ${spots} registered player${spots === 1 ? "" : "s"} will receive a refund.`
         : "";
-    if (!confirm(`Cancel "${m.title}"?${refundNote}`)) return;
+    if (!confirm(`Cancel "${m.title}"?${refundNote} This will remove the match from the app.`)) return;
     try {
       const res = await fetch(`/api/admin/matches/${m.id}/cancel`, { method: "POST" });
-      if (!res.ok) throw new Error(await res.text());
+      if (!res.ok) {
+        const errData = await res.json().catch(() => ({}));
+        throw new Error(errData?.error || "Failed to cancel match");
+      }
       if (playersMatchId === m.id) onNavChange({ match: null, mview: null });
       onSuccess({ silent: true });
     } catch (err) {

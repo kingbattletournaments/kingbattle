@@ -829,7 +829,7 @@ export const adminStore = {
   cancelMatch: (matchId: string) => {
     const idx = matches.findIndex((x) => x.id === matchId);
     const m = idx === -1 ? null : matches[idx];
-    if (!m || m.status !== "upcoming") return null;
+    if (!m || (m.status !== "upcoming" && m.status !== "ongoing")) return null;
     const snapshot = { ...m };
     const participants = matchParticipants.filter((p) => p.matchId === matchId);
     for (const p of participants) {

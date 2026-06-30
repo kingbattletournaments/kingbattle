@@ -1482,7 +1482,12 @@ export const db = {
   async cancelMatch(id: string): Promise<DbMatch | null> {
     const supabase = getSupabase();
     if (!supabase) return null;
-    const { data: m } = await supabase.from("matches").select("*").eq("id", id).eq("status", "upcoming").single();
+    const { data: m } = await supabase
+      .from("matches")
+      .select("*")
+      .eq("id", id)
+      .in("status", ["upcoming", "ongoing"])
+      .single();
     if (!m) return null;
     const entryFee = m.entry_fee ?? 0;
     const title = (m.title as string) ?? "Match";
@@ -1525,7 +1530,7 @@ export const db = {
     await supabase.from("match_slot_bookings").delete().eq("match_id", id);
     await supabase.from("app_match_participants").delete().eq("match_id", id);
     await supabase.from("match_participants").delete().eq("match_id", id);
-    const { error } = await supabase.from("matches").delete().eq("id", id).eq("status", "upcoming");
+    const { error } = await supabase.from("matches").delete().eq("id", id).in("status", ["upcoming", "ongoing"]);
     if (error) {
       console.error("cancelMatch delete failed:", error.message);
       return null;
