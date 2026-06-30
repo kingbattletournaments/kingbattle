@@ -1,7 +1,15 @@
 -- Match display numbers (0000, 0001, … 9999, 10000, …)
 ALTER TABLE public.matches ADD COLUMN IF NOT EXISTS match_number INTEGER UNIQUE;
 
-CREATE SEQUENCE IF NOT EXISTS match_number_seq START WITH 0 INCREMENT BY 1;
+-- Sequences default to MINVALUE 1; allow 0-based numbering for first match (0000)
+DROP SEQUENCE IF EXISTS public.match_number_seq;
+CREATE SEQUENCE public.match_number_seq
+  AS integer
+  START WITH 0
+  INCREMENT BY 1
+  MINVALUE 0
+  NO MAXVALUE
+  CACHE 1;
 
 -- Backfill existing matches in creation order
 WITH numbered AS (
