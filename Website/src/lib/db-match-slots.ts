@@ -3,6 +3,7 @@
  */
 
 import { getSupabase } from "./supabase";
+import { insertCoinTransaction } from "./coin-transaction-db";
 import {
   buildSlotGrid,
   slotPositionInTeam,
@@ -275,7 +276,7 @@ export async function confirmSlotBookings(
         won_coins: (user.won_coins ?? 0) - deductWonCoins,
       })
       .eq("username", appUserId);
-    await supabase.from("app_coin_transactions").insert({
+    await insertCoinTransaction(supabase, {
       user_id: appUserId,
       amount: -totalFee,
       type: "match_entry",
@@ -353,7 +354,7 @@ export async function refundSlotBookingsForMatch(
     const { data: user } = await supabase.from("app_users").select("coins").eq("username", appUserId).single();
     if (!user || typeof user.coins !== "number") continue;
     await supabase.from("app_users").update({ coins: user.coins + amount }).eq("username", appUserId);
-    await supabase.from("app_coin_transactions").insert({
+    await insertCoinTransaction(supabase, {
       user_id: appUserId,
       amount,
       type: "refund",

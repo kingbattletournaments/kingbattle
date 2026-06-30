@@ -396,8 +396,6 @@ fun MatchCard(
                         color = Color(0xFF1E293B),
                         fontSize = 16.sp,
                         fontWeight = FontWeight.ExtraBold,
-                        maxLines = 1,
-                        overflow = TextOverflow.Ellipsis
                     )
                     Spacer(modifier = Modifier.height(1.dp))
                     Text(

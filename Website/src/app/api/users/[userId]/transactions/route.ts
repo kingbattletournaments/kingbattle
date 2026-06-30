@@ -37,6 +37,8 @@ export async function GET(_request: Request) {
       note = t.description ?? "Admin added";
     } else if (t.type === "signup_bonus") {
       note = "Signup bonus";
+    } else if (t.type === "match_winning") {
+      note = t.description ?? "Match winning";
     } else if (t.type === "refund") {
       note = t.description ?? "Refund";
     }

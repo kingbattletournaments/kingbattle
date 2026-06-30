@@ -218,7 +218,7 @@ export function AdminMatchCard({
           className="w-10 h-10 object-cover rounded-lg border border-zinc-200 shrink-0"
         />
         <div className="min-w-0 flex-1">
-          <h4 className="font-bold text-zinc-900 text-sm truncate" title={item.title}>
+          <h4 className="font-bold text-zinc-900 text-sm break-words leading-snug" title={item.title}>
             {item.title}
           </h4>
           {infoLine && (

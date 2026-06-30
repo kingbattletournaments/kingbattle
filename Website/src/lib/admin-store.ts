@@ -12,6 +12,8 @@ import {
   type AdminTabAccess,
 } from "./admin-tabs";
 import type { DashboardStats } from "./dashboard-stats";
+import { buildMatchTitle, formatMatchLabel, generateTransactionId, stripMatchSuffix } from "./id-formats";
+import { buildPaginatedResult, type PaginatedResult } from "./pagination";
 
 export type Game = { id: string; name: string; imageUrl: string | null };
 export type GameMode = { id: string; gameId: string; name: string; imageUrl: string | null };
@@ -28,6 +30,7 @@ export type PrizePool = {
 export type Match = {
   id: string;
   gameModeId: string;
+  matchNumber?: number;
   title: string;
   entryFee: number;
   roomCode: string | null;
@@ -161,6 +164,7 @@ const globalForAdmin = globalThis as unknown as {
   gameIdCounter?: number;
   modeIdCounter?: number;
   matchIdCounter?: number;
+  nextMatchNumberCounter?: number;
   matchPresetIdCounter?: number;
   adminStoreBanners?: AppBanner[];
   bannerIdCounter?: number;
@@ -244,9 +248,22 @@ const depositRequests: DepositRequest[] = globalForAdmin.adminStoreDepositReques
 const withdrawalRequests: WithdrawalRequest[] = globalForAdmin.adminStoreWithdrawalRequests ?? (globalForAdmin.adminStoreWithdrawalRequests = []);
 
 function nextTxId() {
-  const v = (globalForAdmin.adminStoreTransactionIdCounter ?? 1);
-  globalForAdmin.adminStoreTransactionIdCounter = v + 1;
-  return `tx-${v}`;
+  const existing = new Set(coinTransactions.map((t) => t.id));
+  for (let i = 0; i < 20; i++) {
+    const id = generateTransactionId();
+    if (!existing.has(id)) return id;
+  }
+  return generateTransactionId();
+}
+
+function allocateMatchNumberLocal(): number {
+  if (globalForAdmin.nextMatchNumberCounter == null) {
+    const max = matches.reduce((m, x) => Math.max(m, x.matchNumber ?? -1), -1);
+    globalForAdmin.nextMatchNumberCounter = max + 1;
+  }
+  const n = globalForAdmin.nextMatchNumberCounter;
+  globalForAdmin.nextMatchNumberCounter = n + 1;
+  return n;
 }
 function nextDrId() {
   const v = (globalForAdmin.adminStoreDepositRequestIdCounter ?? 1);
@@ -712,12 +729,15 @@ export const adminStore = {
   ) => {
     const id = `match${matchIdCounter++}`;
     globalForAdmin.matchIdCounter = matchIdCounter;
+    const matchNumber = allocateMatchNumberLocal();
+    const displayTitle = buildMatchTitle(title, matchNumber);
     const posters = ["match_poster_1", "match_poster_2", "match_poster_3"];
     const randomPoster = posters[Math.floor(Math.random() * posters.length)];
     matches.push({
       id,
       gameModeId,
-      title,
+      matchNumber,
+      title: displayTitle,
       entryFee,
       roomCode: null,
       roomPassword: null,
@@ -807,7 +827,10 @@ export const adminStore = {
             amount: coins,
             type: "match_winning",
             referenceId: matchId,
-            description: `Winning with match ${matchId}`,
+            description:
+              m.matchNumber != null
+                ? `Winning ${formatMatchLabel(m.matchNumber)}`
+                : `Winning with match ${matchId}`,
             createdAt: new Date().toISOString(),
           });
         }
@@ -922,7 +945,8 @@ export const adminStore = {
   renameMatch: (id: string, title: string) => {
     const m = matches.find((x) => x.id === id);
     if (!m) return null;
-    m.title = title;
+    const base = stripMatchSuffix(title);
+    m.title = m.matchNumber != null ? buildMatchTitle(base, m.matchNumber) : base;
     return m;
   },
   updateMatch: (
@@ -940,7 +964,10 @@ export const adminStore = {
   ) => {
     const m = matches.find((x) => x.id === id);
     if (!m || m.status !== "upcoming") return null;
-    if (updates.title !== undefined) m.title = updates.title;
+    if (updates.title !== undefined) {
+      const base = stripMatchSuffix(updates.title);
+      m.title = m.matchNumber != null ? buildMatchTitle(base, m.matchNumber) : base;
+    }
     if (updates.entryFee !== undefined) m.entryFee = updates.entryFee;
     if (updates.maxParticipants !== undefined) m.maxParticipants = updates.maxParticipants;
     if (updates.scheduledAt !== undefined) m.scheduledAt = updates.scheduledAt;
@@ -952,6 +979,29 @@ export const adminStore = {
   },
 
   users: () => [...users],
+  usersPaginated(opts: {
+    page: number;
+    pageSize: number;
+    search?: string;
+    blocked?: "all" | "blocked" | "active";
+  }): PaginatedResult<User> {
+    let list = [...users];
+    if (opts.blocked === "blocked") list = list.filter((u) => u.isBlocked);
+    else if (opts.blocked === "active") list = list.filter((u) => !u.isBlocked);
+    const search = opts.search?.trim().toLowerCase();
+    if (search) {
+      list = list.filter(
+        (u) =>
+          u.username?.toLowerCase().includes(search) ||
+          u.displayName?.toLowerCase().includes(search) ||
+          u.email?.toLowerCase().includes(search),
+      );
+    }
+    list.sort((a, b) => new Date(b.createdAt ?? 0).getTime() - new Date(a.createdAt ?? 0).getTime());
+    const total = list.length;
+    const from = (opts.page - 1) * opts.pageSize;
+    return buildPaginatedResult(list.slice(from, from + opts.pageSize), total, opts.page, opts.pageSize);
+  },
   getSignupBonus: () => signupBonus,
   setSignupBonus: (amount: number) => {
     const a = Math.max(0, amount);
@@ -1204,6 +1254,53 @@ export const adminStore = {
       : [...coinTransactions];
     return list.sort((a, b) => new Date(b.createdAt).getTime() - new Date(a.createdAt).getTime());
   },
+  transactionsPaginated(opts: {
+    page: number;
+    pageSize: number;
+    id?: string;
+    userId?: string;
+  }): PaginatedResult<CoinTransaction & { userDisplayName?: string; userEmail?: string }> {
+    let list = [...coinTransactions];
+    const txId = opts.id?.trim().toUpperCase();
+    if (txId) list = list.filter((t) => t.id.toUpperCase() === txId);
+    if (opts.userId?.trim()) list = list.filter((t) => t.userId === opts.userId!.trim());
+    list.sort((a, b) => new Date(b.createdAt).getTime() - new Date(a.createdAt).getTime());
+    const total = list.length;
+    const from = (opts.page - 1) * opts.pageSize;
+    const items = list.slice(from, from + opts.pageSize).map((t) => {
+      const u = users.find((x) => x.id === t.userId);
+      return {
+        ...t,
+        userDisplayName: u?.displayName,
+        userEmail: u?.email,
+      };
+    });
+    return buildPaginatedResult(items, total, opts.page, opts.pageSize);
+  },
+  depositRequestsPaginated(opts: {
+    page: number;
+    pageSize: number;
+    status?: "pending" | "accepted" | "rejected";
+  }): PaginatedResult<DepositRequest> {
+    let list = [...depositRequests];
+    if (opts.status) list = list.filter((r) => r.status === opts.status);
+    list.sort((a, b) => new Date(b.createdAt).getTime() - new Date(a.createdAt).getTime());
+    const total = list.length;
+    const from = (opts.page - 1) * opts.pageSize;
+    return buildPaginatedResult(list.slice(from, from + opts.pageSize), total, opts.page, opts.pageSize);
+  },
+  withdrawalRequestsPaginated(opts: {
+    page: number;
+    pageSize: number;
+    status?: "pending" | "accepted" | "rejected";
+  }): PaginatedResult<WithdrawalRequest> {
+    let list = [...withdrawalRequests];
+    if (opts.status) list = list.filter((r) => r.status === opts.status);
+    list.sort((a, b) => new Date(b.createdAt).getTime() - new Date(a.createdAt).getTime());
+    const total = list.length;
+    const from = (opts.page - 1) * opts.pageSize;
+    return buildPaginatedResult(list.slice(from, from + opts.pageSize), total, opts.page, opts.pageSize);
+  },
   blockUser: (userId: string, reason: string) => {
     const u = users.find((x) => x.id === userId);
     if (!u) return false;
@@ -1325,7 +1422,10 @@ export const adminStore = {
         amount: -m.entryFee,
         type: "match_entry",
         referenceId: matchId,
-        description: "Match entry fee",
+        description:
+          m.matchNumber != null
+            ? `Entry ${formatMatchLabel(m.matchNumber)}`
+            : "Match entry fee",
         createdAt: new Date().toISOString(),
       });
     }

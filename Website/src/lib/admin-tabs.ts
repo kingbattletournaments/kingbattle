@@ -3,6 +3,7 @@ export const ADMIN_TAB_DEFINITIONS = [
   { id: "presets", label: "Match Presets" },
   { id: "moneyorders", label: "Deposits" },
   { id: "withdrawals", label: "Withdrawals" },
+  { id: "transactions", label: "Transactions" },
   { id: "users", label: "Users" },
   { id: "notifications", label: "Push Notifications" },
   { id: "appsettings", label: "App Setting" },
@@ -55,6 +56,7 @@ export function normalizeTabAccess(admin: LegacyAdminFields): AdminTabAccess {
   if (admin.coinsAccess) {
     tabs.moneyorders = true;
     tabs.withdrawals = true;
+    tabs.transactions = true;
     tabs.banners = true;
   }
   if (admin.usersAccess) {
@@ -70,7 +72,7 @@ export function legacyPermissionsFromTabAccess(tabAccess: Partial<AdminTabAccess
   return {
     usersAccess:
       tabs.users || tabs.notifications || tabs.appsettings || tabs.referrals || tabs.admins,
-    coinsAccess: tabs.moneyorders || tabs.withdrawals || tabs.banners,
+    coinsAccess: tabs.moneyorders || tabs.withdrawals || tabs.transactions || tabs.banners,
     gamesAccessType: (tabs.modes || tabs.presets ? "all" : "specific") as "all" | "specific",
     allowedGameIds: [] as string[],
   };

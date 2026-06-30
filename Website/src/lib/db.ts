@@ -23,6 +23,9 @@ import {
   holdMatchSlots,
   refundSlotBookingsForMatch,
 } from "./db-match-slots";
+import { buildMatchTitle, formatMatchLabel, stripMatchSuffix } from "./id-formats";
+import { insertCoinTransaction } from "./coin-transaction-db";
+import { buildPaginatedResult, type PaginatedResult } from "./pagination";
 
 
 // Types matching admin-store
@@ -140,6 +143,7 @@ export type DbMatch = {
   map: string;
   image?: string | null;
   participantCount?: number;
+  matchNumber?: number;
 };
 
 export type DbMatchPreset = {
@@ -212,6 +216,7 @@ function toMatch(row: {
   rank_rewards?: unknown;
   map?: string | null;
   image?: string | null;
+  match_number?: number | null;
 }): DbMatch {
   const rewards = Array.isArray(row.rank_rewards)
     ? (row.rank_rewards as { fromRank?: number; toRank?: number; coins?: number }[])
@@ -237,6 +242,7 @@ function toMatch(row: {
     },
     map: row.map ?? "BERMUDA",
     image: row.image ?? null,
+    matchNumber: row.match_number ?? undefined,
   };
 }
 
@@ -328,6 +334,36 @@ function toTransaction(row: {
   };
 }
 
+async function allocateMatchNumber(): Promise<number> {
+  const supabase = getSupabase();
+  if (!supabase) return 0;
+  const KEY = "next_match_number";
+  const { data: row } = await supabase.from("app_settings").select("value").eq("key", KEY).maybeSingle();
+  let next = row?.value != null ? parseInt(String(row.value), 10) : Number.NaN;
+  if (!Number.isFinite(next) || next < 0) {
+    const { data: maxRow } = await supabase
+      .from("matches")
+      .select("match_number")
+      .order("match_number", { ascending: false })
+      .limit(1)
+      .maybeSingle();
+    next = typeof maxRow?.match_number === "number" ? maxRow.match_number + 1 : 0;
+  }
+  await supabase.from("app_settings").upsert(
+    { key: KEY, value: String(next + 1), updated_at: new Date().toISOString() },
+    { onConflict: "key" },
+  );
+  return next;
+}
+
+async function matchWinDescription(matchId: string): Promise<string> {
+  const supabase = getSupabase();
+  if (!supabase) return `Winning with match ${matchId}`;
+  const { data } = await supabase.from("matches").select("match_number").eq("id", matchId).maybeSingle();
+  if (typeof data?.match_number === "number") return `Winning ${formatMatchLabel(data.match_number)}`;
+  return `Winning with match ${matchId}`;
+}
+
 export const db = {
   async getDefaultGameId(): Promise<string> {
     const supabase = getSupabase();
@@ -381,6 +417,29 @@ export const db = {
     return (data ?? []).map(toUser);
   },
 
+  async usersPaginated(opts: {
+    page: number;
+    pageSize: number;
+    search?: string;
+    blocked?: "all" | "blocked" | "active";
+  }): Promise<PaginatedResult<DbUser>> {
+    const supabase = getSupabase();
+    if (!supabase) return buildPaginatedResult([], 0, opts.page, opts.pageSize);
+    let q = supabase.from("app_users").select("*", { count: "exact" }).order("created_at", { ascending: false });
+    const search = opts.search?.trim();
+    if (search) {
+      const safe = search.replace(/[%_,]/g, "");
+      q = q.or(`username.ilike.%${safe}%,display_name.ilike.%${safe}%,email.ilike.%${safe}%`);
+    }
+    if (opts.blocked === "blocked") q = q.eq("is_blocked", true);
+    if (opts.blocked === "active") q = q.eq("is_blocked", false);
+    const from = (opts.page - 1) * opts.pageSize;
+    const to = from + opts.pageSize - 1;
+    const { data, count, error } = await q.range(from, to);
+    if (error) return buildPaginatedResult([], 0, opts.page, opts.pageSize);
+    return buildPaginatedResult((data ?? []).map(toUser), count ?? 0, opts.page, opts.pageSize);
+  },
+
   async addUser(email: string, displayName: string, password: string, username?: string, referredBy?: string): Promise<DbUser | null> {
     const supabase = getSupabase();
     if (!supabase) return null;
@@ -427,7 +486,7 @@ export const db = {
     if (error) return null;
 
     if (bonus > 0) {
-      await supabase.from("app_coin_transactions").insert({
+      await insertCoinTransaction(supabase, {
         user_id: finalUsername,
         amount: bonus,
         type: "signup_bonus",
@@ -453,7 +512,7 @@ export const db = {
 
         if (rewardCoins > 0) {
           await supabase.from("app_users").update({ coins: referrer.coins + rewardCoins }).eq("username", referrer.username);
-          await supabase.from("app_coin_transactions").insert({
+          await insertCoinTransaction(supabase, {
             user_id: referrer.username,
             amount: rewardCoins,
             type: "admin_add",
@@ -520,7 +579,7 @@ export const db = {
 
     if (bonus > 0) {
       try {
-        await supabase.from("app_coin_transactions").insert({
+        await insertCoinTransaction(supabase, {
           user_id: finalUsername,
           amount: bonus,
           type: "signup_bonus",
@@ -566,7 +625,7 @@ export const db = {
     const { data: user } = await supabase.from("app_users").select("coins").eq("username", userId).single();
     if (!user) return null;
     await supabase.from("app_users").update({ coins: user.coins + amount }).eq("username", userId);
-    await supabase.from("app_coin_transactions").insert({
+    await insertCoinTransaction(supabase, {
       user_id: userId,
       amount,
       type: "admin_add",
@@ -584,12 +643,12 @@ export const db = {
       won_coins: (user.won_coins ?? 0) + amount,
       lifetime_earned_points: (user.lifetime_earned_points ?? 0) + amount
     }).eq("username", userId);
-    await supabase.from("app_coin_transactions").insert({
+    await insertCoinTransaction(supabase, {
       user_id: userId,
       amount,
       type: "match_winning",
       reference_id: matchId,
-      description: `Winning with match ${matchId}`,
+      description: await matchWinDescription(matchId),
     });
     return true;
   },
@@ -707,7 +766,7 @@ export const db = {
     const { data: user } = await supabase.from("app_users").select("coins").eq("username", req.user_id).single();
     if (user) {
       await supabase.from("app_users").update({ coins: user.coins + req.amount }).eq("username", req.user_id);
-      await supabase.from("app_coin_transactions").insert({
+      await insertCoinTransaction(supabase, {
         user_id: req.user_id,
         amount: req.amount,
         type: "deposit",
@@ -724,7 +783,7 @@ export const db = {
     const { data: req } = await supabase.from("app_deposit_requests").select("*").eq("id", id).eq("status", "pending").single();
     if (!req) return null;
     await supabase.from("app_deposit_requests").update({ status: "rejected" }).eq("id", id);
-    await supabase.from("app_coin_transactions").insert({
+    await insertCoinTransaction(supabase, {
       user_id: req.user_id,
       amount: req.amount,
       type: "deposit_failed",
@@ -741,7 +800,7 @@ export const db = {
     if (!req) return null;
     await supabase.from("app_deposit_requests").update({ status: "rejected" }).eq("id", id);
     await supabase.from("app_users").update({ is_blocked: true }).eq("username", req.user_id);
-    await supabase.from("app_coin_transactions").insert({
+    await insertCoinTransaction(supabase, {
       user_id: req.user_id,
       amount: req.amount,
       type: "deposit_failed",
@@ -816,7 +875,7 @@ export const db = {
     const { data: req } = await supabase.from("app_withdrawal_requests").select("*").eq("id", id).eq("status", "pending").single();
     if (!req) return null;
     await supabase.from("app_withdrawal_requests").update({ status: "accepted" }).eq("id", id);
-    await supabase.from("app_coin_transactions").insert({
+    await insertCoinTransaction(supabase, {
       user_id: req.user_id,
       amount: -req.amount,
       type: "withdraw",
@@ -836,7 +895,7 @@ export const db = {
       await supabase.from("app_users").update({ won_coins: (user.won_coins ?? 0) + req.amount }).eq("username", req.user_id);
     }
     await supabase.from("app_withdrawal_requests").update({ status: "rejected", reject_note: note }).eq("id", id);
-    await supabase.from("app_coin_transactions").insert({
+    await insertCoinTransaction(supabase, {
       user_id: req.user_id,
       amount: req.amount,
       type: "refund",
@@ -853,6 +912,74 @@ export const db = {
     if (userId) q = q.eq("user_id", userId);
     const { data } = await q;
     return (data ?? []).map(toTransaction);
+  },
+
+  async transactionsPaginated(opts: {
+    page: number;
+    pageSize: number;
+    id?: string;
+    userId?: string;
+  }): Promise<PaginatedResult<DbCoinTransaction & { userDisplayName?: string; userEmail?: string }>> {
+    const supabase = getSupabase();
+    if (!supabase) return buildPaginatedResult([], 0, opts.page, opts.pageSize);
+    let q = supabase.from("app_coin_transactions").select("*", { count: "exact" }).order("created_at", { ascending: false });
+    const txId = opts.id?.trim().toUpperCase();
+    if (txId) q = q.eq("id", txId);
+    if (opts.userId?.trim()) q = q.eq("user_id", opts.userId.trim());
+    const from = (opts.page - 1) * opts.pageSize;
+    const to = from + opts.pageSize - 1;
+    const { data, count, error } = await q.range(from, to);
+    if (error) return buildPaginatedResult([], 0, opts.page, opts.pageSize);
+    const items = (data ?? []).map(toTransaction);
+    const userIds = Array.from(new Set(items.map((t) => t.userId)));
+    const nameByUser = new Map<string, { displayName: string; email: string }>();
+    if (userIds.length > 0) {
+      const { data: users } = await supabase
+        .from("app_users")
+        .select("username, display_name, email")
+        .in("username", userIds);
+      for (const u of users ?? []) {
+        nameByUser.set(u.username, { displayName: u.display_name, email: u.email });
+      }
+    }
+    const enriched = items.map((t) => ({
+      ...t,
+      userDisplayName: nameByUser.get(t.userId)?.displayName,
+      userEmail: nameByUser.get(t.userId)?.email,
+    }));
+    return buildPaginatedResult(enriched, count ?? 0, opts.page, opts.pageSize);
+  },
+
+  async depositRequestsPaginated(opts: {
+    page: number;
+    pageSize: number;
+    status?: "pending" | "accepted" | "rejected";
+  }): Promise<PaginatedResult<DbDepositRequest>> {
+    const supabase = getSupabase();
+    if (!supabase) return buildPaginatedResult([], 0, opts.page, opts.pageSize);
+    let q = supabase.from("app_deposit_requests").select("*", { count: "exact" }).order("created_at", { ascending: false });
+    if (opts.status) q = q.eq("status", opts.status);
+    const from = (opts.page - 1) * opts.pageSize;
+    const to = from + opts.pageSize - 1;
+    const { data, count, error } = await q.range(from, to);
+    if (error) return buildPaginatedResult([], 0, opts.page, opts.pageSize);
+    return buildPaginatedResult((data ?? []).map(toDepositRequest), count ?? 0, opts.page, opts.pageSize);
+  },
+
+  async withdrawalRequestsPaginated(opts: {
+    page: number;
+    pageSize: number;
+    status?: "pending" | "accepted" | "rejected";
+  }): Promise<PaginatedResult<DbWithdrawalRequest>> {
+    const supabase = getSupabase();
+    if (!supabase) return buildPaginatedResult([], 0, opts.page, opts.pageSize);
+    let q = supabase.from("app_withdrawal_requests").select("*", { count: "exact" }).order("created_at", { ascending: false });
+    if (opts.status) q = q.eq("status", opts.status);
+    const from = (opts.page - 1) * opts.pageSize;
+    const to = from + opts.pageSize - 1;
+    const { data, count, error } = await q.range(from, to);
+    if (error) return buildPaginatedResult([], 0, opts.page, opts.pageSize);
+    return buildPaginatedResult((data ?? []).map(toWithdrawalRequest), count ?? 0, opts.page, opts.pageSize);
   },
 
   async getSignupBonus(): Promise<number> {
@@ -1041,29 +1168,35 @@ export const db = {
   ): Promise<DbMatch | null> {
     const supabase = getSupabase();
     if (!supabase) return null;
-    const { data, error } = await supabase
-      .from("matches")
-      .insert({
-        game_mode_id: gameModeId,
-        title,
-        entry_fee: entryFee,
-        max_participants: maxParticipants,
-        starts_at: scheduledAt || null,
-        status: "upcoming",
-        match_type: matchType || "solo",
-        coins_per_kill: prizePool?.coinsPerKill ?? 5,
-        total_prize_pool: prizePool?.totalPrizePool ?? 0,
-        rank_rewards: prizePool?.rankRewards ?? [],
-        map: map || "BERMUDA",
-        image: image || null,
-      })
-      .select()
-      .single();
+    const matchNumber = await allocateMatchNumber();
+    const displayTitle = buildMatchTitle(title, matchNumber);
+    const row: Record<string, unknown> = {
+      game_mode_id: gameModeId,
+      title: displayTitle,
+      entry_fee: entryFee,
+      max_participants: maxParticipants,
+      starts_at: scheduledAt || null,
+      status: "upcoming",
+      match_type: matchType || "solo",
+      coins_per_kill: prizePool?.coinsPerKill ?? 5,
+      total_prize_pool: prizePool?.totalPrizePool ?? 0,
+      rank_rewards: prizePool?.rankRewards ?? [],
+      map: map || "BERMUDA",
+      image: image || null,
+      match_number: matchNumber,
+    };
+    let { data, error } = await supabase.from("matches").insert(row).select().single();
+    if (error && String(error.message).includes("match_number")) {
+      delete row.match_number;
+      ({ data, error } = await supabase.from("matches").insert(row).select().single());
+    }
     if (error || !data) {
       console.error("addMatch failed:", error?.message ?? "no data returned");
       return null;
     }
-    return toMatch(data);
+    const match = toMatch(data);
+    if (match.matchNumber == null) match.matchNumber = matchNumber;
+    return match;
   },
 
   async getMatch(id: string): Promise<(DbMatch & { participants?: { id: string; matchId: string; userId: string; teamMembers: { inGameName: string; inGameUid: string; kills?: number }[]; joinedAt: string; rank?: number }[] }) | null> {
@@ -1209,12 +1342,15 @@ export const db = {
         coins: (user.coins ?? 0) - deductCoins,
         won_coins: (user.won_coins ?? 0) - deductWonCoins
       }).eq("username", appUserId);
-      await supabase.from("app_coin_transactions").insert({
+      await insertCoinTransaction(supabase, {
         user_id: appUserId,
         amount: -entryFee,
         type: "match_entry",
         reference_id: matchId,
-        description: "Match entry fee",
+        description:
+          typeof match.match_number === "number"
+            ? `Entry ${formatMatchLabel(match.match_number)}`
+            : "Match entry fee",
       });
     }
     return null;
@@ -1271,7 +1407,7 @@ export const db = {
         const { data: user } = await supabase.from("app_users").select("coins").eq("username", appUserId).single();
         if (!user || typeof user.coins !== "number") continue;
         await supabase.from("app_users").update({ coins: user.coins + entryFee }).eq("username", appUserId);
-        await supabase.from("app_coin_transactions").insert({
+        await insertCoinTransaction(supabase, {
           user_id: appUserId,
           amount: entryFee,
           type: "refund",
@@ -1320,7 +1456,16 @@ export const db = {
   async renameMatch(id: string, title: string): Promise<DbMatch | null> {
     const supabase = getSupabase();
     if (!supabase) return null;
-    const { data, error } = await supabase.from("matches").update({ title, updated_at: new Date().toISOString() }).eq("id", id).select().single();
+    const existing = await db.getMatch(id);
+    const base = stripMatchSuffix(title);
+    const finalTitle =
+      existing?.matchNumber != null ? buildMatchTitle(base, existing.matchNumber) : base;
+    const { data, error } = await supabase
+      .from("matches")
+      .update({ title: finalTitle, updated_at: new Date().toISOString() })
+      .eq("id", id)
+      .select()
+      .single();
     if (error || !data) return null;
     return toMatch(data);
   },
@@ -1348,7 +1493,11 @@ export const db = {
     if (!existing || existing.status !== "upcoming") return null;
 
     const payload: Record<string, unknown> = { updated_at: new Date().toISOString() };
-    if (updates.title !== undefined) payload.title = updates.title;
+    if (updates.title !== undefined) {
+      const base = stripMatchSuffix(updates.title);
+      payload.title =
+        existing.matchNumber != null ? buildMatchTitle(base, existing.matchNumber) : base;
+    }
     if (updates.entryFee !== undefined) payload.entry_fee = updates.entryFee;
     if (updates.maxParticipants !== undefined) payload.max_participants = updates.maxParticipants;
     if (updates.scheduledAt !== undefined) payload.starts_at = updates.scheduledAt || null;

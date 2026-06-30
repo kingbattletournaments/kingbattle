@@ -93,6 +93,7 @@ export function getStore() {
       updateParticipantRank: (matchId: string, participantId: string, rank: number) =>
         db.updateParticipantRank(matchId, participantId, rank),
       users: () => db.users(),
+      usersPaginated: (opts: Parameters<typeof db.usersPaginated>[0]) => db.usersPaginated(opts),
       addUser: (email: string, displayName: string, password: string, username?: string, referredBy?: string) => db.addUser(email, displayName, password, username, referredBy),
       signInUser: (email: string, password: string) => db.signInUser(email, password),
       syncGoogleUser: (id: string, email: string, displayName: string, avatarUrl: string) => db.syncGoogleUser(id, email, displayName, avatarUrl),
@@ -102,6 +103,8 @@ export function getStore() {
       unblockUser: (userId: string) => db.unblockUser(userId),
       deleteUser: (userId: string) => db.deleteUser(userId),
       getDepositRequests: (status?: "pending" | "accepted" | "rejected") => db.getDepositRequests(status),
+      depositRequestsPaginated: (opts: Parameters<typeof db.depositRequestsPaginated>[0]) =>
+        db.depositRequestsPaginated(opts),
       getDepositRequest: (id: string) => db.getDepositRequest(id),
       getDepositRequestsByUser: (userId: string) => db.getDepositRequestsByUser(userId),
       addDepositRequest: (userId: string, amount: number, utr: string) => db.addDepositRequest(userId, amount, utr),
@@ -111,12 +114,16 @@ export function getStore() {
       getWithdrawalCharge: () => db.getWithdrawalCharge(),
       setWithdrawalCharge: (p: number) => db.setWithdrawalCharge(p),
       getWithdrawalRequests: (status?: "pending" | "accepted" | "rejected") => db.getWithdrawalRequests(status),
+      withdrawalRequestsPaginated: (opts: Parameters<typeof db.withdrawalRequestsPaginated>[0]) =>
+        db.withdrawalRequestsPaginated(opts),
       getWithdrawalRequest: (id: string) => db.getWithdrawalRequest(id),
       getWithdrawalRequestsByUser: (userId: string) => db.getWithdrawalRequestsByUser(userId),
       addWithdrawalRequest: (userId: string, amount: number, upiId: string) => db.addWithdrawalRequest(userId, amount, upiId),
       acceptWithdrawalRequest: (id: string) => db.acceptWithdrawalRequest(id),
       rejectWithdrawalRequest: (id: string, note: string) => db.rejectWithdrawalRequest(id, note),
       transactions: (userId?: string) => db.transactions(userId),
+      transactionsPaginated: (opts: Parameters<typeof db.transactionsPaginated>[0]) =>
+        db.transactionsPaginated(opts),
       getSignupBonus: () => db.getSignupBonus(),
       setSignupBonus: (a: number) => db.setSignupBonus(a),
       getReferralSettings: () => db.getReferralSettings(),
@@ -258,6 +265,8 @@ export function getStore() {
     deleteAdmin: (id: string) => Promise.resolve(adminStore.deleteAdmin(id)),
     updateAdminPassword: (id: string, newPassword: string) => Promise.resolve(adminStore.updateAdminPassword(id, newPassword)),
     users: () => Promise.resolve(adminStore.users()),
+    usersPaginated: (opts: Parameters<typeof adminStore.usersPaginated>[0]) =>
+      Promise.resolve(adminStore.usersPaginated(opts)),
     addUser: (email: string, displayName: string, password: string, username?: string, referredBy?: string) => Promise.resolve(adminStore.addUser(email, displayName, password, username, referredBy)),
     signInUser: (email: string, password: string) => Promise.resolve(adminStore.signInUser(email, password)),
     syncGoogleUser: (id: string, email: string, displayName: string, avatarUrl: string) => {
@@ -287,6 +296,8 @@ export function getStore() {
     unblockUser: (userId: string) => Promise.resolve(adminStore.unblockUser(userId)),
     deleteUser: (userId: string) => Promise.resolve(adminStore.deleteUser(userId)),
     getDepositRequests: (status?: "pending" | "accepted" | "rejected") => Promise.resolve(adminStore.getDepositRequests(status)),
+    depositRequestsPaginated: (opts: Parameters<typeof adminStore.depositRequestsPaginated>[0]) =>
+      Promise.resolve(adminStore.depositRequestsPaginated(opts)),
     getDepositRequest: (id: string) => Promise.resolve(adminStore.getDepositRequest(id)),
     getDepositRequestsByUser: (userId: string) => Promise.resolve(adminStore.getDepositRequestsByUser(userId)),
     addDepositRequest: (userId: string, amount: number, utr: string) => Promise.resolve(adminStore.addDepositRequest(userId, amount, utr)),
@@ -296,12 +307,16 @@ export function getStore() {
     getWithdrawalCharge: () => Promise.resolve(adminStore.getWithdrawalCharge()),
     setWithdrawalCharge: (p: number) => Promise.resolve(adminStore.setWithdrawalCharge(p)),
     getWithdrawalRequests: (status?: "pending" | "accepted" | "rejected") => Promise.resolve(adminStore.getWithdrawalRequests(status)),
+    withdrawalRequestsPaginated: (opts: Parameters<typeof adminStore.withdrawalRequestsPaginated>[0]) =>
+      Promise.resolve(adminStore.withdrawalRequestsPaginated(opts)),
     getWithdrawalRequest: (id: string) => Promise.resolve(adminStore.getWithdrawalRequest(id)),
     getWithdrawalRequestsByUser: (userId: string) => Promise.resolve(adminStore.getWithdrawalRequestsByUser(userId)),
     addWithdrawalRequest: (userId: string, amount: number, upiId: string) => Promise.resolve(adminStore.addWithdrawalRequest(userId, amount, upiId)),
     acceptWithdrawalRequest: (id: string) => Promise.resolve(adminStore.acceptWithdrawalRequest(id)),
     rejectWithdrawalRequest: (id: string, note: string) => Promise.resolve(adminStore.rejectWithdrawalRequest(id, note)),
     transactions: (userId?: string) => Promise.resolve(adminStore.transactions(userId)),
+    transactionsPaginated: (opts: Parameters<typeof adminStore.transactionsPaginated>[0]) =>
+      Promise.resolve(adminStore.transactionsPaginated(opts)),
     getSignupBonus: () => Promise.resolve(adminStore.getSignupBonus()),
     setSignupBonus: (a: number) => Promise.resolve(adminStore.setSignupBonus(a)),
     getReferralSettings: () => Promise.resolve(adminStore.getReferralSettings()),

@@ -24,7 +24,12 @@ import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.platform.LocalLifecycleOwner
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.style.TextAlign
-import androidx.compose.ui.text.style.TextOverflow
+import androidx.compose.material.icons.filled.ContentCopy
+import androidx.compose.ui.platform.LocalContext
+import android.content.ClipData
+import android.content.ClipboardManager
+import android.content.Context
+import androidx.compose.ui.text.font.FontFamily
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import com.kingbattle.presentation.components.CoinAmountRow
@@ -254,6 +259,8 @@ fun BalanceCard(
 
 @Composable
 fun TransactionHistoryItem(tx: Transaction) {
+    val context = LocalContext.current
+    var copied by remember(tx.id) { mutableStateOf(false) }
     val isCredit = tx.amount > 0
     val amountAbs = kotlin.math.abs(tx.amount)
 
@@ -263,106 +270,151 @@ fun TransactionHistoryItem(tx: Transaction) {
     Card(
         modifier = Modifier
             .fillMaxWidth()
-            .border(1.dp, ThemeBorderColor.copy(alpha = 0.5f), RoundedCornerShape(12.dp)),
-        shape = RoundedCornerShape(12.dp),
-        colors = CardDefaults.cardColors(containerColor = ThemeCardBg.copy(alpha = 0.6f))
+            .border(1.dp, ThemeBorderColor.copy(alpha = 0.5f), RoundedCornerShape(14.dp)),
+        shape = RoundedCornerShape(14.dp),
+        colors = CardDefaults.cardColors(containerColor = ThemeCardBg.copy(alpha = 0.75f))
     ) {
-        Row(
+        Column(
             modifier = Modifier
                 .fillMaxWidth()
                 .padding(16.dp),
-            verticalAlignment = Alignment.CenterVertically,
-            horizontalArrangement = Arrangement.spacedBy(16.dp)
+            verticalArrangement = Arrangement.spacedBy(12.dp)
         ) {
-            Box(
-                modifier = Modifier
-                    .size(40.dp)
-                    .clip(CircleShape)
-                    .background(iconBgColor),
-                contentAlignment = Alignment.Center
+            Row(
+                modifier = Modifier.fillMaxWidth(),
+                verticalAlignment = Alignment.Top,
+                horizontalArrangement = Arrangement.spacedBy(14.dp)
             ) {
-                Icon(
-                    imageVector = if (isCredit)
-                        Icons.Default.KeyboardArrowDown
-                    else
-                        Icons.Default.KeyboardArrowUp,
-                    contentDescription = if (isCredit) "Credit" else "Debit",
-                    tint = iconTint,
-                    modifier = Modifier.size(24.dp)
-                )
-            }
-
-            Column(
-                modifier = Modifier.weight(1f)
-            ) {
-                Text(
-                    text = tx.description ?: tx.type,
-                    color = Color.White,
-                    fontSize = 14.sp,
-                    fontWeight = FontWeight.Bold,
-                    maxLines = 1,
-                    overflow = TextOverflow.Ellipsis
-                )
-                Spacer(modifier = Modifier.height(3.dp))
-                Row(
-                    verticalAlignment = Alignment.CenterVertically,
-                    horizontalArrangement = Arrangement.spacedBy(8.dp)
+                Box(
+                    modifier = Modifier
+                        .size(44.dp)
+                        .clip(CircleShape)
+                        .background(iconBgColor),
+                    contentAlignment = Alignment.Center
                 ) {
-                    if (tx.status != null) {
-                        val statusText = when (tx.status) {
-                            "pending" -> "Pending"
-                            "successful", "accepted" -> "Successful"
-                            "failed", "rejected" -> "Rejected"
-                            "refunded" -> "Refunded"
-                            else -> tx.status
-                        }
-                        val statusColor = when (tx.status) {
-                            "pending" -> AccentGold
-                            "successful", "accepted" -> Color(0xFF0099FF)
-                            "failed", "rejected" -> Color(0xFFEF4444)
-                            "refunded" -> Color(0xFF8B5CF6)
-                            else -> AccentGold
-                        }
-                        Text(
-                            text = statusText,
-                            color = statusColor,
-                            fontSize = 11.sp,
-                            fontWeight = FontWeight.Bold
-                        )
-                        Text(
-                            text = "•",
-                            color = TextMuted,
-                            fontSize = 12.sp
-                        )
-                    }
-                    Text(
-                        text = formatTxDate(tx.created_at),
-                        color = TextMuted,
-                        fontSize = 11.sp
+                    Icon(
+                        imageVector = if (isCredit)
+                            Icons.Default.KeyboardArrowDown
+                        else
+                            Icons.Default.KeyboardArrowUp,
+                        contentDescription = if (isCredit) "Credit" else "Debit",
+                        tint = iconTint,
+                        modifier = Modifier.size(26.dp)
                     )
                 }
-                Text(
-                    text = "ID: ${tx.id.take(12)}${if (tx.id.length > 12) "..." else ""}",
-                    color = TextMuted.copy(alpha = 0.6f),
-                    fontSize = 9.sp,
-                    maxLines = 1
-                )
+
+                Column(
+                    modifier = Modifier.weight(1f),
+                    verticalArrangement = Arrangement.spacedBy(6.dp)
+                ) {
+                    Text(
+                        text = tx.description ?: tx.type.replace("_", " ").replaceFirstChar { it.uppercase() },
+                        color = Color.White,
+                        fontSize = 15.sp,
+                        fontWeight = FontWeight.Bold,
+                        lineHeight = 20.sp
+                    )
+                    Row(
+                        verticalAlignment = Alignment.CenterVertically,
+                        horizontalArrangement = Arrangement.spacedBy(8.dp)
+                    ) {
+                        if (tx.status != null) {
+                            val statusText = when (tx.status) {
+                                "pending" -> "Pending"
+                                "successful", "accepted" -> "Successful"
+                                "failed", "rejected" -> "Rejected"
+                                "refunded" -> "Refunded"
+                                else -> tx.status.replaceFirstChar { it.uppercase() }
+                            }
+                            val statusColor = when (tx.status) {
+                                "pending" -> AccentGold
+                                "successful", "accepted" -> Color(0xFF0099FF)
+                                "failed", "rejected" -> Color(0xFFEF4444)
+                                "refunded" -> Color(0xFF8B5CF6)
+                                else -> AccentGold
+                            }
+                            Surface(
+                                shape = RoundedCornerShape(6.dp),
+                                color = statusColor.copy(alpha = 0.15f)
+                            ) {
+                                Text(
+                                    text = statusText,
+                                    color = statusColor,
+                                    fontSize = 10.sp,
+                                    fontWeight = FontWeight.Bold,
+                                    modifier = Modifier.padding(horizontal = 8.dp, vertical = 3.dp)
+                                )
+                            }
+                        }
+                        Text(
+                            text = formatTxDate(tx.created_at),
+                            color = TextMuted,
+                            fontSize = 11.sp
+                        )
+                    }
+                }
+
+                Column(horizontalAlignment = Alignment.End) {
+                    CoinAmountRow(
+                        amount = if (isCredit) "+$amountAbs" else "-$amountAbs",
+                        coinSize = 16.dp,
+                        fontSize = 17.sp,
+                        color = if (isCredit) Color(0xFF0099FF) else Color(0xFFEF4444),
+                        fontWeight = FontWeight.Bold,
+                    )
+                    Text(
+                        text = "coins",
+                        color = TextMuted,
+                        fontSize = 10.sp
+                    )
+                }
             }
 
-            Column(
-                horizontalAlignment = Alignment.End
+            HorizontalDivider(color = ThemeBorderColor.copy(alpha = 0.35f))
+
+            Row(
+                modifier = Modifier.fillMaxWidth(),
+                verticalAlignment = Alignment.CenterVertically,
+                horizontalArrangement = Arrangement.SpaceBetween
             ) {
-                CoinAmountRow(
-                    amount = if (isCredit) "+$amountAbs" else "-$amountAbs",
-                    coinSize = 14.dp,
-                    fontSize = 16.sp,
-                    color = if (isCredit) Color(0xFF0099FF) else Color(0xFFEF4444),
-                    fontWeight = FontWeight.Bold,
-                )
+                Column(modifier = Modifier.weight(1f)) {
+                    Text(
+                        text = "Transaction ID",
+                        color = TextMuted,
+                        fontSize = 10.sp,
+                        fontWeight = FontWeight.SemiBold
+                    )
+                    Spacer(modifier = Modifier.height(2.dp))
+                    Text(
+                        text = tx.id,
+                        color = Color.White.copy(alpha = 0.9f),
+                        fontSize = 12.sp,
+                        fontFamily = FontFamily.Monospace,
+                        fontWeight = FontWeight.Medium
+                    )
+                }
+                IconButton(
+                    onClick = {
+                        val clipboard = context.getSystemService(Context.CLIPBOARD_SERVICE) as ClipboardManager
+                        clipboard.setPrimaryClip(ClipData.newPlainText("Transaction ID", tx.id))
+                        copied = true
+                    },
+                    modifier = Modifier.size(36.dp)
+                ) {
+                    Icon(
+                        imageVector = Icons.Default.ContentCopy,
+                        contentDescription = "Copy transaction ID",
+                        tint = if (copied) Color(0xFF34D399) else TextMuted,
+                        modifier = Modifier.size(18.dp)
+                    )
+                }
+            }
+            if (copied) {
                 Text(
-                    text = "coins",
-                    color = TextMuted,
-                    fontSize = 10.sp
+                    text = "Copied to clipboard",
+                    color = Color(0xFF34D399),
+                    fontSize = 10.sp,
+                    fontWeight = FontWeight.Medium
                 )
             }
         }

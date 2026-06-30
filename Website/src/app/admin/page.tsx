@@ -24,6 +24,8 @@ import {
 import { AdminTabIcon } from "@/components/admin/AdminTabIcon";
 import { AdminMatchCard, getAdminMatchBanner } from "@/components/admin/AdminMatchCard";
 import { CoinAmount } from "@/components/ui/CoinIcon";
+import { AdminPagination } from "@/components/admin/AdminPagination";
+import { TransactionsSection } from "@/components/admin/TransactionsSection";
 import { AdminMatchSlotsPanel } from "@/components/admin/AdminMatchSlotsPanel";
 import {
   AdminBannerGridSkeleton,
@@ -45,7 +47,7 @@ import {
 } from "@/lib/admin-client-cache";
 import { normalizeAdminUser } from "@/lib/admin-user";
 
-type Tab = "dashboard" | "modes" | "presets" | "moneyorders" | "withdrawals" | "admins" | "notifications" | "appsettings" | "banners" | "referrals" | "users";
+type Tab = "dashboard" | "modes" | "presets" | "moneyorders" | "withdrawals" | "transactions" | "admins" | "notifications" | "appsettings" | "banners" | "referrals" | "users";
 type Game = { id: string; name: string; imageUrl: string | null };
 type GameMode = { id: string; gameId: string; name: string; imageUrl: string | null };
 type MatchType = "solo" | "duo" | "squad";
@@ -813,17 +815,14 @@ function AdminPageInner() {
                 <ReferralsSection />
               )}
 
+              {tab === "transactions" && session && canAccessAdminTab(session, "transactions") && (
+                <TransactionsSection />
+              )}
+
               {tab === "users" && session && canAccessAdminTab(session, "users") && (
                 <UsersSection
-                  users={users}
                   canAddCoins={canAccessAdminTab(session, "moneyorders") || canAccessAdminTab(session, "withdrawals")}
-                  onPatchUser={patchUserInList}
-                  onUserRemoved={(userId) => {
-                    setUsers((prev) => prev.filter((u) => u.id !== userId));
-                    removeAdminClientCache(adminTabClientKey("users"));
-                    loadedTabsRef.current.delete("users");
-                    showMsg("ok", "User deleted");
-                  }}
+                  onUserRemoved={() => showMsg("ok", "User deleted")}
                 />
               )}
             </>
@@ -3885,29 +3884,61 @@ function CreateAdminSection({
 }
 
 function UsersSection({
-  users,
   canAddCoins,
-  onPatchUser,
   onUserRemoved,
 }: {
-  users: User[];
   canAddCoins: boolean;
-  onPatchUser: (user: User) => void;
-  onUserRemoved: (userId: string) => void;
+  onUserRemoved: () => void;
 }) {
+  const [users, setUsers] = useState<User[]>([]);
   const [selectedUser, setSelectedUser] = useState<User | null>(null);
   const [usersTab, setUsersTab] = useState<"all" | "blocked">("all");
   const [searchQuery, setSearchQuery] = useState("");
+  const [activeSearch, setActiveSearch] = useState("");
+  const [page, setPage] = useState(1);
+  const [totalPages, setTotalPages] = useState(1);
+  const [total, setTotal] = useState(0);
+  const [pageSize, setPageSize] = useState(20);
+  const [loading, setLoading] = useState(true);
 
-  const searchTrimmed = searchQuery.trim().toLowerCase();
-  const filteredUsers = users
-    .filter((u) => (usersTab === "blocked" ? u.isBlocked === true : true))
-    .filter((u) => {
-      if (!searchTrimmed) return true;
-      const username = (u.username || u.id).toLowerCase();
-      const displayName = u.displayName.toLowerCase();
-      return username.includes(searchTrimmed) || displayName.includes(searchTrimmed);
-    });
+  const loadUsers = useCallback(async () => {
+    setLoading(true);
+    try {
+      const params = new URLSearchParams({
+        page: String(page),
+        limit: "20",
+        blocked: usersTab === "blocked" ? "blocked" : "all",
+      });
+      if (activeSearch.trim()) params.set("search", activeSearch.trim());
+      const res = await fetch(`/api/admin/users?${params}`, { cache: "no-store" });
+      if (!res.ok) throw new Error("Failed");
+      const data = await res.json();
+      setUsers(data.items ?? []);
+      setTotal(data.total ?? 0);
+      setTotalPages(data.totalPages ?? 1);
+      setPageSize(data.pageSize ?? 20);
+    } catch {
+      setUsers([]);
+      setTotal(0);
+      setTotalPages(1);
+    } finally {
+      setLoading(false);
+    }
+  }, [page, usersTab, activeSearch]);
+
+  useEffect(() => {
+    loadUsers();
+  }, [loadUsers]);
+
+  useEffect(() => {
+    setPage(1);
+  }, [usersTab, activeSearch]);
+
+  const handleSearchSubmit = (e: React.FormEvent) => {
+    e.preventDefault();
+    setActiveSearch(searchQuery.trim());
+    setPage(1);
+  };
 
   return (
     <div className="space-y-6">
@@ -3934,17 +3965,24 @@ function UsersSection({
           ))}
         </div>
 
-        <input
-          type="text"
-          placeholder="Search by username..."
-          value={searchQuery}
-          onChange={(e) => setSearchQuery(e.target.value)}
-          className="admin-input rounded-xl px-4 py-2.5 text-sm w-full sm:w-72 outline-none"
-        />
+        <form onSubmit={handleSearchSubmit} className="flex gap-2 w-full sm:w-auto">
+          <input
+            type="text"
+            placeholder="Search by username..."
+            value={searchQuery}
+            onChange={(e) => setSearchQuery(e.target.value)}
+            className="admin-input rounded-xl px-4 py-2.5 text-sm w-full sm:w-72 outline-none"
+          />
+          <button type="submit" className="admin-btn-primary rounded-xl px-4 py-2.5 text-sm font-semibold shrink-0">
+            Search
+          </button>
+        </form>
       </div>
 
       <section className="admin-table-panel w-full">
-        {filteredUsers.length === 0 ? (
+        {loading && users.length === 0 ? (
+          <p className="py-12 text-center text-sm text-zinc-500">Loading users…</p>
+        ) : users.length === 0 ? (
           <p className="py-12 text-center text-sm text-zinc-500">No users found</p>
         ) : (
           <div className="excel-table-container">
@@ -3961,7 +3999,7 @@ function UsersSection({
                 </tr>
               </thead>
               <tbody>
-                {filteredUsers.map((u) => {
+                {users.map((u) => {
                   const winCoins = u.wonCoins ?? 0;
                   const normalCoins = Math.max(0, u.coins - winCoins);
                   return (
@@ -3998,6 +4036,16 @@ function UsersSection({
             </table>
           </div>
         )}
+        <div className="p-4">
+          <AdminPagination
+            page={page}
+            totalPages={totalPages}
+            total={total}
+            pageSize={pageSize}
+            onPageChange={setPage}
+            loading={loading}
+          />
+        </div>
       </section>
 
       {selectedUser && (
@@ -4006,12 +4054,13 @@ function UsersSection({
           canAddCoins={canAddCoins}
           onClose={() => setSelectedUser(null)}
           onUserUpdate={(updated) => {
-            onPatchUser(updated);
+            setUsers((prev) => prev.map((u) => (u.id === updated.id ? updated : u)));
             setSelectedUser(updated);
           }}
           onDelete={() => {
-            onUserRemoved(selectedUser.id);
+            onUserRemoved();
             setSelectedUser(null);
+            loadUsers();
           }}
         />
       )}
