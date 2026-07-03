@@ -2,13 +2,15 @@ import { NextResponse } from "next/server";
 import { getStore } from "@/lib/store";
 import { getAppUserId } from "@/lib/app-auth";
 
-const MIN_WITHDRAW = 100;
 const MAX_WITHDRAW = 1_000_000;
 
 export async function POST(request: Request) {
   try {
     const userId = await getAppUserId();
     if (!userId) return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
+
+    const store = getStore();
+    const minWithdraw = await store.getMinWithdrawalAmount();
 
     const body = await request.json();
     const { amount, upiId } = body;
@@ -22,14 +24,12 @@ export async function POST(request: Request) {
     if (isNaN(num) || num <= 0) {
       return NextResponse.json({ error: "amount must be a positive number" }, { status: 400 });
     }
-    if (num < MIN_WITHDRAW) {
-      return NextResponse.json({ error: `Minimum withdrawal is ${MIN_WITHDRAW} coins` }, { status: 400 });
+    if (num < minWithdraw) {
+      return NextResponse.json({ error: `Minimum withdrawal is ${minWithdraw} coins` }, { status: 400 });
     }
     if (num > MAX_WITHDRAW) {
       return NextResponse.json({ error: "Amount exceeds maximum" }, { status: 400 });
     }
-
-    const store = getStore();
     const user = await store.getUser(userId);
     if (!user) return NextResponse.json({ error: "User not found" }, { status: 404 });
     if (user.isBlocked) return NextResponse.json({ error: "Account is blocked" }, { status: 403 });

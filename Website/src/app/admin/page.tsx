@@ -20,6 +20,8 @@ import {
   readAdminNavParams,
   type AdminMatchStatus,
   type AdminMatchView,
+  closeAdminHistoryOverlay,
+  pushAdminHistoryOverlay,
 } from "@/lib/admin-nav";
 import { AdminTabIcon } from "@/components/admin/AdminTabIcon";
 import { AdminMatchCard, getAdminMatchBanner } from "@/components/admin/AdminMatchCard";
@@ -161,12 +163,24 @@ function AdminPageInner() {
   const navParams = useMemo(() => readAdminNavParams(searchParams), [searchParams]);
 
   const patchAdminNav = useCallback(
-    (patch: Parameters<typeof buildAdminNavQuery>[1]) => {
+    (
+      patch: Parameters<typeof buildAdminNavQuery>[1],
+      options?: { replace?: boolean },
+    ) => {
       const qs = buildAdminNavQuery(searchParams, patch);
-      router.replace(qs ? `${pathname}?${qs}` : pathname, { scroll: false });
+      const url = qs ? `${pathname}?${qs}` : pathname;
+      if (options?.replace) {
+        router.replace(url, { scroll: false });
+      } else {
+        router.push(url, { scroll: false });
+      }
     },
     [pathname, router, searchParams],
   );
+
+  const goBackAdminNav = useCallback(() => {
+    router.back();
+  }, [router]);
 
   const [session, setSession] = useState<AdminSession | null>(null);
   const selectedGameId = navParams.game;
@@ -240,14 +254,17 @@ function AdminPageInner() {
       ...ALL_ADMIN_TAB_IDS.filter((id) => canAccessAdminTab(session, id)),
     ];
     if (!allowed.includes(navParams.tab as Tab)) {
-      patchAdminNav({
-        tab: "dashboard",
-        game: null,
-        mode: null,
-        mstatus: null,
-        match: null,
-        mview: null,
-      });
+      patchAdminNav(
+        {
+          tab: "dashboard",
+          game: null,
+          mode: null,
+          mstatus: null,
+          match: null,
+          mview: null,
+        },
+        { replace: true },
+      );
     }
   }, [session, navParams.tab, patchAdminNav]);
 
@@ -255,7 +272,7 @@ function AdminPageInner() {
   useEffect(() => {
     if (tab !== "modes") return;
     if (games.length > 0 && !selectedGameId && !selectedModeId) {
-      patchAdminNav({ game: games[0].id });
+      patchAdminNav({ game: games[0].id }, { replace: true });
     }
   }, [games, selectedGameId, selectedModeId, tab, patchAdminNav]);
 
@@ -263,7 +280,7 @@ function AdminPageInner() {
   useEffect(() => {
     if (!selectedModeId || selectedGameId || modes.length === 0) return;
     const mode = modes.find((m) => m.id === selectedModeId);
-    if (mode) patchAdminNav({ game: mode.gameId });
+    if (mode) patchAdminNav({ game: mode.gameId }, { replace: true });
   }, [selectedModeId, selectedGameId, modes, patchAdminNav]);
 
   const fetchSessionAndCore = async (): Promise<AdminSession | null> => {
@@ -732,10 +749,11 @@ function AdminPageInner() {
                     matchStatus={navParams.mstatus}
                     playersMatchId={navParams.match}
                     playersViewMode={navParams.mview}
-                    onNavChange={(patch) => patchAdminNav(patch)}
+                    onNavChange={(patch, opts) => patchAdminNav(patch, opts)}
+                    onNavBack={goBackAdminNav}
                     onBack={() => {
                       setMatchBulkSelect(null);
-                      patchAdminNav({ mode: null, match: null, mview: null, mstatus: null });
+                      goBackAdminNav();
                     }}
                     onSuccess={(opts?: { silent?: boolean }) => { refreshCurrentTab(!opts?.silent); showMsg("ok", "Updated"); }}
                     onBulkSelectChange={setMatchBulkSelect}
@@ -1582,6 +1600,7 @@ function MatchesSection({
   playersMatchId,
   playersViewMode,
   onNavChange,
+  onNavBack,
   onBack,
   onSuccess,
   onBulkSelectChange,
@@ -1595,11 +1614,15 @@ function MatchesSection({
   matchStatus: AdminMatchStatus;
   playersMatchId: string | null;
   playersViewMode: AdminMatchView;
-  onNavChange: (patch: {
-    mstatus?: AdminMatchStatus | null;
-    match?: string | null;
-    mview?: AdminMatchView | null;
-  }) => void;
+  onNavChange: (
+    patch: {
+      mstatus?: AdminMatchStatus | null;
+      match?: string | null;
+      mview?: AdminMatchView | null;
+    },
+    options?: { replace?: boolean },
+  ) => void;
+  onNavBack: () => void;
   onBack: () => void;
   onSuccess: (opts?: { silent?: boolean }) => void;
   onBulkSelectChange?: (controls: MatchBulkSelectControls | null) => void;
@@ -1636,6 +1659,32 @@ function MatchesSection({
   const [editRoomCode, setEditRoomCode] = useState("");
   const [editRoomPassword, setEditRoomPassword] = useState("");
   const [savingRoom, setSavingRoom] = useState(false);
+
+  const closeMatchForm = useCallback(() => {
+    closeAdminHistoryOverlay(() => {
+      setView("list");
+      setEditingMatchId(null);
+    });
+  }, []);
+
+  const finishMatchForm = useCallback(() => {
+    setView("list");
+    setEditingMatchId(null);
+    if (typeof window !== "undefined" && window.history.state?.adminOverlay) {
+      window.history.replaceState({}, "", window.location.href);
+    }
+  }, []);
+
+  useEffect(() => {
+    if (view === "list") return;
+    pushAdminHistoryOverlay(`match-${view}`);
+    const onPop = () => {
+      setView("list");
+      setEditingMatchId(null);
+    };
+    window.addEventListener("popstate", onPop);
+    return () => window.removeEventListener("popstate", onPop);
+  }, [view]);
 
   const presetSchedulePreview =
     selectedPresetId && presetMatchDate && presetStartingTime && presetEndingTime && Number(presetGapMinutes) > 0
@@ -1686,9 +1735,9 @@ function MatchesSection({
   const enterSelectionMode = useCallback((matchId: string) => {
     setSelectionMode(true);
     setSelectedMatchIds(new Set([matchId]));
-    onNavChange({ match: null, mview: null });
+    onNavChange({ match: null, mview: null }, { replace: true });
     setExpandedMatchId(null);
-  }, []);
+  }, [onNavChange]);
 
   useEffect(() => {
     if (!selectionMode) {
@@ -1827,14 +1876,14 @@ function MatchesSection({
         return;
       }
     }
-    if (playersMatchId === m.id) onNavChange({ match: null, mview: null });
+    if (playersMatchId === m.id) onNavChange({ match: null, mview: null }, { replace: true });
     onSuccess({ silent: true });
   };
 
   const handleOpenEditMatch = (m: Match) => {
     populateMatchForm(m);
     setView("edit");
-    onNavChange({ match: null, mview: null });
+    onNavChange({ match: null, mview: null }, { replace: true });
   };
 
   const openStartMatchModal = (m: Match) => {
@@ -1936,7 +1985,7 @@ function MatchesSection({
         const errData = await res.json().catch(() => ({}));
         throw new Error(errData?.error || "Failed to cancel match");
       }
-      if (playersMatchId === m.id) onNavChange({ match: null, mview: null });
+      if (playersMatchId === m.id) onNavChange({ match: null, mview: null }, { replace: true });
       onSuccess({ silent: true });
     } catch (err) {
       alert(err instanceof Error ? err.message : "Failed to cancel match");
@@ -1996,7 +2045,7 @@ function MatchesSection({
           throw new Error(errMsg);
         }
         resetMatchForm();
-        setView("list");
+        finishMatchForm();
         onSuccess({ silent: true });
         return;
       }
@@ -2032,7 +2081,7 @@ function MatchesSection({
       setRankRewards([...DEFAULT_RANK_REWARDS]);
       handleImageClear();
       onNavChange({ mstatus: "upcoming", match: null, mview: null });
-      setView("list");
+      finishMatchForm();
       onSuccess();
     } catch (err) {
       alert(err instanceof Error ? err.message : "Failed to create match");
@@ -2066,7 +2115,7 @@ function MatchesSection({
         throw new Error(errData?.error || "Failed to create matches");
       }
       const data = await res.json();
-      setView("list");
+      finishMatchForm();
       onNavChange({ mstatus: "upcoming", match: null, mview: null });
       onSuccess({ silent: true });
       alert(`Created ${data.count} match${data.count === 1 ? "" : "es"}`);
@@ -2130,7 +2179,7 @@ function MatchesSection({
                 playersOnly
                 readOnly={playersViewMode === "leaderboard"}
                 leaderboardMode={playersViewMode === "leaderboard"}
-                onBack={() => onNavChange({ match: null, mview: null })}
+                onBack={onNavBack}
                 onSuccess={onSuccess}
               />
             ) : (
@@ -2259,7 +2308,7 @@ function MatchesSection({
         <>
           <button
             type="button"
-            onClick={() => setView("list")}
+            onClick={closeMatchForm}
             className="flex items-center gap-2 text-sm text-zinc-500 transition hover:text-zinc-900"
           >
             ← Back to Matches List
@@ -2359,7 +2408,7 @@ function MatchesSection({
                   </button>
                   <button
                     type="button"
-                    onClick={() => setView("list")}
+                    onClick={closeMatchForm}
                     className="bg-zinc-50 border border-zinc-200 hover:bg-zinc-100 text-zinc-900 rounded-xl px-6 py-3 font-medium transition"
                   >
                     Cancel
@@ -2375,7 +2424,7 @@ function MatchesSection({
             type="button"
             onClick={() => {
               resetMatchForm();
-              setView("list");
+              closeMatchForm();
             }}
             className="flex items-center gap-2 text-sm text-zinc-500 transition hover:text-zinc-900"
           >
@@ -2493,7 +2542,7 @@ function MatchesSection({
                   type="button"
                   onClick={() => {
                     resetMatchForm();
-                    setView("list");
+                    closeMatchForm();
                   }}
                   className="bg-zinc-50 border border-zinc-200 hover:bg-zinc-100 text-zinc-900 rounded-xl px-6 py-3 font-medium transition"
                 >
@@ -5163,6 +5212,10 @@ function AppSettingsSection({ onSuccess }: { onSuccess: () => void }) {
   const [supportUrlInput, setSupportUrlInput] = useState("");
   const [savingSupport, setSavingSupport] = useState(false);
 
+  const [minWithdrawalInput, setMinWithdrawalInput] = useState("");
+  const [minDepositInput, setMinDepositInput] = useState("");
+  const [savingWalletLimits, setSavingWalletLimits] = useState(false);
+
   const [depositQrUrl, setDepositQrUrl] = useState<string | null>(null);
   const [qrFile, setQrFile] = useState<File | null>(null);
   const [qrPreview, setQrPreview] = useState<string | null>(null);
@@ -5170,11 +5223,12 @@ function AppSettingsSection({ onSuccess }: { onSuccess: () => void }) {
 
   const fetchSettings = useCallback(async () => {
     try {
-      const [annRes, qrRes, bonusRes, supRes] = await Promise.all([
+      const [annRes, qrRes, bonusRes, supRes, limitsRes] = await Promise.all([
         fetch("/api/admin/announcement"),
         fetch("/api/admin/deposit-qr"),
         fetch("/api/admin/signup-bonus"),
         fetch("/api/admin/customer-support"),
+        fetch("/api/admin/wallet-limits"),
       ]);
 
       if (annRes.ok) {
@@ -5192,6 +5246,11 @@ function AppSettingsSection({ onSuccess }: { onSuccess: () => void }) {
       if (supRes.ok) {
         const { url } = await supRes.json();
         setSupportUrlInput(url || "");
+      }
+      if (limitsRes.ok) {
+        const { minWithdrawalAmount, minDepositAmount } = await limitsRes.json();
+        setMinWithdrawalInput(String(minWithdrawalAmount ?? 100));
+        setMinDepositInput(String(minDepositAmount ?? 1));
       }
     } catch (error) {
       console.error("Failed to load settings:", error);
@@ -5317,12 +5376,45 @@ function AppSettingsSection({ onSuccess }: { onSuccess: () => void }) {
     }
   };
 
+  const handleSaveWalletLimits = async () => {
+    const minWithdrawal = Number(minWithdrawalInput);
+    const minDeposit = Number(minDepositInput);
+    if (isNaN(minWithdrawal) || minWithdrawal < 1) {
+      alert("Minimum withdrawal must be at least 1 coin");
+      return;
+    }
+    if (isNaN(minDeposit) || minDeposit < 1) {
+      alert("Minimum deposit must be at least 1 coin");
+      return;
+    }
+    setSavingWalletLimits(true);
+    try {
+      const res = await fetch("/api/admin/wallet-limits", {
+        method: "PATCH",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          minWithdrawalAmount: minWithdrawal,
+          minDepositAmount: minDeposit,
+        }),
+      });
+      if (!res.ok) throw new Error(await res.text());
+      const { minWithdrawalAmount, minDepositAmount } = await res.json();
+      setMinWithdrawalInput(String(minWithdrawalAmount));
+      setMinDepositInput(String(minDepositAmount));
+      onSuccess();
+    } catch (err) {
+      alert(err instanceof Error ? err.message : "Failed to save");
+    } finally {
+      setSavingWalletLimits(false);
+    }
+  };
+
   return (
     <div className="space-y-6">
       <div>
         <h1 className="text-2xl font-bold text-zinc-900 mb-1">App Settings</h1>
         <p className="text-zinc-500 text-sm">
-          Configure marquee announcement texts, customer support channels, signup incentives, and gateway QR codes.
+          Configure marquee announcement texts, customer support channels, signup incentives, wallet limits, and gateway QR codes.
         </p>
       </div>
 
@@ -5397,6 +5489,52 @@ function AppSettingsSection({ onSuccess }: { onSuccess: () => void }) {
               className="admin-btn-primary rounded-lg px-4 py-2 text-xs font-semibold disabled:opacity-50"
             >
               {savingSupport ? "Saving..." : "Save Support"}
+            </button>
+          </div>
+        </section>
+
+        <section className="admin-panel w-full space-y-4">
+          <div>
+            <h3 className="text-md font-bold text-zinc-600">Minimum Withdrawal Amount</h3>
+            <p className="text-xs text-zinc-500 mt-1">
+              Lowest coin amount users can request when withdrawing winnings.
+            </p>
+          </div>
+          <div className="space-y-2">
+            <input
+              type="number"
+              min={1}
+              value={minWithdrawalInput}
+              onChange={(e) => setMinWithdrawalInput(e.target.value)}
+              className="admin-input w-full rounded-lg px-3 py-2 text-sm outline-none"
+              placeholder="100"
+            />
+          </div>
+        </section>
+
+        <section className="admin-panel w-full space-y-4">
+          <div>
+            <h3 className="text-md font-bold text-zinc-600">Minimum Deposit Amount</h3>
+            <p className="text-xs text-zinc-500 mt-1">
+              Lowest coin amount users can add when depositing via UPI or manual payment.
+            </p>
+          </div>
+          <div className="space-y-2">
+            <input
+              type="number"
+              min={1}
+              value={minDepositInput}
+              onChange={(e) => setMinDepositInput(e.target.value)}
+              className="admin-input w-full rounded-lg px-3 py-2 text-sm outline-none"
+              placeholder="1"
+            />
+            <button
+              type="button"
+              onClick={handleSaveWalletLimits}
+              disabled={savingWalletLimits}
+              className="admin-btn-primary rounded-lg px-4 py-2 text-xs font-semibold disabled:opacity-50"
+            >
+              {savingWalletLimits ? "Saving..." : "Save Wallet Limits"}
             </button>
           </div>
         </section>

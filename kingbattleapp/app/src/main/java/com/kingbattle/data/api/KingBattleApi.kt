@@ -108,6 +108,9 @@ interface KingBattleApi {
     @GET("withdrawal-charge")
     suspend fun getWithdrawalCharge(): Response<Map<String, Int>>
 
+    @GET("wallet-limits")
+    suspend fun getWalletLimits(): Response<Map<String, Int>>
+
     @GET("withdrawals")
     suspend fun getWithdrawalRequests(): Response<List<WithdrawalRequest>>
 

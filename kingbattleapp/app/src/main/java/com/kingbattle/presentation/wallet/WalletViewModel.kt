@@ -28,6 +28,12 @@ class WalletViewModel @Inject constructor(
     private val _withdrawalCharge = MutableStateFlow(0)
     val withdrawalCharge: StateFlow<Int> = _withdrawalCharge.asStateFlow()
 
+    private val _minWithdrawalAmount = MutableStateFlow(100)
+    val minWithdrawalAmount: StateFlow<Int> = _minWithdrawalAmount.asStateFlow()
+
+    private val _minDepositAmount = MutableStateFlow(1)
+    val minDepositAmount: StateFlow<Int> = _minDepositAmount.asStateFlow()
+
     private val _depositQrUrl = MutableStateFlow("")
     val depositQrUrl: StateFlow<String> = _depositQrUrl.asStateFlow()
 
@@ -86,12 +92,23 @@ class WalletViewModel @Inject constructor(
                     }
                 }
 
-                // 3. Fetch withdrawal charge
+                // 3. Fetch withdrawal charge and wallet limits
                 try {
                     val chargeRes = api.getWithdrawalCharge()
                     if (chargeRes.isSuccessful && chargeRes.body() != null) {
                         val charge = chargeRes.body()!!["chargePercent"] ?: chargeRes.body()!!["percent"] ?: 0
                         _withdrawalCharge.value = charge
+                    }
+                } catch (e: Exception) {
+                    e.printStackTrace()
+                }
+
+                try {
+                    val limitsRes = api.getWalletLimits()
+                    if (limitsRes.isSuccessful && limitsRes.body() != null) {
+                        val body = limitsRes.body()!!
+                        _minWithdrawalAmount.value = body["minWithdrawalAmount"] ?: 100
+                        _minDepositAmount.value = body["minDepositAmount"] ?: 1
                     }
                 } catch (e: Exception) {
                     e.printStackTrace()

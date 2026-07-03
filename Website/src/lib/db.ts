@@ -830,6 +830,40 @@ export const db = {
     return p;
   },
 
+  async getMinWithdrawalAmount(): Promise<number> {
+    const supabase = getSupabase();
+    if (!supabase) return 100;
+    const { data, error } = await supabase.from("app_settings").select("value").eq("key", "minimum_withdrawal").maybeSingle();
+    if (error || !data?.value) return 100;
+    const n = Number(String(data.value).trim());
+    return Number.isFinite(n) && n > 0 ? Math.floor(n) : 100;
+  },
+
+  async setMinWithdrawalAmount(amount: number): Promise<number> {
+    const supabase = getSupabase();
+    if (!supabase) return 100;
+    const a = Math.max(1, Math.min(1_000_000, Math.floor(amount)));
+    await supabase.from("app_settings").upsert({ key: "minimum_withdrawal", value: String(a), updated_at: new Date().toISOString() }, { onConflict: "key" });
+    return a;
+  },
+
+  async getMinDepositAmount(): Promise<number> {
+    const supabase = getSupabase();
+    if (!supabase) return 1;
+    const { data, error } = await supabase.from("app_settings").select("value").eq("key", "minimum_deposit").maybeSingle();
+    if (error || !data?.value) return 1;
+    const n = Number(String(data.value).trim());
+    return Number.isFinite(n) && n > 0 ? Math.floor(n) : 1;
+  },
+
+  async setMinDepositAmount(amount: number): Promise<number> {
+    const supabase = getSupabase();
+    if (!supabase) return 1;
+    const a = Math.max(1, Math.min(1_000_000, Math.floor(amount)));
+    await supabase.from("app_settings").upsert({ key: "minimum_deposit", value: String(a), updated_at: new Date().toISOString() }, { onConflict: "key" });
+    return a;
+  },
+
   async getWithdrawalRequests(status?: "pending" | "accepted" | "rejected"): Promise<DbWithdrawalRequest[]> {
     const supabase = getSupabase();
     if (!supabase) return [];

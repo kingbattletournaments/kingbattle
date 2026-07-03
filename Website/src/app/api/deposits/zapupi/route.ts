@@ -30,11 +30,15 @@ export async function POST(request: Request) {
     if (isNaN(num) || num <= 0) {
       return NextResponse.json({ error: "amount must be a positive number" }, { status: 400 });
     }
+
+    const store = getStore();
+    const minDeposit = await store.getMinDepositAmount();
+    if (num < minDeposit) {
+      return NextResponse.json({ error: `Minimum deposit is ${minDeposit} coins` }, { status: 400 });
+    }
     if (num > MAX_DEPOSIT) {
       return NextResponse.json({ error: "Amount exceeds maximum" }, { status: 400 });
     }
-
-    const store = getStore();
     const user = await store.getUser(userId);
     if (!user) return NextResponse.json({ error: "User not found" }, { status: 404 });
     if (user.isBlocked) return NextResponse.json({ error: "Account is blocked" }, { status: 403 });

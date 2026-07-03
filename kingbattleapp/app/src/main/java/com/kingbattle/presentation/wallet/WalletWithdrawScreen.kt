@@ -44,6 +44,7 @@ fun WalletWithdrawScreen(
     val context = LocalContext.current
     val userState = viewModel.user.collectAsState()
     val withdrawalChargeState = viewModel.withdrawalCharge.collectAsState()
+    val minWithdrawalState = viewModel.minWithdrawalAmount.collectAsState()
     val isRefreshingState = viewModel.isRefreshing.collectAsState()
     var isSubmitting by remember { mutableStateOf(false) }
 
@@ -53,9 +54,9 @@ fun WalletWithdrawScreen(
 
     val withdrawableCoins = userState.value?.won_coins ?: 0
     val chargePercent = withdrawalChargeState.value
-    val MIN_WITHDRAW = 100
+    val minWithdraw = minWithdrawalState.value
     val amtVal = amountText.toIntOrNull() ?: 0
-    val isValidAmount = amtVal >= MIN_WITHDRAW && amtVal <= withdrawableCoins
+    val isValidAmount = amtVal >= minWithdraw && amtVal <= withdrawableCoins
     val fee = if (isValidAmount && chargePercent > 0) {
         kotlin.math.round(amtVal * (chargePercent.toDouble() / 100)).toInt()
     } else 0
@@ -111,7 +112,7 @@ fun WalletWithdrawScreen(
                         fontWeight = FontWeight.Bold
                     )
                     Text(
-                        text = "Choose how you want to receive your winnings. Minimum withdrawal is $MIN_WITHDRAW coins.",
+                        text = "Choose how you want to receive your winnings. Minimum withdrawal is $minWithdraw coins.",
                         color = TextMuted,
                         fontSize = 13.sp
                     )
@@ -181,7 +182,7 @@ fun WalletWithdrawScreen(
                     OutlinedTextField(
                         value = amountText,
                         onValueChange = { amountText = it.filter { c -> c.isDigit() } },
-                        label = { Text("Amount (min $MIN_WITHDRAW)") },
+                        label = { Text("Amount (min $minWithdraw)") },
                         placeholder = { Text("e.g. 250") },
                         keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.Number),
                         modifier = Modifier.fillMaxWidth(),

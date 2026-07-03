@@ -142,6 +142,8 @@ const globalForAdmin = globalThis as unknown as {
   adminPermissions?: AdminPermission[];
   adminIdCounter?: number;
   withdrawalChargePercent?: number;
+  minWithdrawalAmount?: number;
+  minDepositAmount?: number;
   signupBonus?: number;
   customerSupportUrl?: string | null;
   adminStoreUsers?: User[];
@@ -300,6 +302,8 @@ const adminPermissions =
   globalForAdmin.adminPermissions ?? (globalForAdmin.adminPermissions = [...initialAdminPermissions]);
 let adminIdCounter = globalForAdmin.adminIdCounter ?? 1;
 let withdrawalChargePercent = globalForAdmin.withdrawalChargePercent ?? 0;
+let minWithdrawalAmount = globalForAdmin.minWithdrawalAmount ?? 100;
+let minDepositAmount = globalForAdmin.minDepositAmount ?? 1;
 let signupBonus = globalForAdmin.signupBonus ?? 0;
 
 // Seeding function to populate rich mockup data for testing the Admin panel
@@ -1247,6 +1251,20 @@ export const adminStore = {
     withdrawalChargePercent = p;
     globalForAdmin.withdrawalChargePercent = p;
     return p;
+  },
+  getMinWithdrawalAmount: () => minWithdrawalAmount,
+  setMinWithdrawalAmount: (amount: number) => {
+    const a = Math.max(1, Math.min(1_000_000, Math.floor(amount)));
+    minWithdrawalAmount = a;
+    globalForAdmin.minWithdrawalAmount = a;
+    return a;
+  },
+  getMinDepositAmount: () => minDepositAmount,
+  setMinDepositAmount: (amount: number) => {
+    const a = Math.max(1, Math.min(1_000_000, Math.floor(amount)));
+    minDepositAmount = a;
+    globalForAdmin.minDepositAmount = a;
+    return a;
   },
   addWithdrawalRequest: (userId: string, amount: number, upiId: string) => {
     const u = users.find((x) => x.id === userId);

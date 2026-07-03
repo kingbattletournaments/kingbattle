@@ -44,12 +44,19 @@ fun WalletDepositScreen(
 ) {
     val context = LocalContext.current
     val isRefreshingState = viewModel.isRefreshing.collectAsState()
+    val minDepositState = viewModel.minDepositAmount.collectAsState()
     var amountText by remember { mutableStateOf("") }
     var activePaymentUrl by remember { mutableStateOf<String?>(null) }
     var activePaymentOrderId by remember { mutableStateOf<String?>(null) }
     var showCancelConfirmDialog by remember { mutableStateOf(false) }
     var isCheckingStatus by remember { mutableStateOf(false) }
     var isCreatingOrder by remember { mutableStateOf(false) }
+
+    LaunchedEffect(Unit) {
+        viewModel.loadData()
+    }
+
+    val minDeposit = minDepositState.value
 
     fun handleUrl(url: String): Boolean {
         if (url.startsWith("https://zapupi.com/payment?s=s")) {
@@ -191,14 +198,14 @@ fun WalletDepositScreen(
                                 fontWeight = FontWeight.Bold
                             )
                             Text(
-                                text = "Enter the amount of coins you want to deposit. 1 Coin = 1 INR.",
+                                text = "Enter the amount of coins you want to deposit. 1 Coin = 1 INR. Minimum deposit is $minDeposit coins.",
                                 color = TextMuted,
                                 fontSize = 13.sp
                             )
                             OutlinedTextField(
                                 value = amountText,
                                 onValueChange = { amountText = it.filter { c -> c.isDigit() } },
-                                label = { Text("Amount (Coins)") },
+                                label = { Text("Amount (min $minDeposit)") },
                                 placeholder = { Text("e.g. 200") },
                                 keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.Number),
                                 modifier = Modifier.fillMaxWidth(),
@@ -212,8 +219,8 @@ fun WalletDepositScreen(
                             Button(
                                 onClick = {
                                     val amountVal = amountText.toIntOrNull()
-                                    if (amountVal == null || amountVal <= 0) {
-                                        Toast.makeText(context, "Enter a valid amount", Toast.LENGTH_SHORT).show()
+                                    if (amountVal == null || amountVal < minDeposit) {
+                                        Toast.makeText(context, "Minimum deposit is $minDeposit coins", Toast.LENGTH_SHORT).show()
                                         return@Button
                                     }
                                     isCreatingOrder = true

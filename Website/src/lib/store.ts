@@ -116,6 +116,10 @@ export function getStore() {
       blockDepositRequest: (id: string) => db.blockDepositRequest(id),
       getWithdrawalCharge: () => db.getWithdrawalCharge(),
       setWithdrawalCharge: (p: number) => db.setWithdrawalCharge(p),
+      getMinWithdrawalAmount: () => db.getMinWithdrawalAmount(),
+      setMinWithdrawalAmount: (a: number) => db.setMinWithdrawalAmount(a),
+      getMinDepositAmount: () => db.getMinDepositAmount(),
+      setMinDepositAmount: (a: number) => db.setMinDepositAmount(a),
       getWithdrawalRequests: (status?: "pending" | "accepted" | "rejected") => db.getWithdrawalRequests(status),
       withdrawalRequestsPaginated: (opts: Parameters<typeof db.withdrawalRequestsPaginated>[0]) =>
         db.withdrawalRequestsPaginated(opts),
@@ -313,6 +317,10 @@ export function getStore() {
     blockDepositRequest: (id: string) => Promise.resolve(adminStore.blockDepositRequest(id)),
     getWithdrawalCharge: () => Promise.resolve(adminStore.getWithdrawalCharge()),
     setWithdrawalCharge: (p: number) => Promise.resolve(adminStore.setWithdrawalCharge(p)),
+    getMinWithdrawalAmount: () => Promise.resolve(adminStore.getMinWithdrawalAmount()),
+    setMinWithdrawalAmount: (a: number) => Promise.resolve(adminStore.setMinWithdrawalAmount(a)),
+    getMinDepositAmount: () => Promise.resolve(adminStore.getMinDepositAmount()),
+    setMinDepositAmount: (a: number) => Promise.resolve(adminStore.setMinDepositAmount(a)),
     getWithdrawalRequests: (status?: "pending" | "accepted" | "rejected") => Promise.resolve(adminStore.getWithdrawalRequests(status)),
     withdrawalRequestsPaginated: (opts: Parameters<typeof adminStore.withdrawalRequestsPaginated>[0]) =>
       Promise.resolve(adminStore.withdrawalRequestsPaginated(opts)),
