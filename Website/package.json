@@ -12,13 +12,16 @@
     "@supabase/supabase-js": "^2.99.1",
     "bcryptjs": "^3.0.3",
     "firebase-admin": "^14.0.0",
+    "jszip": "^3.10.1",
     "next": "14.2.18",
+    "pdfkit": "^0.19.1",
     "react": "^18.3.1",
     "react-dom": "^18.3.1"
   },
   "devDependencies": {
     "@types/bcryptjs": "^2.4.6",
     "@types/node": "^20",
+    "@types/pdfkit": "^0.17.6",
     "@types/react": "^18",
     "@types/react-dom": "^18",
     "autoprefixer": "^10.4.20",

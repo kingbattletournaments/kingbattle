@@ -28,6 +28,9 @@ import { AdminMatchCard, getAdminMatchBanner } from "@/components/admin/AdminMat
 import { CoinAmount } from "@/components/ui/CoinIcon";
 import { AdminPagination } from "@/components/admin/AdminPagination";
 import { TransactionsSection } from "@/components/admin/TransactionsSection";
+import { StorageSection } from "@/components/admin/StorageSection";
+import { AdminProgressOverlay } from "@/components/admin/AdminProgressOverlay";
+import { delay, progressMessage, useSimulatedProgress } from "@/components/admin/useSimulatedProgress";
 import { AdminMatchSlotsPanel } from "@/components/admin/AdminMatchSlotsPanel";
 import {
   AdminBannerGridSkeleton,
@@ -49,7 +52,7 @@ import {
 } from "@/lib/admin-client-cache";
 import { normalizeAdminUser } from "@/lib/admin-user";
 
-type Tab = "dashboard" | "modes" | "presets" | "moneyorders" | "withdrawals" | "transactions" | "admins" | "notifications" | "appsettings" | "banners" | "referrals" | "users";
+type Tab = "dashboard" | "modes" | "presets" | "moneyorders" | "withdrawals" | "transactions" | "storage" | "admins" | "notifications" | "appsettings" | "banners" | "referrals" | "users";
 type Game = { id: string; name: string; imageUrl: string | null };
 type GameMode = { id: string; gameId: string; name: string; imageUrl: string | null };
 type MatchType = "solo" | "duo" | "squad";
@@ -828,6 +831,10 @@ function AdminPageInner() {
 
               {tab === "transactions" && session && canAccessAdminTab(session, "transactions") && (
                 <TransactionsSection />
+              )}
+
+              {tab === "storage" && session && canAccessAdminTab(session, "storage") && (
+                <StorageSection onSuccess={(msg) => showMsg("ok", msg)} />
               )}
 
               {tab === "users" && session && canAccessAdminTab(session, "users") && (
@@ -1659,6 +1666,13 @@ function MatchesSection({
   const [editRoomCode, setEditRoomCode] = useState("");
   const [editRoomPassword, setEditRoomPassword] = useState("");
   const [savingRoom, setSavingRoom] = useState(false);
+  const [bulkCancelProgress, setBulkCancelProgress] = useState(0);
+  const [cancellingMatchId, setCancellingMatchId] = useState<string | null>(null);
+
+  const startMatchProgress = useSimulatedProgress(startingMatch, { estimatedMs: 35000, cap: 90 });
+  const presetCreateProgress = useSimulatedProgress(presetSubmitting, { estimatedMs: 90000, cap: 92 });
+  const matchSubmitProgress = useSimulatedProgress(submitting, { estimatedMs: 25000, cap: 88 });
+  const cancelMatchProgress = useSimulatedProgress(!!cancellingMatchId, { estimatedMs: 20000, cap: 88 });
 
   const closeMatchForm = useCallback(() => {
     closeAdminHistoryOverlay(() => {
@@ -1778,9 +1792,12 @@ function MatchesSection({
       return;
     }
     setBulkCancelling(true);
+    setBulkCancelProgress(0);
+    const ids = Array.from(selectedMatchIds);
     let successCount = 0;
     let failureCount = 0;
-    for (const id of Array.from(selectedMatchIds)) {
+    for (let i = 0; i < ids.length; i += 1) {
+      const id = ids[i];
       try {
         const res = await fetch(`/api/admin/matches/${id}/cancel`, { method: "POST" });
         if (res.ok) successCount += 1;
@@ -1788,8 +1805,10 @@ function MatchesSection({
       } catch {
         failureCount += 1;
       }
+      setBulkCancelProgress(Math.round(((i + 1) / ids.length) * 100));
     }
     setBulkCancelling(false);
+    setBulkCancelProgress(0);
     exitSelectionMode();
     onSuccess({ silent: true });
     alert(
@@ -1919,6 +1938,8 @@ function MatchesSection({
         const err = await res.json().catch(() => ({}));
         throw new Error(err.error || "Failed to start match");
       }
+      startMatchProgress.finish();
+      await delay(400);
       setStartMatchTarget(null);
       setStartRoomCode("");
       setStartRoomPassword("");
@@ -1979,16 +2000,21 @@ function MatchesSection({
         ? ` All ${spots} registered player${spots === 1 ? "" : "s"} will receive a refund.`
         : "";
     if (!confirm(`Cancel "${m.title}"?${refundNote} This will remove the match from the app.`)) return;
+    setCancellingMatchId(m.id);
     try {
       const res = await fetch(`/api/admin/matches/${m.id}/cancel`, { method: "POST" });
       if (!res.ok) {
         const errData = await res.json().catch(() => ({}));
         throw new Error(errData?.error || "Failed to cancel match");
       }
+      cancelMatchProgress.finish();
+      await delay(350);
       if (playersMatchId === m.id) onNavChange({ match: null, mview: null }, { replace: true });
       onSuccess({ silent: true });
     } catch (err) {
       alert(err instanceof Error ? err.message : "Failed to cancel match");
+    } finally {
+      setCancellingMatchId(null);
     }
   };
 
@@ -2044,6 +2070,8 @@ function MatchesSection({
           }
           throw new Error(errMsg);
         }
+        matchSubmitProgress.finish();
+        await delay(350);
         resetMatchForm();
         finishMatchForm();
         onSuccess({ silent: true });
@@ -2071,6 +2099,8 @@ function MatchesSection({
         throw new Error(errMsg);
       }
       const data = await res.json();
+      matchSubmitProgress.finish();
+      await delay(350);
       setTitle("");
       setEntryFee("");
       setMaxParticipants("16");
@@ -2115,6 +2145,8 @@ function MatchesSection({
         throw new Error(errData?.error || "Failed to create matches");
       }
       const data = await res.json();
+      presetCreateProgress.finish();
+      await delay(400);
       finishMatchForm();
       onNavChange({ mstatus: "upcoming", match: null, mview: null });
       onSuccess({ silent: true });
@@ -2128,6 +2160,42 @@ function MatchesSection({
 
   return (
     <div className="space-y-6">
+      <AdminProgressOverlay
+        open={startingMatch}
+        title="Starting match…"
+        message={progressMessage(startMatchProgress.percent, [
+          { until: 35, text: "Saving room details and updating match status…" },
+          { until: 70, text: "Sending push notifications to joined players…" },
+        ], "Almost done…")}
+        progress={startMatchProgress.percent}
+      />
+      <AdminProgressOverlay
+        open={presetSubmitting}
+        title="Creating matches from preset…"
+        message={progressMessage(presetCreateProgress.percent, [
+          { until: 40, text: "Scheduling matches across your selected time slots…" },
+          { until: 75, text: "Saving match records to the database…" },
+        ], "Wrapping up…")}
+        progress={presetCreateProgress.percent}
+      />
+      <AdminProgressOverlay
+        open={submitting && (view === "create" || view === "edit")}
+        title={view === "edit" ? "Saving match changes…" : "Creating match…"}
+        message="Uploading details and updating the match list…"
+        progress={matchSubmitProgress.percent}
+      />
+      <AdminProgressOverlay
+        open={bulkCancelling}
+        title={`Cancelling ${selectedMatchIds.size} match${selectedMatchIds.size === 1 ? "" : "es"}…`}
+        message="Processing refunds and removing matches from the app…"
+        progress={bulkCancelProgress}
+      />
+      <AdminProgressOverlay
+        open={!!cancellingMatchId}
+        title="Cancelling match…"
+        message="Refunding entry fees and updating match status…"
+        progress={cancelMatchProgress.percent}
+      />
       {view === "list" ? (
         <>
           <div className="flex flex-col gap-4 sm:flex-row sm:items-center sm:justify-between">
@@ -3251,6 +3319,8 @@ function MatchDetailView({
   const [subView, setSubView] = useState<"overview" | "players">(playersOnly ? "players" : "overview");
   const [formInitialized, setFormInitialized] = useState(false);
 
+  const finishProgress = useSimulatedProgress(finishing, { estimatedMs: 55000, cap: 92 });
+
   useEffect(() => {
     let cancelled = false;
     setFormInitialized(false);
@@ -3325,6 +3395,8 @@ function MatchDetailView({
         throw new Error(err.error || "Failed to finish match");
       }
       const data = await res.json();
+      finishProgress.finish();
+      await delay(400);
       setMatch(data);
       setFormInitialized(false);
       onSuccess({ silent: true });
@@ -3338,6 +3410,19 @@ function MatchDetailView({
   if (loading || !match) {
     return <AdminMatchDetailSkeleton />;
   }
+
+  const finishOverlay = (
+    <AdminProgressOverlay
+      open={finishing}
+      title="Finishing match…"
+      message={progressMessage(finishProgress.percent, [
+        { until: 30, text: "Saving player ranks and kill counts…" },
+        { until: 60, text: "Calculating winnings and rank rewards…" },
+        { until: 85, text: "Transferring coins to player wallets…" },
+      ], "Finalizing results…")}
+      progress={finishProgress.percent}
+    />
+  );
 
   const participants = match.participants ?? [];
   const isOngoing = match.status === "ongoing";
@@ -3366,7 +3451,9 @@ function MatchDetailView({
 
   if (playersOnly || subView === "players") {
     return (
-      <div className="space-y-6">
+      <>
+        {finishOverlay}
+        <div className="space-y-6">
         <button
           type="button"
           onClick={playersOnly ? onBack : () => setSubView("overview")}
@@ -3414,12 +3501,15 @@ function MatchDetailView({
             </button>
           </div>
         )}
-      </div>
+        </div>
+      </>
     );
   }
 
   return (
-    <div className="space-y-6">
+    <>
+      {finishOverlay}
+      <div className="space-y-6">
       <button
         type="button"
         onClick={onBack}
@@ -3575,7 +3665,8 @@ function MatchDetailView({
           </button>
         </div>
       )}
-    </div>
+      </div>
+    </>
   );
 }
 
@@ -5025,6 +5116,8 @@ function PushNotificationsSection() {
   const [sending, setSending] = useState(false);
   const [history, setHistory] = useState<any[]>([]);
 
+  const sendProgress = useSimulatedProgress(sending, { estimatedMs: 45000, cap: 90 });
+
   useEffect(() => {
     const h = localStorage.getItem("admin_push_history");
     if (h) setHistory(JSON.parse(h));
@@ -5052,6 +5145,9 @@ function PushNotificationsSection() {
       if (!res.ok) {
         throw new Error(data.error || "Failed to send notification");
       }
+
+      sendProgress.finish();
+      await delay(400);
 
       const newNotification = {
         id: `push-${Date.now()}`,
@@ -5092,9 +5188,19 @@ function PushNotificationsSection() {
   };
 
   return (
-    <div className="space-y-6">
-      <div>
-        <h1 className="text-2xl font-bold text-zinc-900 mb-1">Push Notifications</h1>
+    <>
+      <AdminProgressOverlay
+        open={sending}
+        title="Sending push notification…"
+        message={progressMessage(sendProgress.percent, [
+          { until: 40, text: "Resolving target devices for your audience…" },
+          { until: 75, text: "Delivering messages through Firebase…" },
+        ], "Completing delivery…")}
+        progress={sendProgress.percent}
+      />
+      <div className="space-y-6">
+        <div>
+          <h1 className="text-2xl font-bold text-zinc-900 mb-1">Push Notifications</h1>
         <p className="text-zinc-500 text-sm">Send dynamic Firebase notifications directly to users' Android applications.</p>
       </div>
 
@@ -5199,6 +5305,7 @@ function PushNotificationsSection() {
         </div>
       </div>
     </div>
+    </>
   );
 }
 

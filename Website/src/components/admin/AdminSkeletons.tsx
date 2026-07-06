@@ -270,5 +270,6 @@ export function AdminTabSkeleton({ tab, selectedGameId, selectedModeId }: AdminT
   if (tab === "admins") return <AdminFormPanelSkeleton />;
   if (tab === "notifications") return <AdminGenericPanelSkeleton />;
   if (tab === "appsettings") return <AdminFormPanelSkeleton />;
+  if (tab === "storage") return <AdminFormPanelSkeleton />;
   return <AdminGenericPanelSkeleton />;
 }

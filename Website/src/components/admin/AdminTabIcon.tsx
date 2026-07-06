@@ -57,6 +57,12 @@ export function AdminTabIcon({ tab, className = "h-5 w-5" }: { tab: AdminPanelTa
           <path d="M9 12h6" />
         </Svg>
       );
+    case "storage":
+      return (
+        <Svg className={className}>
+          <path d="M4 7v10c0 1.1.9 2 2 2h12a2 2 0 002-2V7M4 7l8-4 8 4M4 7l8 4 8-4M12 11v6" />
+        </Svg>
+      );
     case "users":
       return (
         <Svg className={className}>
