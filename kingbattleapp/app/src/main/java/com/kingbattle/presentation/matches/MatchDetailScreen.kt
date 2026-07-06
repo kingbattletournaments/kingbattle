@@ -173,6 +173,8 @@ fun MatchDetailScreen(
                                         Toast.makeText(context, "Insufficient coins! Please deposit first.", Toast.LENGTH_LONG).show()
                                         onNavigateToWallet()
                                     } else {
+                                        SelectedMatchHolder.sourceModeId =
+                                            SelectedMatchHolder.sourceModeId ?: match.game_mode_id
                                         onNavigateToSlotSelection(match.id, match.title)
                                     }
                                 },

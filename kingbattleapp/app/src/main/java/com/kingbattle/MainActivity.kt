@@ -1,5 +1,6 @@
 package com.kingbattle
 
+import android.content.Intent
 import android.Manifest
 import android.content.pm.PackageManager
 import android.os.Build
@@ -20,6 +21,7 @@ import com.kingbattle.data.api.UpdateFcmTokenRequest
 import com.kingbattle.data.local.TokenManager
 import com.kingbattle.navigation.RootNavigation
 import com.kingbattle.ui.theme.KingBattleTheme
+import com.kingbattle.util.NotificationDeepLink
 import com.kingbattle.util.NotificationHelper
 import dagger.hilt.android.AndroidEntryPoint
 import kotlinx.coroutines.Dispatchers
@@ -66,6 +68,7 @@ class MainActivity : ComponentActivity() {
         NotificationHelper.logNotificationState(this, "onCreate")
         askNotificationPermission()
         fetchAndSyncFcmToken()
+        handleNotificationIntent(intent)
 
         setContent {
             KingBattleTheme {
@@ -76,11 +79,25 @@ class MainActivity : ComponentActivity() {
         }
     }
 
+    override fun onNewIntent(intent: Intent) {
+        super.onNewIntent(intent)
+        setIntent(intent)
+        handleNotificationIntent(intent)
+    }
+
     override fun onResume() {
         super.onResume()
         NotificationHelper.logNotificationState(this, "onResume")
         if (tokenManager.isLoggedIn()) {
             fetchAndSyncFcmToken()
+        }
+    }
+
+    private fun handleNotificationIntent(intent: Intent?) {
+        val matchId = NotificationDeepLink.handleIntent(intent) ?: return
+        Log.d(TAG, "Notification deep link matchId=$matchId")
+        if (tokenManager.isLoggedIn()) {
+            tokenManager.saveJoinedMatch(matchId)
         }
     }
 

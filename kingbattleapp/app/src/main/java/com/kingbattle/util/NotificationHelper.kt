@@ -100,7 +100,14 @@ object NotificationHelper {
         context.startActivity(intent)
     }
 
-    fun showNotification(context: Context, title: String, body: String, link: String? = null) {
+    fun showNotification(
+        context: Context,
+        title: String,
+        body: String,
+        link: String? = null,
+        matchId: String? = null,
+        notificationType: String? = null,
+    ) {
         createNotificationChannel(context)
         logNotificationState(context, "showNotification")
 
@@ -109,17 +116,28 @@ object NotificationHelper {
             return
         }
 
+        val resolvedMatchId = matchId?.trim()?.takeIf { it.isNotEmpty() }
+            ?: NotificationDeepLink.parseMatchIdFromLink(link)
+
         val intent = Intent(context, MainActivity::class.java).apply {
             flags = Intent.FLAG_ACTIVITY_CLEAR_TOP or Intent.FLAG_ACTIVITY_SINGLE_TOP
             action = Intent.ACTION_MAIN
             addCategory(Intent.CATEGORY_LAUNCHER)
             if (!link.isNullOrBlank()) {
                 putExtra("notification_link", link)
+                putExtra("link", link)
+            }
+            if (!resolvedMatchId.isNullOrBlank()) {
+                putExtra("matchId", resolvedMatchId)
+            }
+            if (!notificationType.isNullOrBlank()) {
+                putExtra("type", notificationType)
             }
         }
+        val requestCode = (resolvedMatchId ?: link ?: title).hashCode()
         val pendingIntent = PendingIntent.getActivity(
             context,
-            (System.currentTimeMillis() % Int.MAX_VALUE).toInt(),
+            requestCode,
             intent,
             PendingIntent.FLAG_UPDATE_CURRENT or PendingIntent.FLAG_IMMUTABLE,
         )

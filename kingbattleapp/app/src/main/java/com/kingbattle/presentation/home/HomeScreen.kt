@@ -3,6 +3,7 @@ package com.kingbattle.presentation.home
 import android.widget.Toast
 import android.content.Intent
 import android.net.Uri
+import androidx.activity.compose.BackHandler
 import androidx.compose.foundation.BorderStroke
 import androidx.compose.foundation.ExperimentalFoundationApi
 import androidx.compose.foundation.Image
@@ -335,6 +336,16 @@ fun HomeScreen(
     LaunchedEffect(activeTab) {
         if (activeTab == HomeTab.ACCOUNT) {
             homeViewModel.refreshSupportUrl()
+        }
+    }
+
+    BackHandler(
+        enabled = showReferScreen || showLeaderboard || (!isAccountBlocked && activeTab != HomeTab.PLAY),
+    ) {
+        when {
+            showReferScreen -> showReferScreen = false
+            showLeaderboard -> showLeaderboard = false
+            activeTab != HomeTab.PLAY -> activeTab = HomeTab.PLAY
         }
     }
 
@@ -1205,6 +1216,13 @@ fun AccountTabContent(
 
     var showAboutDialog by remember { mutableStateOf(false) }
     var showTermsDialog by remember { mutableStateOf(false) }
+
+    BackHandler(enabled = showAboutDialog || showTermsDialog) {
+        when {
+            showAboutDialog -> showAboutDialog = false
+            showTermsDialog -> showTermsDialog = false
+        }
+    }
 
     if (user?.is_blocked == true) {
         BlockedAccountContent(

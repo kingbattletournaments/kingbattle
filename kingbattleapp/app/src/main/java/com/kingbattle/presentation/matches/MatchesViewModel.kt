@@ -163,7 +163,41 @@ class MatchesViewModel @Inject constructor(
                 }
             }
         }
-        refreshData(modeId)
+    }
+
+    /** Refresh in place without clearing lists or showing pull-to-refresh — keeps scroll position. */
+    fun silentRefresh(modeId: String, tab: MatchTab) {
+        viewModelScope.launch {
+            syncJoinedMatches()
+            if (!tabState(tab).initialLoaded) return@launch
+            fetchPageSilent(modeId, tab)
+        }
+    }
+
+    private suspend fun fetchPageSilent(modeId: String, tab: MatchTab) {
+        try {
+            val response = api.getMatches(
+                modeId = modeId,
+                status = tab.apiStatus,
+                page = 1,
+                limit = PAGE_SIZE,
+                cacheBust = System.currentTimeMillis(),
+            )
+            if (response.isSuccessful && response.body() != null) {
+                val body = response.body()!!
+                val serverItems = mergeParticipantCounts(body.items)
+                val serverIds = serverItems.map { it.id }.toSet()
+                updateTab(tab) { prev ->
+                    val tail = prev.items.filter { it.id !in serverIds }
+                    prev.copy(
+                        items = serverItems + tail,
+                        hasMore = body.hasMore || prev.page > 1 || tail.isNotEmpty(),
+                    )
+                }
+            }
+        } catch (e: Exception) {
+            e.printStackTrace()
+        }
     }
 
     private suspend fun fetchPage(

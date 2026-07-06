@@ -64,13 +64,22 @@ class KingBattleMessagingService : FirebaseMessagingService() {
                 ?: remoteMessage.data["body"]
                 ?: ""
             val link = remoteMessage.data["link"]
+            val matchId = remoteMessage.data["matchId"]
+            val type = remoteMessage.data["type"]
 
             if (body.isBlank()) {
                 Log.w(TAG, "Ignoring notification with empty body")
                 return
             }
 
-            NotificationHelper.showNotification(applicationContext, title, body, link)
+            NotificationHelper.showNotification(
+                applicationContext,
+                title,
+                body,
+                link,
+                matchId,
+                type,
+            )
         } catch (e: Exception) {
             Log.e(TAG, "Failed to handle FCM message", e)
         } finally {

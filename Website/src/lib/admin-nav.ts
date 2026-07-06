@@ -85,3 +85,22 @@ export function buildAdminNavQuery(
 
   return next.toString();
 }
+
+/** Push a history entry for in-tab overlays (create forms, etc.) so mobile back closes them first. */
+export function pushAdminHistoryOverlay(key: string) {
+  if (typeof window === "undefined") return;
+  window.history.pushState({ adminOverlay: key }, "", window.location.href);
+}
+
+export function closeAdminHistoryOverlay(onClose: () => void) {
+  if (typeof window !== "undefined" && window.history.state?.adminOverlay) {
+    const handler = () => {
+      window.removeEventListener("popstate", handler);
+      onClose();
+    };
+    window.addEventListener("popstate", handler);
+    window.history.back();
+    return;
+  }
+  onClose();
+}

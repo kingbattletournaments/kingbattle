@@ -10,7 +10,9 @@ import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.*
 import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.items
+import androidx.compose.foundation.lazy.LazyListState
 import androidx.compose.foundation.lazy.rememberLazyListState
+import androidx.compose.runtime.saveable.rememberSaveable
 import androidx.compose.runtime.snapshotFlow
 import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.shape.CircleShape
@@ -91,10 +93,11 @@ fun MatchesScreen(
     }
 
     val lifecycleOwner = LocalLifecycleOwner.current
+    val currentTabPage by rememberUpdatedState(pagerState.currentPage)
     DisposableEffect(lifecycleOwner, modeId) {
         val observer = LifecycleEventObserver { _, event ->
             if (event == Lifecycle.Event.ON_RESUME) {
-                viewModel.refreshData(modeId)
+                viewModel.silentRefresh(modeId, MatchTab.fromPage(currentTabPage))
             }
         }
         lifecycleOwner.lifecycle.addObserver(observer)
@@ -207,7 +210,10 @@ fun MatchesScreen(
             ) { page ->
                 val tab = MatchTab.fromPage(page)
                 val tabState = tabStates.value[tab] ?: MatchTabState()
-                val listState = rememberLazyListState()
+                val listState = rememberSaveable(
+                    saver = LazyListState.Saver,
+                    key = "matches_scroll_${modeId}_${tab.name}",
+                ) { LazyListState() }
 
                 LaunchedEffect(modeId, tab) {
                     viewModel.ensureTabLoaded(modeId, tab)
@@ -286,12 +292,15 @@ fun MatchesScreen(
                                             Toast.makeText(context, "Insufficient coins! Please deposit first.", Toast.LENGTH_LONG).show()
                                             onNavigateToWallet()
                                         } else {
+                                            SelectedMatchHolder.sourceModeId = modeId
+                                            SelectedMatchHolder.sourceInitialTab = pagerState.currentPage
                                             onNavigateToSlotSelection(match.id, match.title)
                                         }
                                     },
                                     onCardClick = {
-                                        // Store selected match for reuse
-                                        com.kingbattle.presentation.matches.SelectedMatchHolder.selectedMatch = match
+                                        SelectedMatchHolder.selectedMatch = match
+                                        SelectedMatchHolder.sourceModeId = modeId
+                                        SelectedMatchHolder.sourceInitialTab = pagerState.currentPage
                                         onNavigateToMatchDetail(match.id)
                                     }
                                 )
