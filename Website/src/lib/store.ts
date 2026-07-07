@@ -111,7 +111,11 @@ export function getStore() {
       signInUser: (email: string, password: string) => db.signInUser(email, password),
       syncGoogleUser: (id: string, email: string, displayName: string, avatarUrl: string) => db.syncGoogleUser(id, email, displayName, avatarUrl),
       getUser: (id: string) => db.getUser(id),
-      addCoins: (userId: string, amount: number, desc?: string) => db.addCoins(userId, amount, desc),
+      addCoins: (
+        userId: string,
+        amount: number,
+        options?: { description?: string; wallet?: "normal" | "won" },
+      ) => db.addCoins(userId, amount, options),
       blockUser: (userId: string, reason: string) => db.blockUser(userId, reason),
       unblockUser: (userId: string) => db.unblockUser(userId),
       deleteUser: (userId: string) => db.deleteUser(userId),
@@ -313,7 +317,11 @@ export function getStore() {
       });
     },
     getUser: (id: string) => Promise.resolve(adminStore.getUser(id)),
-    addCoins: (userId: string, amount: number, desc?: string) => Promise.resolve(adminStore.addCoins(userId, amount, desc)),
+    addCoins: (
+      userId: string,
+      amount: number,
+      options?: { description?: string; wallet?: "normal" | "won" },
+    ) => Promise.resolve(adminStore.addCoins(userId, amount, options)),
     blockUser: (userId: string, reason: string) => Promise.resolve(adminStore.blockUser(userId, reason)),
     unblockUser: (userId: string) => Promise.resolve(adminStore.unblockUser(userId)),
     deleteUser: (userId: string) => Promise.resolve(adminStore.deleteUser(userId)),

@@ -17,14 +17,18 @@ export async function POST(
   }
   const { id } = await params;
   const body = await request.json().catch(() => ({}));
-  const { amount, description } = body;
+  const { amount, description, wallet } = body;
   if (amount == null || typeof amount !== "number" || amount <= 0) {
     return NextResponse.json(
       { error: "amount must be a positive number" },
       { status: 400 }
     );
   }
-  const user = await getStore().addCoins(id, amount, typeof description === "string" ? description : undefined);
+  const walletType = wallet === "won" ? "won" : "normal";
+  const user = await getStore().addCoins(id, amount, {
+    description: typeof description === "string" ? description : undefined,
+    wallet: walletType,
+  });
   if (!user) {
     return NextResponse.json({ error: "User not found" }, { status: 404 });
   }

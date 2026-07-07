@@ -1,4 +1,6 @@
-/** Normalized admin user shape (API may return snake_case or camelCase). */
+/** Normal = deposit wallet (`coins` column). Won = withdrawable winnings (`won_coins`). */
+export type AddCoinsWallet = "normal" | "won";
+
 export type AdminUserRecord = {
   id: string;
   email: string;
@@ -8,6 +10,10 @@ export type AdminUserRecord = {
   isBlocked: boolean;
   blockReason: string | null;
   username?: string;
+  lifetimeEarnedPoints?: number;
+  matchesPlayed?: number;
+  totalKills?: number;
+  createdAt?: string;
 };
 
 export function normalizeAdminUser(raw: unknown): AdminUserRecord {
@@ -37,6 +43,10 @@ export function normalizeAdminUser(raw: unknown): AdminUserRecord {
     isBlocked,
     blockReason,
     username: u.username != null ? String(u.username) : undefined,
+    lifetimeEarnedPoints: Number(u.lifetimeEarnedPoints ?? u.lifetime_earned_points ?? 0),
+    matchesPlayed: Number(u.matchesPlayed ?? u.matches_played ?? 0),
+    totalKills: Number(u.totalKills ?? u.total_kills ?? 0),
+    createdAt: u.createdAt != null ? String(u.createdAt) : u.created_at != null ? String(u.created_at) : undefined,
   };
 }
 
@@ -52,5 +62,13 @@ export function serializeAdminUser(user: AdminUserRecord) {
     blockReason: user.blockReason,
     block_reason: user.blockReason,
     username: user.username ?? user.id,
+    lifetimeEarnedPoints: user.lifetimeEarnedPoints ?? 0,
+    lifetime_earned_points: user.lifetimeEarnedPoints ?? 0,
+    matchesPlayed: user.matchesPlayed ?? 0,
+    matches_played: user.matchesPlayed ?? 0,
+    totalKills: user.totalKills ?? 0,
+    total_kills: user.totalKills ?? 0,
+    createdAt: user.createdAt,
+    created_at: user.createdAt,
   };
 }

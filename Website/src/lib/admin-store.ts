@@ -1158,16 +1158,26 @@ export const adminStore = {
     const { passwordHash: _, ...user } = u as User & { passwordHash?: string };
     return user;
   },
-  addCoins: (userId: string, amount: number, description?: string) => {
+  addCoins: (
+    userId: string,
+    amount: number,
+    options?: { description?: string; wallet?: "normal" | "won" },
+  ) => {
     const u = users.find((x) => x.id === userId);
     if (!u) return null;
-    u.coins += amount;
+    const wallet = options?.wallet === "won" ? "won" : "normal";
+    const description = options?.description?.trim() || "Admin added coins";
+    if (wallet === "won") {
+      u.wonCoins += amount;
+    } else {
+      u.coins += amount;
+    }
     coinTransactions.push({
       id: nextTxId(),
       userId,
       amount,
       type: "admin_add",
-      description: description ?? "Admin added coins",
+      description,
       createdAt: new Date().toISOString(),
     });
     return u;

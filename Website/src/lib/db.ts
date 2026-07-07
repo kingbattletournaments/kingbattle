@@ -646,17 +646,40 @@ export const db = {
     return data ? toUser(data) : null;
   },
 
-  async addCoins(userId: string, amount: number, description?: string): Promise<DbUser | null> {
+  async addCoins(
+    userId: string,
+    amount: number,
+    options?: { description?: string; wallet?: "normal" | "won" },
+  ): Promise<DbUser | null> {
     const supabase = getSupabase();
     if (!supabase) return null;
-    const { data: user } = await supabase.from("app_users").select("coins").eq("username", userId).single();
+    const wallet = options?.wallet === "won" ? "won" : "normal";
+    const description = options?.description?.trim() || "Admin added coins";
+
+    const { data: user } = await supabase
+      .from("app_users")
+      .select("coins, won_coins")
+      .eq("username", userId)
+      .single();
     if (!user) return null;
-    await supabase.from("app_users").update({ coins: user.coins + amount }).eq("username", userId);
+
+    if (wallet === "won") {
+      await supabase
+        .from("app_users")
+        .update({ won_coins: (user.won_coins ?? 0) + amount })
+        .eq("username", userId);
+    } else {
+      await supabase
+        .from("app_users")
+        .update({ coins: (user.coins ?? 0) + amount })
+        .eq("username", userId);
+    }
+
     await insertCoinTransaction(supabase, {
       user_id: userId,
       amount,
       type: "admin_add",
-      description: description ?? "Admin added coins",
+      description,
     });
     return db.getUser(userId);
   },
