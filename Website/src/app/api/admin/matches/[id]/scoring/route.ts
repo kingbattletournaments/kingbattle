@@ -5,7 +5,6 @@ import { invalidateMatchListCaches } from "@/lib/admin-api-cache";
 import { invalidateAdminDashboardStatsCache } from "@/lib/admin-dashboard-cache";
 import {
   normalizeManualEntryOptions,
-  type ManualEntryOptions,
   type ScoringMode,
 } from "@/lib/match-scoring";
 
@@ -19,7 +18,7 @@ async function checkMatchAccess(adminId: string, matchId: string): Promise<boole
   return admin.allowedGameIds.includes(mode.gameId);
 }
 
-export async function POST(
+export async function PATCH(
   request: Request,
   { params }: { params: Promise<{ id: string }> },
 ) {
@@ -31,25 +30,6 @@ export async function POST(
   }
 
   const body = await request.json().catch(() => ({}));
-  const participantUpdates = Array.isArray(body.participants)
-    ? (body.participants as {
-        id?: string;
-        kills?: number[];
-        rank?: number;
-        customWinnings?: number;
-      }[])
-        .filter((p) => p?.id)
-        .map((p) => ({
-          id: String(p.id),
-          kills: Array.isArray(p.kills) ? p.kills.map((k) => Number(k) || 0) : undefined,
-          rank: typeof p.rank === "number" && p.rank >= 1 ? p.rank : undefined,
-          customWinnings:
-            typeof p.customWinnings === "number" && p.customWinnings >= 0
-              ? Math.floor(p.customWinnings)
-              : undefined,
-        }))
-    : undefined;
-
   const scoringMode =
     body.scoringMode === "kills_only" ||
     body.scoringMode === "rank_only" ||
@@ -57,24 +37,22 @@ export async function POST(
     body.scoringMode === "manual"
       ? (body.scoringMode as ScoringMode)
       : undefined;
+  if (!scoringMode) {
+    return NextResponse.json({ error: "Invalid scoring mode" }, { status: 400 });
+  }
+
   const manualEntryOptions =
     body.manualEntryOptions != null
       ? normalizeManualEntryOptions(body.manualEntryOptions)
       : undefined;
 
   const store = getStore();
-  const match = await store.finishMatch(id, participantUpdates, {
-    scoringMode,
-    manualEntryOptions,
-  });
-  if (!match) {
-    return NextResponse.json(
-      { error: "Match not found or not ongoing" },
-      { status: 400 },
-    );
+  const updated = await store.updateMatchScoringConfig(id, scoringMode, manualEntryOptions);
+  if (!updated) {
+    return NextResponse.json({ error: "Unable to update scoring mode" }, { status: 400 });
   }
   invalidateMatchListCaches();
   invalidateAdminDashboardStatsCache();
   const full = await store.getMatch(id);
-  return NextResponse.json(full ?? match);
+  return NextResponse.json(full ?? updated);
 }

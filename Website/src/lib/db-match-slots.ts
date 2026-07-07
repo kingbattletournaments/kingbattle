@@ -20,6 +20,12 @@ import {
   splitRankRewardAmongPlayers,
   type TeamGroup,
 } from "./admin-match-teams";
+import {
+  calcParticipantPayout,
+  type ManualEntryOptions,
+  type PrizePool,
+  type ScoringMode,
+} from "./match-scoring";
 
 const MATCH_ID_UUID =
   /^[0-9a-f]{8}-[0-9a-f]{4}-[1-5][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i;
@@ -407,12 +413,16 @@ export async function refundSlotBookingsForMatch(
 export async function finishMatchSlotPayouts(
   matchId: string,
   matchType: string,
-  cpk: number,
-  rankRewards: { fromRank: number; toRank: number; coins: number }[],
+  prizePool: PrizePool,
+  scoringMode: ScoringMode,
+  manualEntryOptions: ManualEntryOptions | undefined,
+  customWinningsByParticipantId: Map<string, number>,
   addMatchWinnings: (userId: string, coins: number, matchId: string) => Promise<void>,
 ): Promise<boolean> {
   const supabase = getSupabase();
   if (!supabase) return false;
+  const cpk = prizePool.coinsPerKill ?? 0;
+  const rankRewards = prizePool.rankRewards ?? [];
 
   const { data: slots } = await supabase
     .from("match_slot_bookings")
@@ -424,82 +434,24 @@ export async function finishMatchSlotPayouts(
 
   const rows = slots as SlotBookingRow[];
 
-  const killCoinsByUser = new Map<string, number>();
-  for (const s of rows) {
-    const coins = (s.kills ?? 0) * cpk;
-    if (coins > 0) {
-      killCoinsByUser.set(s.app_user_id, (killCoinsByUser.get(s.app_user_id) ?? 0) + coins);
-    }
-  }
-
-  const teams = new Map<number, SlotBookingRow[]>();
-  for (const s of rows) {
-    const teamNum = slotToTeamNumber(s.slot_index, matchType);
-    if (!teams.has(teamNum)) teams.set(teamNum, []);
-    teams.get(teamNum)!.push(s);
-  }
-
-  const teamGroups: TeamGroup[] = Array.from(teams.entries()).map(([teamNumber, teamSlots]) => ({
-    teamNumber,
-    slots: teamSlots.map((s) => ({
-      slotPositionInTeam: slotPositionInTeam(s.slot_index, matchType),
-      globalSlotIndex: s.slot_index,
-      participant: {
-        id: s.id,
-        userId: s.app_user_id,
-        slotIndex: s.slot_index,
-        teamMembers: [
-          {
-            inGameName: s.in_game_name ?? "",
-            inGameUid: s.in_game_uid ?? "",
-            kills: s.kills ?? 0,
-          },
-        ],
-        rank: s.squad_rank ?? undefined,
-      },
-    })),
-    players: teamSlots.map((s) => ({
-      id: s.id,
-      userId: s.app_user_id,
-      slotIndex: s.slot_index,
-      teamMembers: [
-        {
-          inGameName: s.in_game_name ?? "",
-          inGameUid: s.in_game_uid ?? "",
-          kills: s.kills ?? 0,
-        },
-      ],
-      rank: s.squad_rank ?? undefined,
-    })),
-  }));
-
-  const teamOrdinals = computeTeamOrdinals(teamGroups);
-
-  const rankCoinsByUser = new Map<string, number>();
-  for (const [teamNum, teamSlots] of Array.from(teams.entries())) {
-    const teamOrdinal = teamOrdinals.get(teamNum);
-    if (!teamOrdinal) continue;
-
-    const rankReward = calcRankRewardCoins(teamOrdinal, { coinsPerKill: cpk, rankRewards });
-    if (rankReward <= 0) continue;
-
-    const players = teamSlots.map((s) => ({
-      id: s.id,
-      kills: s.kills ?? 0,
-      userId: s.app_user_id,
-    }));
-
-    const shares = splitRankRewardAmongPlayers(rankReward, players);
-    for (const [pid, coins] of Array.from(shares.entries())) {
-      const row = teamSlots.find((s) => s.id === pid);
-      if (!row) continue;
-      rankCoinsByUser.set(row.app_user_id, (rankCoinsByUser.get(row.app_user_id) ?? 0) + coins);
-    }
-  }
-
   const totalByUser = new Map<string, number>();
-  for (const [uid, c] of Array.from(killCoinsByUser.entries())) totalByUser.set(uid, (totalByUser.get(uid) ?? 0) + c);
-  for (const [uid, c] of Array.from(rankCoinsByUser.entries())) totalByUser.set(uid, (totalByUser.get(uid) ?? 0) + c);
+  for (const s of rows) {
+    const custom = customWinningsByParticipantId.get(s.id);
+    const coins =
+      typeof custom === "number"
+        ? custom
+        : calcParticipantPayout(
+            s.kills ?? 0,
+            s.squad_rank ?? undefined,
+            prizePool,
+            scoringMode,
+            undefined,
+            manualEntryOptions,
+          );
+    if (coins > 0) {
+      totalByUser.set(s.app_user_id, (totalByUser.get(s.app_user_id) ?? 0) + coins);
+    }
+  }
 
   for (const [userId, coins] of Array.from(totalByUser.entries())) {
     if (coins > 0) await addMatchWinnings(userId, coins, matchId);

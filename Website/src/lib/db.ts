@@ -7,6 +7,14 @@ import bcrypt from "bcryptjs";
 import { getSupabase } from "./supabase";
 import type { AppBanner } from "./admin-store";
 import {
+  calcParticipantPayout,
+  computeScoringMode,
+  hasActiveRankRewards,
+  normalizeManualEntryOptions,
+  type ManualEntryOptions,
+  type ScoringMode,
+} from "./match-scoring";
+import {
   ALL_ADMIN_TAB_IDS,
   emptyTabAccess,
   legacyPermissionsFromTabAccess,
@@ -147,6 +155,8 @@ export type DbMatch = {
   image?: string | null;
   participantCount?: number;
   matchNumber?: number;
+  scoringMode?: string;
+  manualEntryOptions?: { enterKills: boolean; enterRank: boolean; enterCustomWinnings: boolean };
 };
 
 export type DbMatchPreset = {
@@ -161,6 +171,8 @@ export type DbMatchPreset = {
   prizePool: { coinsPerKill: number; totalPrizePool?: number; rankRewards: { fromRank: number; toRank: number; coins: number }[] };
   image?: string | null;
   createdAt?: string;
+  scoringMode?: string;
+  manualEntryOptions?: { enterKills: boolean; enterRank: boolean; enterCustomWinnings: boolean };
 };
 
 function toMatchPreset(row: {
@@ -177,6 +189,8 @@ function toMatchPreset(row: {
   rank_rewards?: unknown;
   image?: string | null;
   created_at?: string;
+  scoring_mode?: string | null;
+  manual_entry_options?: unknown;
 }): DbMatchPreset {
   const rewards = Array.isArray(row.rank_rewards)
     ? (row.rank_rewards as { fromRank?: number; toRank?: number; coins?: number }[])
@@ -199,6 +213,10 @@ function toMatchPreset(row: {
     },
     image: row.image ?? null,
     createdAt: row.created_at,
+    scoringMode: row.scoring_mode ?? undefined,
+    manualEntryOptions: row.manual_entry_options
+      ? normalizeManualEntryOptions(row.manual_entry_options)
+      : undefined,
   };
 }
 
@@ -220,6 +238,8 @@ function toMatch(row: {
   map?: string | null;
   image?: string | null;
   match_number?: number | null;
+  scoring_mode?: string | null;
+  manual_entry_options?: unknown;
 }): DbMatch {
   const rewards = Array.isArray(row.rank_rewards)
     ? (row.rank_rewards as { fromRank?: number; toRank?: number; coins?: number }[])
@@ -246,6 +266,10 @@ function toMatch(row: {
     map: row.map ?? "BERMUDA",
     image: row.image ?? null,
     matchNumber: row.match_number ?? undefined,
+    scoringMode: row.scoring_mode ?? undefined,
+    manualEntryOptions: row.manual_entry_options
+      ? normalizeManualEntryOptions(row.manual_entry_options)
+      : undefined,
   };
 }
 
@@ -1302,12 +1326,17 @@ export const db = {
     matchType: string,
     prizePool: { coinsPerKill: number; totalPrizePool?: number; rankRewards: { fromRank: number; toRank: number; coins: number }[] },
     map?: string,
-    image?: string | null
+    image?: string | null,
+    scoringMode?: ScoringMode,
+    manualEntryOptions?: ManualEntryOptions,
   ): Promise<DbMatch | null> {
     const supabase = getSupabase();
     if (!supabase) return null;
     const matchNumber = await allocateMatchNumber();
     const displayTitle = buildMatchTitle(title, matchNumber);
+    const resolvedScoringMode =
+      scoringMode ??
+      computeScoringMode(prizePool, hasActiveRankRewards(prizePool?.rankRewards));
     const row: Record<string, unknown> = {
       game_mode_id: gameModeId,
       title: displayTitle,
@@ -1322,6 +1351,9 @@ export const db = {
       map: map || "BERMUDA",
       image: image || null,
       match_number: matchNumber,
+      scoring_mode: resolvedScoringMode,
+      manual_entry_options:
+        resolvedScoringMode === "manual" ? (manualEntryOptions ?? null) : null,
     };
     let { data, error } = await supabase.from("matches").insert(row).select().single();
     if (error && String(error.message).includes("match_number")) {
@@ -1640,6 +1672,8 @@ export const db = {
         totalPrizePool?: number;
         rankRewards: { fromRank: number; toRank: number; coins: number }[];
       };
+      scoringMode?: ScoringMode;
+      manualEntryOptions?: ManualEntryOptions;
     },
   ): Promise<DbMatch | null> {
     const supabase = getSupabase();
@@ -1663,6 +1697,19 @@ export const db = {
       payload.coins_per_kill = updates.prizePool.coinsPerKill;
       payload.total_prize_pool = updates.prizePool.totalPrizePool ?? 0;
       payload.rank_rewards = updates.prizePool.rankRewards;
+      if (updates.scoringMode === undefined) {
+        payload.scoring_mode = computeScoringMode(
+          updates.prizePool,
+          hasActiveRankRewards(updates.prizePool.rankRewards),
+        );
+      }
+    }
+    if (updates.scoringMode !== undefined) {
+      payload.scoring_mode = updates.scoringMode;
+      payload.manual_entry_options =
+        updates.scoringMode === "manual" ? (updates.manualEntryOptions ?? null) : null;
+    } else if (updates.manualEntryOptions !== undefined) {
+      payload.manual_entry_options = updates.manualEntryOptions;
     }
 
     const { data, error } = await supabase.from("matches").update(payload).eq("id", id).select().single();
@@ -1670,6 +1717,28 @@ export const db = {
       console.error("updateMatch failed:", error?.message ?? "no data returned");
       return null;
     }
+    return toMatch(data);
+  },
+
+  async updateMatchScoringConfig(
+    id: string,
+    scoringMode: ScoringMode,
+    manualEntryOptions?: ManualEntryOptions,
+  ): Promise<DbMatch | null> {
+    const supabase = getSupabase();
+    if (!supabase) return null;
+    const { data, error } = await supabase
+      .from("matches")
+      .update({
+        scoring_mode: scoringMode,
+        manual_entry_options: scoringMode === "manual" ? (manualEntryOptions ?? null) : null,
+        updated_at: new Date().toISOString(),
+      })
+      .eq("id", id)
+      .in("status", ["upcoming", "ongoing"])
+      .select()
+      .single();
+    if (error || !data) return null;
     return toMatch(data);
   },
 
@@ -1761,7 +1830,8 @@ export const db = {
 
   async finishMatch(
     id: string,
-    participantUpdates?: { id: string; kills?: number[]; rank?: number }[],
+    participantUpdates?: { id: string; kills?: number[]; rank?: number; customWinnings?: number }[],
+    opts?: { scoringMode?: ScoringMode; manualEntryOptions?: ManualEntryOptions },
   ): Promise<DbMatch | null> {
     const supabase = getSupabase();
     if (!supabase) return null;
@@ -1773,32 +1843,37 @@ export const db = {
     if (!match || match.status !== "ongoing") return null;
     const participants = match.participants ?? [];
     const prizePool = match.prizePool ?? { coinsPerKill: 0, totalPrizePool: 0, rankRewards: [] };
-    const rewards = prizePool.rankRewards ?? [];
-    const cpk = prizePool.coinsPerKill ?? 0;
+    const scoringMode = (opts?.scoringMode ?? match.scoringMode ?? "kills_only") as ScoringMode;
+    const manualEntryOptions = opts?.manualEntryOptions ?? match.manualEntryOptions;
+    const customById = new Map(
+      (participantUpdates ?? [])
+        .filter((p) => typeof p.customWinnings === "number")
+        .map((p) => [p.id, p.customWinnings as number]),
+    );
 
     const usedSlotPayouts = await finishMatchSlotPayouts(
       id,
       match.matchType ?? "solo",
-      cpk,
-      rewards,
+      prizePool,
+      scoringMode,
+      manualEntryOptions,
+      customById,
       async (userId, coins, matchId) => {
         await db.addMatchWinnings(userId, coins, matchId);
       },
     );
 
     if (!usedSlotPayouts) {
-      const withRank = participants
-        .filter((p) => typeof p.rank === "number" && p.rank >= 1)
-        .sort((a, b) => (a.rank ?? 0) - (b.rank ?? 0));
-      for (const p of withRank) {
+      for (const p of participants) {
         const totalKills = (p.teamMembers ?? []).reduce((s, t) => s + (t.kills ?? 0), 0);
-        let coins = totalKills * cpk;
-        for (const r of rewards) {
-          if (p.rank! >= r.fromRank && p.rank! <= r.toRank) {
-            coins += r.coins;
-            break;
-          }
-        }
+        const coins = calcParticipantPayout(
+          totalKills,
+          p.rank,
+          prizePool,
+          scoringMode,
+          customById.get(p.id),
+          manualEntryOptions,
+        );
         if (coins > 0 && p.userId) {
           await db.addMatchWinnings(p.userId, coins, id);
         }
@@ -2201,9 +2276,14 @@ export const db = {
     map?: string;
     prizePool: { coinsPerKill: number; totalPrizePool?: number; rankRewards: { fromRank: number; toRank: number; coins: number }[] };
     image?: string | null;
+    scoringMode?: ScoringMode;
+    manualEntryOptions?: ManualEntryOptions;
   }): Promise<DbMatchPreset | null> {
     const supabase = getSupabase();
     if (!supabase) return null;
+    const resolvedScoringMode =
+      input.scoringMode ??
+      computeScoringMode(input.prizePool, hasActiveRankRewards(input.prizePool?.rankRewards));
     const { data, error } = await supabase
       .from("match_presets")
       .insert({
@@ -2218,6 +2298,9 @@ export const db = {
         total_prize_pool: input.prizePool?.totalPrizePool ?? 0,
         rank_rewards: input.prizePool?.rankRewards ?? [],
         image: input.image || null,
+        scoring_mode: resolvedScoringMode,
+        manual_entry_options:
+          resolvedScoringMode === "manual" ? (input.manualEntryOptions ?? null) : null,
       })
       .select()
       .single();
@@ -2239,6 +2322,8 @@ export const db = {
       map: string;
       prizePool: { coinsPerKill: number; totalPrizePool?: number; rankRewards: { fromRank: number; toRank: number; coins: number }[] };
       image: string | null;
+      scoringMode?: ScoringMode;
+      manualEntryOptions?: ManualEntryOptions;
     }>,
   ): Promise<DbMatchPreset | null> {
     const supabase = getSupabase();
@@ -2255,6 +2340,19 @@ export const db = {
       payload.coins_per_kill = updates.prizePool.coinsPerKill;
       payload.total_prize_pool = updates.prizePool.totalPrizePool ?? 0;
       payload.rank_rewards = updates.prizePool.rankRewards;
+      if (updates.scoringMode === undefined) {
+        payload.scoring_mode = computeScoringMode(
+          updates.prizePool,
+          hasActiveRankRewards(updates.prizePool.rankRewards),
+        );
+      }
+    }
+    if (updates.scoringMode !== undefined) {
+      payload.scoring_mode = updates.scoringMode;
+      payload.manual_entry_options =
+        updates.scoringMode === "manual" ? (updates.manualEntryOptions ?? null) : null;
+    } else if (updates.manualEntryOptions !== undefined) {
+      payload.manual_entry_options = updates.manualEntryOptions;
     }
     const { data, error } = await supabase.from("match_presets").update(payload).eq("id", id).select().single();
     if (error || !data) {

@@ -51,6 +51,7 @@ import com.kingbattle.R
 import com.kingbattle.presentation.components.CachedNetworkImage
 import com.kingbattle.presentation.components.CoinAmountRow
 import com.kingbattle.presentation.components.CoinIcon
+import com.kingbattle.util.MatchScoringUtils
 import com.kingbattle.presentation.components.rememberImageDecodeSize
 import com.kingbattle.util.MatchDateTimeFormatter
 import com.kingbattle.domain.model.Match
@@ -340,6 +341,8 @@ fun MatchCard(
     onCardClick: () -> Unit
 ) {
     var rewardsExpanded by remember { mutableStateOf(false) }
+    val showRankRewards = MatchScoringUtils.shouldShowRankRewards(match)
+    val showPerKill = MatchScoringUtils.shouldShowPerKill(match)
     val context = LocalContext.current
     val bannerDecodeSize = rememberImageDecodeSize(width = 400.dp, height = 180.dp)
 
@@ -447,7 +450,10 @@ fun MatchCard(
                     Column(
                         modifier = Modifier
                             .weight(1f)
-                            .clickable { rewardsExpanded = !rewardsExpanded },
+                            .then(
+                                if (showRankRewards) Modifier.clickable { rewardsExpanded = !rewardsExpanded }
+                                else Modifier
+                            ),
                         horizontalAlignment = Alignment.CenterHorizontally
                     ) {
                         Text(
@@ -468,16 +474,18 @@ fun MatchCard(
                                 fontSize = 15.sp,
                                 fontWeight = FontWeight.ExtraBold
                             )
-                            Icon(
-                                imageVector = if (rewardsExpanded) Icons.Default.KeyboardArrowUp else Icons.Default.KeyboardArrowDown,
-                                contentDescription = "Rewards Toggle",
-                                tint = Color(0xFF64748B),
-                                modifier = Modifier.size(18.dp)
-                            )
+                            if (showRankRewards) {
+                                Icon(
+                                    imageVector = if (rewardsExpanded) Icons.Default.KeyboardArrowUp else Icons.Default.KeyboardArrowDown,
+                                    contentDescription = "Rewards Toggle",
+                                    tint = Color(0xFF64748B),
+                                    modifier = Modifier.size(18.dp)
+                                )
+                            }
                         }
                     }
 
-                    // Per Kill Column
+                    if (showPerKill) {
                     Column(
                         modifier = Modifier.weight(1f),
                         horizontalAlignment = Alignment.CenterHorizontally
@@ -501,6 +509,7 @@ fun MatchCard(
                                 fontWeight = FontWeight.ExtraBold
                             )
                         }
+                    }
                     }
 
                     // Entry Fee Column
@@ -591,7 +600,7 @@ fun MatchCard(
                 }
 
                 // Animated Rewards Listing inside the white Card
-                AnimatedVisibility(visible = rewardsExpanded) {
+                AnimatedVisibility(visible = showRankRewards && rewardsExpanded) {
                     Card(
                         modifier = Modifier.fillMaxWidth(),
                         shape = RoundedCornerShape(6.dp),
@@ -606,16 +615,7 @@ fun MatchCard(
                                 fontWeight = FontWeight.ExtraBold
                             )
                             Spacer(modifier = Modifier.height(4.dp))
-                            val rewards = match.prizePool?.rank_rewards ?: emptyList()
-                            if (rewards.isEmpty()) {
-                                Text(
-                                    text = "All prizes distributed via per-kill earnings.",
-                                    color = Color(0xFF64748B),
-                                    fontSize = 12.sp,
-                                    fontWeight = FontWeight.SemiBold
-                                )
-                            } else {
-                                rewards.forEach { reward ->
+                            MatchScoringUtils.visibleRankRewards(match.prizePool?.rank_rewards).forEach { reward ->
                                     val rankText = if (reward.from_rank == reward.to_rank) {
                                         "Rank ${reward.from_rank}"
                                     } else {
@@ -641,7 +641,6 @@ fun MatchCard(
                                         )
                                     }
                                 }
-                            }
                         }
                     }
                 }

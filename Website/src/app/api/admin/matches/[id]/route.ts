@@ -107,6 +107,14 @@ export async function PATCH(
     if (body.image !== undefined) updates.image = body.image;
     const prizePool = normalizePrizePool(body.prizePool);
     if (prizePool) updates.prizePool = prizePool;
+    if (
+      body.scoringMode === "kills_only" ||
+      body.scoringMode === "rank_only" ||
+      body.scoringMode === "rank_kills" ||
+      body.scoringMode === "manual"
+    ) {
+      updates.scoringMode = body.scoringMode;
+    }
 
     if (Object.keys(updates).length > 0) {
       const updated = await store.updateMatch(id, updates as Parameters<typeof store.updateMatch>[1]);

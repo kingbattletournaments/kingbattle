@@ -38,6 +38,7 @@ import com.kingbattle.presentation.components.CoinAmountRow
 import com.kingbattle.presentation.components.CoinIcon
 import com.kingbattle.presentation.components.rememberImageDecodeSize
 import com.kingbattle.util.MatchDateTimeFormatter
+import com.kingbattle.util.MatchScoringUtils
 import androidx.compose.material3.TabRowDefaults.tabIndicatorOffset
 import com.kingbattle.domain.model.Match
 import com.kingbattle.domain.model.Participant
@@ -255,6 +256,11 @@ fun MatchDetailScreen(
                         }
                     }
                     val bannerDecodeSize = rememberImageDecodeSize(width = 400.dp, height = 180.dp)
+                    val isCompleted = remember(match.status) {
+                        match.status?.trim()?.lowercase()?.let {
+                            it == "completed" || it == "finished" || it == "complete" || it == "ended"
+                        } ?: false
+                    }
 
                     Column(modifier = Modifier.fillMaxSize()) {
                         // 1. Top Banner Image (16:9)
@@ -294,6 +300,13 @@ fun MatchDetailScreen(
                             }
                         }
 
+                        if (isCompleted) {
+                            CompletedMatchDetailContent(
+                                match = match,
+                                participants = detail.participants,
+                                modifier = Modifier.weight(1f),
+                            )
+                        } else {
                         // 2. Tab Row
                         TabRow(
                             selectedTabIndex = selectedTabIndex,
@@ -337,11 +350,11 @@ fun MatchDetailScreen(
                             } else {
                                 // Joined Member Tab
                                 JoinedMemberTabContent(
+                                    match = match,
                                     participants = detail.participants,
-                                    matchStatus = match.status,
-                                    prizePool = match.prizePool
                                 )
                             }
+                        }
                         }
                     }
                 }
@@ -494,14 +507,17 @@ fun DescriptionTabContent(match: Match, isJoined: Boolean = false) {
                 showCoin = true,
                 modifier = Modifier.weight(1f)
             )
-            DetailGridCard(
-                label = "Per Kill",
-                value = "${match.prizePool?.coins_per_kill ?: 10}",
-                showCoin = true,
-                modifier = Modifier.weight(1f)
-            )
+            if (MatchScoringUtils.shouldShowPerKill(match)) {
+                DetailGridCard(
+                    label = "Per Kill",
+                    value = "${match.prizePool?.coins_per_kill ?: 10}",
+                    showCoin = true,
+                    modifier = Modifier.weight(1f)
+                )
+            }
         }
 
+        if (MatchScoringUtils.shouldShowRankRewards(match)) {
         // Rank Rewards Breakdown Section
         Text(
             text = "Rank Rewards",
@@ -522,67 +538,60 @@ fun DescriptionTabContent(match: Match, isJoined: Boolean = false) {
                     .padding(12.dp),
                 verticalArrangement = Arrangement.spacedBy(6.dp)
             ) {
-                val rewards = match.prizePool?.rank_rewards ?: emptyList()
-                if (rewards.isEmpty()) {
+                val rewards = MatchScoringUtils.visibleRankRewards(match.prizePool?.rank_rewards)
+                // Header row
+                Row(
+                    modifier = Modifier.fillMaxWidth(),
+                    horizontalArrangement = Arrangement.SpaceBetween
+                ) {
                     Text(
-                        text = "All prizes distributed via per-kill earnings.",
+                        text = "RANK",
                         color = TextMuted,
-                        fontSize = 12.sp
+                        fontSize = 10.sp,
+                        fontWeight = FontWeight.Bold
                     )
-                } else {
-                    // Header row
+                    Text(
+                        text = "REWARD",
+                        color = TextMuted,
+                        fontSize = 10.sp,
+                        fontWeight = FontWeight.Bold
+                    )
+                }
+                HorizontalDivider(
+                    modifier = Modifier.fillMaxWidth(),
+                    thickness = 0.5.dp,
+                    color = ThemeBorderColor
+                )
+                rewards.forEach { reward ->
+                    val rankText = if (reward.from_rank == reward.to_rank) {
+                        "#${reward.from_rank}"
+                    } else {
+                        "#${reward.from_rank} - #${reward.to_rank}"
+                    }
                     Row(
-                        modifier = Modifier.fillMaxWidth(),
+                        modifier = Modifier
+                            .fillMaxWidth()
+                            .padding(vertical = 4.dp),
                         horizontalArrangement = Arrangement.SpaceBetween
                     ) {
                         Text(
-                            text = "RANK",
-                            color = TextMuted,
-                            fontSize = 10.sp,
-                            fontWeight = FontWeight.Bold
+                            text = rankText,
+                            color = TextWhite,
+                            fontSize = 13.sp,
+                            fontWeight = FontWeight.SemiBold
                         )
-                        Text(
-                            text = "REWARD",
-                            color = TextMuted,
-                            fontSize = 10.sp,
-                            fontWeight = FontWeight.Bold
+                        CoinAmountRow(
+                            amount = "${reward.coins}",
+                            suffix = " coins",
+                            coinSize = 12.dp,
+                            fontSize = 13.sp,
+                            color = Color(0xFF0099FF),
+                            fontWeight = FontWeight.Bold,
                         )
-                    }
-                    HorizontalDivider(
-                        modifier = Modifier.fillMaxWidth(),
-                        thickness = 0.5.dp,
-                        color = ThemeBorderColor
-                    )
-                    rewards.forEach { reward ->
-                        val rankText = if (reward.from_rank == reward.to_rank) {
-                            "#${reward.from_rank}"
-                        } else {
-                            "#${reward.from_rank} - #${reward.to_rank}"
-                        }
-                        Row(
-                            modifier = Modifier
-                                .fillMaxWidth()
-                                .padding(vertical = 4.dp),
-                            horizontalArrangement = Arrangement.SpaceBetween
-                        ) {
-                            Text(
-                                text = rankText,
-                                color = TextWhite,
-                                fontSize = 13.sp,
-                                fontWeight = FontWeight.SemiBold
-                            )
-                            CoinAmountRow(
-                                amount = "${reward.coins}",
-                                suffix = " coins",
-                                coinSize = 12.dp,
-                                fontSize = 13.sp,
-                                color = Color(0xFF0099FF),
-                                fontWeight = FontWeight.Bold,
-                            )
-                        }
                     }
                 }
             }
+        }
         }
 
         // About this Match Section
@@ -672,19 +681,246 @@ fun DetailGridCard(
 }
 
 @Composable
-fun JoinedMemberTabContent(
+fun CompletedMatchDetailContent(
+    match: Match,
     participants: List<Participant>,
-    matchStatus: String? = null,
-    prizePool: PrizePool? = null
+    modifier: Modifier = Modifier,
 ) {
+    val sortedParticipants = remember(match, participants) {
+        MatchScoringUtils.sortParticipants(participants, match)
+    }
+
+    Column(
+        modifier = modifier
+            .fillMaxWidth()
+            .verticalScroll(rememberScrollState())
+            .padding(16.dp),
+        verticalArrangement = Arrangement.spacedBy(16.dp),
+    ) {
+        Text(
+            text = match.title,
+            color = TextWhite,
+            fontSize = 16.sp,
+            fontWeight = FontWeight.Bold,
+        )
+
+        DetailGridCard(
+            label = "Played on",
+            value = MatchDateTimeFormatter.format(match.starts_at),
+            modifier = Modifier.fillMaxWidth(),
+        )
+
+        Row(
+            modifier = Modifier.fillMaxWidth(),
+            horizontalArrangement = Arrangement.spacedBy(8.dp),
+        ) {
+            DetailGridCard(
+                label = "Team",
+                value = match.matchType?.uppercase() ?: "SOLO",
+                modifier = Modifier.weight(1f),
+            )
+            DetailGridCard(
+                label = "Entry Fee",
+                value = "${match.entry_fee}",
+                showCoin = true,
+                modifier = Modifier.weight(1f),
+            )
+        }
+
+        Row(
+            modifier = Modifier.fillMaxWidth(),
+            horizontalArrangement = Arrangement.spacedBy(8.dp),
+        ) {
+            DetailGridCard(
+                label = "Match Type",
+                value = if (match.entry_fee > 0) "PAID" else "FREE",
+                modifier = Modifier.weight(1f),
+            )
+            DetailGridCard(
+                label = "Map",
+                value = match.map ?: "BERMUDA",
+                modifier = Modifier.weight(1f),
+            )
+        }
+
+        Row(
+            modifier = Modifier.fillMaxWidth(),
+            horizontalArrangement = Arrangement.spacedBy(8.dp),
+        ) {
+            DetailGridCard(
+                label = "Winning Prize",
+                value = "${match.prizePool?.total_prize_pool ?: 0}",
+                showCoin = true,
+                modifier = Modifier.weight(1f),
+            )
+            if (MatchScoringUtils.shouldShowPerKill(match)) {
+                DetailGridCard(
+                    label = "Per Kill",
+                    value = "${match.prizePool?.coins_per_kill ?: 0}",
+                    showCoin = true,
+                    modifier = Modifier.weight(1f),
+                )
+            }
+        }
+
+        if (MatchScoringUtils.shouldShowRankRewards(match)) {
+            Text(
+                text = "Rank Rewards",
+                color = Color(0xFF38BDF8),
+                fontSize = 14.sp,
+                fontWeight = FontWeight.Bold,
+            )
+            Card(
+                modifier = Modifier.fillMaxWidth(),
+                shape = RoundedCornerShape(8.dp),
+                colors = CardDefaults.cardColors(containerColor = ThemeCardBg),
+                border = BorderStroke(1.dp, ThemeBorderColor),
+            ) {
+                Column(
+                    modifier = Modifier
+                        .fillMaxWidth()
+                        .padding(12.dp),
+                    verticalArrangement = Arrangement.spacedBy(6.dp),
+                ) {
+                    MatchScoringUtils.visibleRankRewards(match.prizePool?.rank_rewards).forEach { reward ->
+                        val rankText = if (reward.from_rank == reward.to_rank) {
+                            "#${reward.from_rank}"
+                        } else {
+                            "#${reward.from_rank} - #${reward.to_rank}"
+                        }
+                        Row(
+                            modifier = Modifier.fillMaxWidth(),
+                            horizontalArrangement = Arrangement.SpaceBetween,
+                        ) {
+                            Text(rankText, color = TextWhite, fontSize = 13.sp, fontWeight = FontWeight.SemiBold)
+                            CoinAmountRow(
+                                amount = "${reward.coins}",
+                                suffix = " coins",
+                                coinSize = 12.dp,
+                                fontSize = 13.sp,
+                                color = Color(0xFF0099FF),
+                                fontWeight = FontWeight.Bold,
+                            )
+                        }
+                    }
+                }
+            }
+        }
+
+        Text(
+            text = "Leaderboard",
+            color = Color(0xFF38BDF8),
+            fontSize = 14.sp,
+            fontWeight = FontWeight.Bold,
+        )
+
+        if (sortedParticipants.isEmpty()) {
+            Text("No results available.", color = TextMuted, fontSize = 14.sp)
+        } else {
+            sortedParticipants.forEachIndexed { index, participant ->
+                MatchResultRow(
+                    participant = participant,
+                    match = match,
+                    displayRank = participant.rank ?: (index + 1),
+                    showRankBadge = MatchScoringUtils.resolveScoringMode(match) != "kills_only",
+                )
+            }
+        }
+    }
+}
+
+@Composable
+private fun MatchResultRow(
+    participant: Participant,
+    match: Match,
+    displayRank: Int,
+    showRankBadge: Boolean,
+) {
+    val playerName = participant.team_members?.firstOrNull()?.inGameName
+        ?: participant.in_game_name
+        ?: "Unknown Player"
+    val totalKills = MatchScoringUtils.participantTotalKills(participant)
+    val coinsWon = MatchScoringUtils.calcCoinsWon(participant, match.prizePool, match)
+    val rankColor = when (displayRank) {
+        1 -> Color(0xFFFFD700)
+        2 -> Color(0xFFC0C0C0)
+        3 -> Color(0xFFCD7F32)
+        else -> TextMuted
+    }
+
+    Card(
+        modifier = Modifier.fillMaxWidth(),
+        shape = RoundedCornerShape(8.dp),
+        colors = CardDefaults.cardColors(containerColor = ThemeCardBg),
+        border = BorderStroke(0.5.dp, ThemeBorderColor),
+    ) {
+        Row(
+            modifier = Modifier
+                .fillMaxWidth()
+                .padding(12.dp),
+            verticalAlignment = Alignment.CenterVertically,
+            horizontalArrangement = Arrangement.SpaceBetween,
+        ) {
+            Row(
+                verticalAlignment = Alignment.CenterVertically,
+                horizontalArrangement = Arrangement.spacedBy(10.dp),
+                modifier = Modifier.weight(1f),
+            ) {
+                Box(
+                    modifier = Modifier
+                        .size(32.dp)
+                        .background(rankColor.copy(alpha = 0.2f), RoundedCornerShape(6.dp))
+                        .border(1.dp, rankColor, RoundedCornerShape(6.dp)),
+                    contentAlignment = Alignment.Center,
+                ) {
+                    Text(
+                        text = if (showRankBadge) "#$displayRank" else "${displayRank}",
+                        color = rankColor,
+                        fontSize = 11.sp,
+                        fontWeight = FontWeight.Bold,
+                    )
+                }
+                Column {
+                    Text(
+                        text = playerName,
+                        color = TextWhite,
+                        fontSize = 13.sp,
+                        fontWeight = FontWeight.SemiBold,
+                        maxLines = 1,
+                        overflow = TextOverflow.Ellipsis,
+                    )
+                    if (totalKills > 0 && MatchScoringUtils.resolveScoringMode(match) != "rank_only") {
+                        Text("$totalKills kills", color = TextMuted, fontSize = 11.sp)
+                    }
+                }
+            }
+            if (coinsWon > 0) {
+                CoinAmountRow(
+                    amount = "$coinsWon",
+                    coinSize = 12.dp,
+                    fontSize = 13.sp,
+                    color = Color(0xFF0099FF),
+                    fontWeight = FontWeight.Bold,
+                )
+            }
+        }
+    }
+}
+
+@Composable
+fun JoinedMemberTabContent(
+    match: Match,
+    participants: List<Participant>,
+) {
+    val matchStatus = match.status
+    val prizePool = match.prizePool
     val isCompleted = matchStatus?.let {
         val s = it.trim().lowercase()
         s == "completed" || s == "finished" || s == "complete" || s == "ended"
     } ?: false
 
-    // Sort participants by rank when completed
     val sortedParticipants = if (isCompleted) {
-        participants.sortedWith(compareBy { it.rank ?: Int.MAX_VALUE })
+        MatchScoringUtils.sortParticipants(participants, match)
     } else {
         participants
     }
@@ -724,15 +960,9 @@ fun JoinedMemberTabContent(
                 val playerName = participant.team_members?.firstOrNull()?.inGameName
                     ?: participant.in_game_name
                     ?: "Unknown Player"
-                val totalKills = participant.team_members?.sumOf { it.kills ?: 0 } ?: 0
-
-                // Calculate coins won based on rank and prizePool rank_rewards
-                val coinsWon = if (isCompleted && participant.rank != null && prizePool != null) {
-                    prizePool.rank_rewards.firstOrNull { reward ->
-                        participant.rank in reward.from_rank..reward.to_rank
-                    }?.coins?.let { rankCoins ->
-                        rankCoins + (totalKills * prizePool.coins_per_kill)
-                    } ?: (totalKills * prizePool.coins_per_kill)
+                val totalKills = MatchScoringUtils.participantTotalKills(participant)
+                val coinsWon = if (isCompleted) {
+                    MatchScoringUtils.calcCoinsWon(participant, prizePool, match)
                 } else 0
 
                 Card(

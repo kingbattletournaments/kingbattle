@@ -43,8 +43,10 @@ export function getStore() {
         matchType: string,
         prizePool: { coinsPerKill: number; totalPrizePool?: number; rankRewards: { fromRank: number; toRank: number; coins: number }[] },
         map?: string,
-        image?: string | null
-      ) => db.addMatch(gameModeId, title, entryFee, maxParticipants, scheduledAt, matchType, prizePool, map, image),
+        image?: string | null,
+        scoringMode?: Parameters<typeof db.addMatch>[9],
+        manualEntryOptions?: Parameters<typeof db.addMatch>[10],
+      ) => db.addMatch(gameModeId, title, entryFee, maxParticipants, scheduledAt, matchType, prizePool, map, image, scoringMode, manualEntryOptions),
       getMatch: (id: string) => db.getMatch(id),
       joinMatch: (
         matchId: string,
@@ -66,8 +68,14 @@ export function getStore() {
       cancelMatch: (id: string) => db.cancelMatch(id),
       finishMatch: (
         id: string,
-        participantUpdates?: { id: string; kills?: number[]; rank?: number }[],
-      ) => db.finishMatch(id, participantUpdates),
+        participantUpdates?: { id: string; kills?: number[]; rank?: number; customWinnings?: number }[],
+        opts?: Parameters<typeof db.finishMatch>[2],
+      ) => db.finishMatch(id, participantUpdates, opts),
+      updateMatchScoringConfig: (
+        id: string,
+        scoringMode: Parameters<typeof db.updateMatchScoringConfig>[1],
+        manualEntryOptions?: Parameters<typeof db.updateMatchScoringConfig>[2],
+      ) => db.updateMatchScoringConfig(id, scoringMode, manualEntryOptions),
       bulkUpdateParticipants: (
         matchId: string,
         updates: { id: string; kills?: number[]; rank?: number }[],
@@ -89,6 +97,8 @@ export function getStore() {
             totalPrizePool?: number;
             rankRewards: { fromRank: number; toRank: number; coins: number }[];
           };
+          scoringMode?: Parameters<typeof db.updateMatch>[1]["scoringMode"];
+          manualEntryOptions?: Parameters<typeof db.updateMatch>[1]["manualEntryOptions"];
         },
       ) => db.updateMatch(id, updates),
       updateParticipantKills: (matchId: string, participantId: string, kills: number[]) =>
@@ -245,6 +255,7 @@ export function getStore() {
       Promise.resolve(adminStore.startMatch(id, roomCode, roomPassword)).then((m) => (m ? { ...m, participants: adminStore.getParticipantsForMatch(id) } : null)),
     cancelMatch: (id: string) => Promise.resolve(adminStore.cancelMatch(id)).then((m) => (m ? { ...m, participants: adminStore.getParticipantsForMatch(id) } : null)),
     finishMatch: (id: string) => Promise.resolve(adminStore.finishMatch(id)).then((m) => (m ? { ...m, participants: adminStore.getParticipantsForMatch(id) } : null)),
+    updateMatchScoringConfig: () => Promise.resolve(null),
     deleteMatch: (id: string) => Promise.resolve(adminStore.deleteMatch(id)),
     renameMatch: (id: string, title: string) => Promise.resolve(adminStore.renameMatch(id, title)),
     updateMatch: (

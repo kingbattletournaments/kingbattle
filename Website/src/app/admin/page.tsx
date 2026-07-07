@@ -32,6 +32,19 @@ import { StorageSection } from "@/components/admin/StorageSection";
 import { AdminProgressOverlay } from "@/components/admin/AdminProgressOverlay";
 import { delay, progressMessage, useSimulatedProgress } from "@/components/admin/useSimulatedProgress";
 import { AdminMatchSlotsPanel } from "@/components/admin/AdminMatchSlotsPanel";
+import { PrizePoolFormFields } from "@/components/admin/PrizePoolFormFields";
+import { MatchScoringModeSelector } from "@/components/admin/MatchScoringModeSelector";
+import {
+  computeScoringMode,
+  hasActiveRankRewards,
+  resolveScoringMode,
+  shouldShowKillFields,
+  shouldShowRankFields,
+  shouldShowCustomWinnings,
+  DEFAULT_MANUAL_ENTRY_OPTIONS,
+  type ManualEntryOptions,
+  type ScoringMode,
+} from "@/lib/match-scoring";
 import {
   AdminBannerGridSkeleton,
   AdminFormPanelSkeleton,
@@ -74,6 +87,8 @@ type Match = {
   image?: string | null;
   participantCount?: number;
   map?: string;
+  scoringMode?: ScoringMode | string;
+  manualEntryOptions?: ManualEntryOptions;
 };
 type MatchPreset = {
   id: string;
@@ -86,6 +101,8 @@ type MatchPreset = {
   map?: string;
   prizePool?: PrizePool;
   image?: string | null;
+  scoringMode?: ScoringMode | string;
+  manualEntryOptions?: ManualEntryOptions;
 };
 type User = { id: string; email: string; displayName: string; coins: number; wonCoins?: number; isBlocked?: boolean; blockReason?: string | null; username?: string };
 
@@ -1643,6 +1660,7 @@ function MatchesSection({
   const [matchType, setMatchType] = useState<MatchType>("solo");
   const [coinsPerKill, setCoinsPerKill] = useState("5");
   const [totalPrizePool, setTotalPrizePool] = useState("");
+  const [rankRewardsEnabled, setRankRewardsEnabled] = useState(false);
   const [rankRewards, setRankRewards] = useState<RankReward[]>(DEFAULT_RANK_REWARDS);
   const [imageFile, setImageFile] = useState<File | null>(null);
   const [imagePreview, setImagePreview] = useState<string | null>(null);
@@ -1848,6 +1866,7 @@ function MatchesSection({
     setMatchType(m.matchType ?? "solo");
     setCoinsPerKill(String(m.prizePool?.coinsPerKill ?? 5));
     setTotalPrizePool(m.prizePool?.totalPrizePool != null ? String(m.prizePool.totalPrizePool) : "");
+    setRankRewardsEnabled(hasActiveRankRewards(m.prizePool?.rankRewards));
     setRankRewards(m.prizePool?.rankRewards?.length ? m.prizePool.rankRewards : [...DEFAULT_RANK_REWARDS]);
     setScheduledAt(toDatetimeLocalValue(m.scheduledAt));
     setImageFile(null);
@@ -1864,6 +1883,7 @@ function MatchesSection({
     setMatchType("solo");
     setCoinsPerKill("5");
     setTotalPrizePool("");
+    setRankRewardsEnabled(false);
     setRankRewards([...DEFAULT_RANK_REWARDS]);
     setImageFile(null);
     if (imagePreview) URL.revokeObjectURL(imagePreview);
@@ -2039,17 +2059,21 @@ function MatchesSection({
         imageUrl = await uploadImage(imageFile);
       }
 
+      const prizePool = {
+        coinsPerKill: Number(coinsPerKill) || 0,
+        totalPrizePool: totalPrizePool ? Number(totalPrizePool) : 0,
+        rankRewards: rankRewardsEnabled
+          ? rankRewards.filter((r) => r.fromRank > 0 && r.toRank >= r.fromRank && r.coins >= 0)
+          : [],
+      };
       const payload = {
         title,
         entryFee: Number(entryFee),
         maxParticipants: Number(maxParticipants) || 16,
         scheduledAt: scheduledAt || new Date().toISOString(),
         matchType,
-        prizePool: {
-          coinsPerKill: Number(coinsPerKill) || 0,
-          totalPrizePool: totalPrizePool ? Number(totalPrizePool) : 0,
-          rankRewards: rankRewards.filter((r) => r.fromRank > 0 && r.toRank >= r.fromRank && r.coins >= 0),
-        },
+        prizePool,
+        scoringMode: computeScoringMode(prizePool, rankRewardsEnabled),
         ...(imageUrl !== undefined ? { image: imageUrl } : {}),
       };
 
@@ -2564,34 +2588,16 @@ function MatchesSection({
                 onChange={handleImageChange}
                 onClear={handleImageClear}
               />
-              <div className="rounded-xl border border-zinc-200/80 bg-zinc-50/10 p-5">
-                <h3 className="mb-3 text-sm font-semibold text-zinc-600">Prize Pool</h3>
-                <div className="mb-4 grid gap-4 sm:grid-cols-2">
-                  <div>
-                    <label className="mb-1 block text-xs text-zinc-500">Total prize pool (coins)</label>
-                    <input
-                      type="number"
-                      min="0"
-                      value={totalPrizePool}
-                      onChange={(e) => setTotalPrizePool(e.target.value)}
-                      className="admin-input w-full rounded-lg px-4 py-2.5 text-sm text-zinc-900 outline-none"
-                      placeholder="e.g. 500"
-                    />
-                  </div>
-                  <div>
-                    <label className="mb-1 block text-xs text-zinc-500">Coins per kill</label>
-                    <input
-                      type="number"
-                      min="0"
-                      value={coinsPerKill}
-                      onChange={(e) => setCoinsPerKill(e.target.value)}
-                      className="admin-input w-full rounded-lg px-4 py-2.5 text-sm text-zinc-900 outline-none"
-                      placeholder="5"
-                    />
-                  </div>
-                </div>
-                <RankRewardsEditor value={rankRewards} onChange={setRankRewards} />
-              </div>
+              <PrizePoolFormFields
+                coinsPerKill={coinsPerKill}
+                totalPrizePool={totalPrizePool}
+                rankRewardsEnabled={rankRewardsEnabled}
+                rankRewards={rankRewards}
+                onCoinsPerKillChange={setCoinsPerKill}
+                onTotalPrizePoolChange={setTotalPrizePool}
+                onRankRewardsEnabledChange={setRankRewardsEnabled}
+                onRankRewardsChange={setRankRewards}
+              />
               <div className="flex gap-3 pt-2">
                 <button
                   type="submit"
@@ -2868,6 +2874,7 @@ function MatchPresetsSection({
   const [map, setMap] = useState("BERMUDA");
   const [coinsPerKill, setCoinsPerKill] = useState("5");
   const [totalPrizePool, setTotalPrizePool] = useState("");
+  const [rankRewardsEnabled, setRankRewardsEnabled] = useState(false);
   const [rankRewards, setRankRewards] = useState<RankReward[]>(DEFAULT_RANK_REWARDS);
   const [imageFile, setImageFile] = useState<File | null>(null);
   const [imagePreview, setImagePreview] = useState<string | null>(null);
@@ -2910,6 +2917,7 @@ function MatchPresetsSection({
     setMap("BERMUDA");
     setCoinsPerKill("5");
     setTotalPrizePool("");
+    setRankRewardsEnabled(false);
     setRankRewards([...DEFAULT_RANK_REWARDS]);
     if (imagePreview) URL.revokeObjectURL(imagePreview);
     setImageFile(null);
@@ -2927,6 +2935,7 @@ function MatchPresetsSection({
     setMap(p.map ?? "BERMUDA");
     setCoinsPerKill(String(p.prizePool?.coinsPerKill ?? 5));
     setTotalPrizePool(p.prizePool?.totalPrizePool != null ? String(p.prizePool.totalPrizePool) : "");
+    setRankRewardsEnabled(hasActiveRankRewards(p.prizePool?.rankRewards));
     setRankRewards(p.prizePool?.rankRewards?.length ? p.prizePool.rankRewards : [...DEFAULT_RANK_REWARDS]);
     setImageFile(null);
     if (imagePreview) URL.revokeObjectURL(imagePreview);
@@ -2980,8 +2989,18 @@ function MatchPresetsSection({
         prizePool: {
           coinsPerKill: Number(coinsPerKill) || 0,
           totalPrizePool: totalPrizePool ? Number(totalPrizePool) : 0,
-          rankRewards: rankRewards.filter((r) => r.fromRank > 0 && r.toRank >= r.fromRank && r.coins >= 0),
+          rankRewards: rankRewardsEnabled
+            ? rankRewards.filter((r) => r.fromRank > 0 && r.toRank >= r.fromRank && r.coins >= 0)
+            : [],
         },
+        scoringMode: computeScoringMode(
+          {
+            coinsPerKill: Number(coinsPerKill) || 0,
+            totalPrizePool: totalPrizePool ? Number(totalPrizePool) : 0,
+            rankRewards: rankRewardsEnabled ? rankRewards : [],
+          },
+          rankRewardsEnabled,
+        ),
         ...(imageUrl !== undefined ? { image: imageUrl } : {}),
       };
 
@@ -3233,32 +3252,16 @@ function MatchPresetsSection({
                 onChange={handleImageChange}
                 onClear={handleImageClear}
               />
-              <div className="rounded-xl border border-zinc-200/80 bg-zinc-50/10 p-5">
-                <h3 className="mb-3 text-sm font-semibold text-zinc-600">Prize Pool</h3>
-                <div className="mb-4 grid gap-4 sm:grid-cols-2">
-                  <div>
-                    <label className="mb-1 block text-xs text-zinc-500">Total prize pool (coins)</label>
-                    <input
-                      type="number"
-                      min="0"
-                      value={totalPrizePool}
-                      onChange={(e) => setTotalPrizePool(e.target.value)}
-                      className="admin-input w-full rounded-lg px-4 py-2.5 text-sm text-zinc-900 outline-none"
-                    />
-                  </div>
-                  <div>
-                    <label className="mb-1 block text-xs text-zinc-500">Coins per kill</label>
-                    <input
-                      type="number"
-                      min="0"
-                      value={coinsPerKill}
-                      onChange={(e) => setCoinsPerKill(e.target.value)}
-                      className="admin-input w-full rounded-lg px-4 py-2.5 text-sm text-zinc-900 outline-none"
-                    />
-                  </div>
-                </div>
-                <RankRewardsEditor value={rankRewards} onChange={setRankRewards} />
-              </div>
+              <PrizePoolFormFields
+                coinsPerKill={coinsPerKill}
+                totalPrizePool={totalPrizePool}
+                rankRewardsEnabled={rankRewardsEnabled}
+                rankRewards={rankRewards}
+                onCoinsPerKillChange={setCoinsPerKill}
+                onTotalPrizePoolChange={setTotalPrizePool}
+                onRankRewardsEnabledChange={setRankRewardsEnabled}
+                onRankRewardsChange={setRankRewards}
+              />
               <div className="flex gap-3 pt-2">
                 <button
                   type="submit"
@@ -3316,14 +3319,21 @@ function MatchDetailView({
   const [finishing, setFinishing] = useState(false);
   const [localKills, setLocalKills] = useState<Record<string, string>>({});
   const [localRank, setLocalRank] = useState<Record<string, string>>({});
+  const [localWinnings, setLocalWinnings] = useState<Record<string, string>>({});
+  const [scoringMode, setScoringMode] = useState<ScoringMode>("kills_only");
+  const [manualEntryOptions, setManualEntryOptions] = useState<ManualEntryOptions>(
+    DEFAULT_MANUAL_ENTRY_OPTIONS,
+  );
   const [subView, setSubView] = useState<"overview" | "players">(playersOnly ? "players" : "overview");
   const [formInitialized, setFormInitialized] = useState(false);
+  const [scoringInitialized, setScoringInitialized] = useState(false);
 
   const finishProgress = useSimulatedProgress(finishing, { estimatedMs: 55000, cap: 92 });
 
   useEffect(() => {
     let cancelled = false;
     setFormInitialized(false);
+    setScoringInitialized(false);
     fetch(`/api/admin/matches/${matchId}`)
       .then((r) => r.json())
       .then((data) => {
@@ -3357,31 +3367,78 @@ function MatchDetailView({
     setFormInitialized(true);
   }, [match, formInitialized]);
 
+  useEffect(() => {
+    if (!match || scoringInitialized) return;
+    setScoringMode(resolveScoringMode(match.scoringMode, match.prizePool));
+    setManualEntryOptions(match.manualEntryOptions ?? DEFAULT_MANUAL_ENTRY_OPTIONS);
+    setScoringInitialized(true);
+  }, [match, scoringInitialized]);
+
+  const persistScoringMode = async (mode: ScoringMode, manualOpts: ManualEntryOptions) => {
+    if (!match || match.status !== "ongoing") return;
+    try {
+      await fetch(`/api/admin/matches/${matchId}/scoring`, {
+        method: "PATCH",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ scoringMode: mode, manualEntryOptions: manualOpts }),
+      });
+    } catch {
+      // Non-blocking; finish payload still carries scoring mode
+    }
+  };
+
+  const handleScoringModeChange = (mode: ScoringMode) => {
+    setScoringMode(mode);
+    void persistScoringMode(mode, manualEntryOptions);
+  };
+
+  const handleManualEntryOptionsChange = (opts: ManualEntryOptions) => {
+    setManualEntryOptions(opts);
+    if (scoringMode === "manual") {
+      void persistScoringMode("manual", opts);
+    }
+  };
+
   const mode = modes.find((m) => m.id === match?.gameModeId);
   const gameName = mode ? games.find((g) => g.id === mode.gameId)?.name ?? "?" : "?";
 
   const handleFinish = async () => {
     if (!match) return;
     const participants = match.participants ?? [];
-    const missingRank = participants.filter((p) => {
-      const rankStr = localRank[p.id] ?? "";
-      return rankStr.trim() === "";
-    });
-    if (missingRank.length > 0) {
-      alert("Enter an individual rank for every player before finishing the match.");
-      return;
+    const activeMode = scoringMode;
+    const showRank = shouldShowRankFields(activeMode, manualEntryOptions);
+    const showKills = shouldShowKillFields(activeMode, manualEntryOptions);
+    const showCustom = shouldShowCustomWinnings(activeMode, manualEntryOptions);
+
+    if (showRank) {
+      const missingRank = participants.filter((p) => (localRank[p.id] ?? "").trim() === "");
+      if (missingRank.length > 0) {
+        alert("Enter a rank for every player before finishing the match.");
+        return;
+      }
+    }
+    if (showCustom) {
+      const missingWinnings = participants.filter((p) => (localWinnings[p.id] ?? "").trim() === "");
+      if (missingWinnings.length > 0) {
+        alert("Enter a custom winning amount for every player before finishing the match.");
+        return;
+      }
     }
     if (!confirm("Finish this match? Results will be saved and coins transferred. This cannot be undone.")) return;
     setFinishing(true);
     try {
       const payload = {
+        scoringMode: activeMode,
+        manualEntryOptions,
         participants: participants.map((p) => {
           const killsStr = localKills[p.id] ?? "";
           const rankStr = localRank[p.id] ?? "";
+          const winningsStr = localWinnings[p.id] ?? "";
           return {
             id: p.id,
-            kills: [killsStr.trim() === "" ? 0 : Number(killsStr) || 0],
-            rank: Number(rankStr) || undefined,
+            kills: showKills ? [killsStr.trim() === "" ? 0 : Number(killsStr) || 0] : undefined,
+            rank: showRank ? Number(rankStr) || undefined : undefined,
+            customWinnings: showCustom ? Number(winningsStr) || 0 : undefined,
           };
         }),
       };
@@ -3471,6 +3528,16 @@ function MatchDetailView({
           </p>
         </div>
 
+        {isOngoing && !readOnly && (
+          <MatchScoringModeSelector
+            prizePool={match.prizePool}
+            scoringMode={scoringMode}
+            manualEntryOptions={manualEntryOptions}
+            onScoringModeChange={handleScoringModeChange}
+            onManualEntryOptionsChange={handleManualEntryOptionsChange}
+          />
+        )}
+
         <AdminMatchSlotsPanel
           matchType={match.matchType ?? "solo"}
           maxParticipants={maxParticipants}
@@ -3479,17 +3546,21 @@ function MatchDetailView({
           isOngoing={isOngoing}
           readOnly={readOnly}
           leaderboardMode={leaderboardMode}
+          scoringMode={scoringMode}
+          manualEntryOptions={manualEntryOptions}
           localKills={localKills}
           setLocalKills={setLocalKills}
           localRank={localRank}
           setLocalRank={setLocalRank}
+          localWinnings={localWinnings}
+          setLocalWinnings={setLocalWinnings}
         />
 
         {isOngoing && !readOnly && (
           <div className="rounded-xl border border-emerald-500/20 bg-emerald-500/5 p-6">
             <h3 className="mb-4 text-sm font-medium text-emerald-700">Finish Match</h3>
             <p className="mb-4 text-xs text-zinc-500">
-              Enter kills and individual rank for every player above, then finish the match. Team placement is calculated automatically from player ranks.
+              Enter the fields shown above for your selected management mode, then finish the match.
             </p>
             <button
               type="button"

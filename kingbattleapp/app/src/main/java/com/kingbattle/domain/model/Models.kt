@@ -125,7 +125,20 @@ data class Match(
     @SerializedName("map")
     val map: String? = "BERMUDA",
     @SerializedName("image")
-    val image: String? = null
+    val image: String? = null,
+    @SerializedName("scoring_mode", alternate = ["scoringMode"])
+    val scoring_mode: String? = null,
+    @SerializedName("manual_entry_options", alternate = ["manualEntryOptions"])
+    val manual_entry_options: ManualEntryOptions? = null
+)
+
+data class ManualEntryOptions(
+    @SerializedName("enterKills", alternate = ["enter_kills"])
+    val enterKills: Boolean = true,
+    @SerializedName("enterRank", alternate = ["enter_rank"])
+    val enterRank: Boolean = true,
+    @SerializedName("enterCustomWinnings", alternate = ["enter_custom_winnings"])
+    val enterCustomWinnings: Boolean = true
 )
 
 data class MatchDetail(

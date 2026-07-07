@@ -865,7 +865,7 @@ ALTER TABLE public.app_referrals
 ALTER TABLE public.app_referrals
   ADD CONSTRAINT app_referrals_referred_id_fkey
   FOREIGN KEY (referred_id) REFERENCES public.app_users(username) ON DELETE CASCADE;
-
+
 -- =============================================================================
 -- 020: King Battle — Production schema (migration_production_schema.sql)
 -- =============================================================================
@@ -1298,3 +1298,21 @@ VALUES
   ('announcement_text', '', NOW()),
   ('banner_image_url', '', NOW())
 ON CONFLICT (key) DO NOTHING;
+
+-- =============================================================================
+-- 027: Match scoring modes (migration_scoring_mode.sql)
+-- =============================================================================
+
+ALTER TABLE public.matches
+  ADD COLUMN IF NOT EXISTS scoring_mode TEXT NOT NULL DEFAULT 'kills_only'
+  CHECK (scoring_mode IN ('kills_only', 'rank_only', 'rank_kills', 'manual'));
+
+ALTER TABLE public.match_presets
+  ADD COLUMN IF NOT EXISTS scoring_mode TEXT NOT NULL DEFAULT 'kills_only'
+  CHECK (scoring_mode IN ('kills_only', 'rank_only', 'rank_kills', 'manual'));
+
+ALTER TABLE public.matches
+  ADD COLUMN IF NOT EXISTS manual_entry_options JSONB DEFAULT NULL;
+
+ALTER TABLE public.match_presets
+  ADD COLUMN IF NOT EXISTS manual_entry_options JSONB DEFAULT NULL;

@@ -6,12 +6,21 @@ import {
   type AdminSlotParticipant,
   type PrizePool,
   type TeamSlotEntry,
-  calcKillCoins,
   calcPlayerWinnings,
   computeTeamOrdinals,
   getFilledTeams,
   sortTeamsForLeaderboard,
 } from "@/lib/admin-match-teams";
+import {
+  calcParticipantPayout,
+  resolveScoringMode,
+  shouldShowCustomWinnings,
+  shouldShowKillFields,
+  shouldShowRankFields,
+  sortParticipantsForLeaderboard,
+  type ManualEntryOptions,
+  type ScoringMode,
+} from "@/lib/match-scoring";
 
 export function parseKillsInput(value: string | undefined): number {
   if (value === undefined || value.trim() === "") return 0;
@@ -25,6 +34,12 @@ function parseRankInput(value: string | undefined): number | undefined {
   return Number.isFinite(n) && n >= 1 ? Math.floor(n) : undefined;
 }
 
+function parseWinningsInput(value: string | undefined): number | undefined {
+  if (value === undefined || value.trim() === "") return undefined;
+  const n = Number(value);
+  return Number.isFinite(n) && n >= 0 ? Math.floor(n) : undefined;
+}
+
 function SlotCell({
   slotPositionInTeam,
   participant,
@@ -34,8 +49,13 @@ function SlotCell({
   kills,
   rank,
   winnings,
+  customWinnings,
+  showKills,
+  showRank,
+  showCustomWinnings,
   onKillsChange,
   onRankChange,
+  onCustomWinningsChange,
 }: {
   slotPositionInTeam: number;
   participant: AdminSlotParticipant | null;
@@ -45,8 +65,13 @@ function SlotCell({
   kills: string;
   rank: string;
   winnings?: number;
+  customWinnings?: string;
+  showKills: boolean;
+  showRank: boolean;
+  showCustomWinnings: boolean;
   onKillsChange?: (v: string) => void;
   onRankChange?: (v: string) => void;
+  onCustomWinningsChange?: (v: string) => void;
 }) {
   const filled = !!participant;
   const ign = participant?.teamMembers?.[0]?.inGameName?.trim();
@@ -84,36 +109,53 @@ function SlotCell({
 
             {isOngoing && !readOnly && (
               <div className="mt-auto flex flex-wrap items-center gap-2 pt-2">
-                <label className="flex items-center gap-1 text-[10px] text-zinc-500">
-                  Kills
-                  <input
-                    type="text"
-                    inputMode="numeric"
-                    value={kills}
-                    placeholder="0"
-                    onChange={(e) => onKillsChange?.(e.target.value.replace(/\D/g, ""))}
-                    className="admin-input w-12 rounded-md px-1.5 py-1 text-center text-xs"
-                  />
-                </label>
-                <label className="flex items-center gap-1 text-[10px] text-zinc-500">
-                  Rank
-                  <input
-                    type="text"
-                    inputMode="numeric"
-                    value={rank}
-                    placeholder="—"
-                    onChange={(e) => onRankChange?.(e.target.value.replace(/\D/g, ""))}
-                    className="admin-input w-12 rounded-md px-1.5 py-1 text-center text-xs"
-                  />
-                </label>
+                {showKills && (
+                  <label className="flex items-center gap-1 text-[10px] text-zinc-500">
+                    Kills
+                    <input
+                      type="text"
+                      inputMode="numeric"
+                      value={kills}
+                      placeholder="0"
+                      onChange={(e) => onKillsChange?.(e.target.value.replace(/\D/g, ""))}
+                      className="admin-input w-12 rounded-md px-1.5 py-1 text-center text-xs"
+                    />
+                  </label>
+                )}
+                {showRank && (
+                  <label className="flex items-center gap-1 text-[10px] text-zinc-500">
+                    Rank
+                    <input
+                      type="text"
+                      inputMode="numeric"
+                      value={rank}
+                      placeholder="—"
+                      onChange={(e) => onRankChange?.(e.target.value.replace(/\D/g, ""))}
+                      className="admin-input w-12 rounded-md px-1.5 py-1 text-center text-xs"
+                    />
+                  </label>
+                )}
+                {showCustomWinnings && (
+                  <label className="flex items-center gap-1 text-[10px] text-zinc-500">
+                    Won
+                    <input
+                      type="text"
+                      inputMode="numeric"
+                      value={customWinnings ?? ""}
+                      placeholder="0"
+                      onChange={(e) => onCustomWinningsChange?.(e.target.value.replace(/\D/g, ""))}
+                      className="admin-input w-14 rounded-md px-1.5 py-1 text-center text-xs"
+                    />
+                  </label>
+                )}
               </div>
             )}
 
-            {leaderboardMode && rank && (
+            {leaderboardMode && rank && showRank && (
               <p className="mt-auto pt-2 text-[10px] font-medium text-zinc-600">Rank #{rank}</p>
             )}
 
-            {leaderboardMode && parseKillsInput(kills) > 0 && (
+            {leaderboardMode && parseKillsInput(kills) > 0 && showKills && (
               <p className="text-[10px] text-zinc-500">{parseKillsInput(kills)} kills</p>
             )}
 
@@ -138,11 +180,15 @@ function TeamBox({
   leaderboardMode,
   localKills,
   localRank,
+  localWinnings,
   setLocalKills,
   setLocalRank,
+  setLocalWinnings,
   prizePool,
   allTeams,
   matchType,
+  scoringMode,
+  manualEntryOptions,
 }: {
   teamNumber: number;
   teamOrdinal?: number;
@@ -152,12 +198,20 @@ function TeamBox({
   leaderboardMode: boolean;
   localKills: Record<string, string>;
   localRank: Record<string, string>;
+  localWinnings: Record<string, string>;
   setLocalKills: Dispatch<SetStateAction<Record<string, string>>>;
   setLocalRank: Dispatch<SetStateAction<Record<string, string>>>;
+  setLocalWinnings: Dispatch<SetStateAction<Record<string, string>>>;
   prizePool?: PrizePool;
   allTeams: ReturnType<typeof getFilledTeams>;
   matchType: string;
+  scoringMode: ScoringMode;
+  manualEntryOptions?: ManualEntryOptions;
 }) {
+  const showKills = shouldShowKillFields(scoringMode, manualEntryOptions);
+  const showRank = shouldShowRankFields(scoringMode, manualEntryOptions);
+  const showCustomWinnings = shouldShowCustomWinnings(scoringMode, manualEntryOptions);
+
   const players = slots
     .map((s) => s.participant)
     .filter((p): p is AdminSlotParticipant & { slotIndex: number } => !!p);
@@ -172,7 +226,7 @@ function TeamBox({
         <h4 className="text-xs font-bold uppercase tracking-wider text-zinc-700">
           Team {teamNumber}
         </h4>
-        {leaderboardMode && teamOrdinal != null && (
+        {leaderboardMode && teamOrdinal != null && showRank && (
           <span className="rounded-full bg-zinc-900 px-2.5 py-0.5 text-[10px] font-bold text-white">
             Placement #{teamOrdinal}
           </span>
@@ -184,37 +238,49 @@ function TeamBox({
           const p = slot.participant;
           const killsDisplay = p ? (localKills[p.id] ?? "") : "";
           const rankDisplay = p ? (localRank[p.id] ?? "") : "";
+          const customDisplay = p ? (localWinnings[p.id] ?? "") : "";
 
           const winnings =
             p && leaderboardMode
-              ? calcPlayerWinnings(
-                  {
-                    ...p,
-                    rank: parseRankInput(rankDisplay) ?? p.rank,
-                    teamMembers: [
-                      {
-                        ...p.teamMembers[0],
-                        kills: parseKillsInput(killsDisplay),
-                      },
-                    ],
-                  },
-                  teamForCalc,
-                  teamOrdinal ?? null,
-                  prizePool,
-                  allTeams.map((t) => ({
-                    ...t,
-                    players: t.players.map((pl) => ({
-                      ...pl,
-                      rank: parseRankInput(localRank[pl.id] ?? "") ?? pl.rank,
-                      teamMembers: [
-                        {
-                          ...pl.teamMembers[0],
-                          kills: parseKillsInput(localKills[pl.id] ?? ""),
-                        },
-                      ],
+              ? (() => {
+                  const custom = parseWinningsInput(customDisplay);
+                  if (typeof custom === "number") return custom;
+                  const kills = parseKillsInput(killsDisplay);
+                  const rank = parseRankInput(rankDisplay) ?? p.rank;
+                  if (scoringMode === "manual") {
+                    return calcParticipantPayout(
+                      kills,
+                      rank,
+                      prizePool,
+                      scoringMode,
+                      undefined,
+                      manualEntryOptions,
+                    );
+                  }
+                  return calcPlayerWinnings(
+                    {
+                      ...p,
+                      rank,
+                      teamMembers: [{ ...p.teamMembers[0], kills: parseKillsInput(killsDisplay) }],
+                    },
+                    teamForCalc,
+                    teamOrdinal ?? null,
+                    prizePool,
+                    allTeams.map((t) => ({
+                      ...t,
+                      players: t.players.map((pl) => ({
+                        ...pl,
+                        rank: parseRankInput(localRank[pl.id] ?? "") ?? pl.rank,
+                        teamMembers: [
+                          {
+                            ...pl.teamMembers[0],
+                            kills: parseKillsInput(localKills[pl.id] ?? ""),
+                          },
+                        ],
+                      })),
                     })),
-                  })),
-                )
+                  );
+                })()
               : undefined;
 
           return (
@@ -227,12 +293,19 @@ function TeamBox({
               leaderboardMode={leaderboardMode}
               kills={killsDisplay}
               rank={rankDisplay}
+              customWinnings={customDisplay}
               winnings={winnings}
+              showKills={showKills}
+              showRank={showRank}
+              showCustomWinnings={showCustomWinnings}
               onKillsChange={
                 p ? (v) => setLocalKills((prev) => ({ ...prev, [p.id]: v })) : undefined
               }
               onRankChange={
                 p ? (v) => setLocalRank((prev) => ({ ...prev, [p.id]: v })) : undefined
+              }
+              onCustomWinningsChange={
+                p ? (v) => setLocalWinnings((prev) => ({ ...prev, [p.id]: v })) : undefined
               }
             />
           );
@@ -250,10 +323,14 @@ export function AdminMatchSlotsPanel({
   isOngoing,
   readOnly = false,
   leaderboardMode = false,
+  scoringMode: scoringModeProp,
+  manualEntryOptions,
   localKills,
   setLocalKills,
   localRank,
   setLocalRank,
+  localWinnings,
+  setLocalWinnings,
 }: {
   matchType?: string;
   maxParticipants: number;
@@ -262,11 +339,20 @@ export function AdminMatchSlotsPanel({
   isOngoing: boolean;
   readOnly?: boolean;
   leaderboardMode?: boolean;
+  scoringMode?: ScoringMode | string | null;
+  manualEntryOptions?: ManualEntryOptions;
   localKills: Record<string, string>;
   setLocalKills: Dispatch<SetStateAction<Record<string, string>>>;
   localRank: Record<string, string>;
   setLocalRank: Dispatch<SetStateAction<Record<string, string>>>;
+  localWinnings: Record<string, string>;
+  setLocalWinnings: Dispatch<SetStateAction<Record<string, string>>>;
 }) {
+  const scoringMode = resolveScoringMode(scoringModeProp, prizePool);
+  const showKills = shouldShowKillFields(scoringMode, manualEntryOptions);
+  const showRank = shouldShowRankFields(scoringMode, manualEntryOptions);
+  const showCustomWinnings = shouldShowCustomWinnings(scoringMode, manualEntryOptions);
+
   const teamSize = teamSizeFor(matchType);
   const isTeamMode = teamSize > 1;
   const filledTeams = getFilledTeams(maxParticipants, matchType, participants);
@@ -280,9 +366,10 @@ export function AdminMatchSlotsPanel({
     })),
   }));
 
-  const teamsForDisplay = leaderboardMode
-    ? sortTeamsForLeaderboard(teamsWithRanks)
-    : filledTeams;
+  const teamsForDisplay =
+    leaderboardMode && showRank
+      ? sortTeamsForLeaderboard(teamsWithRanks)
+      : filledTeams;
 
   const ordinals = computeTeamOrdinals(teamsWithRanks);
 
@@ -305,11 +392,16 @@ export function AdminMatchSlotsPanel({
   if (!isTeamMode) {
     const soloPlayers = filledTeams[0]?.players ?? [];
     const sortedSolo = leaderboardMode
-      ? [...soloPlayers].sort((a, b) => {
-          const ra = parseRankInput(localRank[a.id] ?? "") ?? a.rank ?? 9999;
-          const rb = parseRankInput(localRank[b.id] ?? "") ?? b.rank ?? 9999;
-          return ra - rb;
-        })
+      ? sortParticipantsForLeaderboard(
+          soloPlayers.map((p) => ({
+            ...p,
+            rank: parseRankInput(localRank[p.id] ?? "") ?? p.rank,
+            teamMembers: [
+              { ...p.teamMembers[0], kills: parseKillsInput(localKills[p.id] ?? "") },
+            ],
+          })),
+          scoringMode,
+        )
       : soloPlayers;
 
     return (
@@ -318,27 +410,36 @@ export function AdminMatchSlotsPanel({
           <h3 className="text-sm font-semibold text-zinc-800">{panelTitle}</h3>
           {isOngoing && !readOnly && (
             <p className="mt-1 text-xs text-zinc-500">
-              Fill kills and rank for each player, then click Finish Match.
+              {showCustomWinnings
+                ? "Enter custom winning amounts or optional kills/ranks, then finish the match."
+                : showRank && showKills
+                  ? "Fill kills and rank for each player, then click Finish Match."
+                  : showRank
+                    ? "Fill rank for each player, then click Finish Match."
+                    : "Fill kills for each player, then click Finish Match."}
             </p>
           )}
         </div>
         <div className="grid grid-cols-2 gap-3 sm:grid-cols-3 md:grid-cols-4 lg:grid-cols-5 xl:grid-cols-6">
           {sortedSolo.map((p) => {
-            const ign = p.teamMembers?.[0]?.inGameName?.trim() || "—";
             const killsDisplay = localKills[p.id] ?? "";
             const rankDisplay = localRank[p.id] ?? "";
+            const customDisplay = localWinnings[p.id] ?? "";
             const kills = parseKillsInput(killsDisplay);
             const rank = parseRankInput(rankDisplay) ?? p.rank;
-            const killCoins = calcKillCoins(kills, prizePool);
-            let rankCoins = 0;
-            if (typeof rank === "number" && prizePool) {
-              for (const r of prizePool.rankRewards ?? []) {
-                if (rank >= r.fromRank && rank <= r.toRank) {
-                  rankCoins = r.coins;
-                  break;
-                }
-              }
-            }
+            const custom = parseWinningsInput(customDisplay);
+            const winnings = leaderboardMode
+              ? typeof custom === "number"
+                ? custom
+                : calcParticipantPayout(
+                    kills,
+                    rank,
+                    prizePool,
+                    scoringMode,
+                    undefined,
+                    manualEntryOptions,
+                  )
+              : undefined;
 
             return (
               <SlotCell
@@ -350,9 +451,14 @@ export function AdminMatchSlotsPanel({
                 leaderboardMode={leaderboardMode}
                 kills={killsDisplay}
                 rank={rankDisplay}
-                winnings={leaderboardMode ? killCoins + rankCoins : undefined}
+                customWinnings={customDisplay}
+                winnings={winnings}
+                showKills={showKills}
+                showRank={showRank}
+                showCustomWinnings={showCustomWinnings}
                 onKillsChange={(v) => setLocalKills((prev) => ({ ...prev, [p.id]: v }))}
                 onRankChange={(v) => setLocalRank((prev) => ({ ...prev, [p.id]: v }))}
+                onCustomWinningsChange={(v) => setLocalWinnings((prev) => ({ ...prev, [p.id]: v }))}
               />
             );
           })}
@@ -367,7 +473,7 @@ export function AdminMatchSlotsPanel({
         <h3 className="text-sm font-semibold text-zinc-800">{panelTitle}</h3>
         {isOngoing && !readOnly && (
           <p className="mt-1 text-xs text-zinc-500">
-            Slots are numbered 1–{teamSize} within each team. Enter kills and individual rank per player, then finish the match.
+            Enter the fields shown for each slot, then finish the match.
           </p>
         )}
       </div>
@@ -383,11 +489,15 @@ export function AdminMatchSlotsPanel({
             leaderboardMode={leaderboardMode}
             localKills={localKills}
             localRank={localRank}
+            localWinnings={localWinnings}
             setLocalKills={setLocalKills}
             setLocalRank={setLocalRank}
+            setLocalWinnings={setLocalWinnings}
             prizePool={prizePool}
             allTeams={teamsWithRanks}
             matchType={matchType}
+            scoringMode={scoringMode}
+            manualEntryOptions={manualEntryOptions}
           />
         ))}
       </div>
