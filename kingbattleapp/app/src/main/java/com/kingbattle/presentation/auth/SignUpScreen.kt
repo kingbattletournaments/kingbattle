@@ -81,7 +81,7 @@ fun SignUpScreen(
         AuthFormField(
             value = lastName,
             onValueChange = { lastName = it },
-            placeholder = "Last Name",
+            placeholder = "Last Name (optional)",
             keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.Text),
         )
 
@@ -118,7 +118,7 @@ fun SignUpScreen(
         AuthFormField(
             value = referralCode,
             onValueChange = { referralCode = it },
-            placeholder = "Referral Code",
+            placeholder = "Referral Code (optional)",
             keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.Text),
         )
 
@@ -155,12 +155,16 @@ fun SignUpScreen(
                 val trimmedEmail = email.trim()
 
                 when {
-                    trimmedFirst.isEmpty() || trimmedLast.isEmpty() ||
+                    trimmedFirst.isEmpty() ||
                         trimmedUsername.isEmpty() || trimmedEmail.isEmpty() || password.isEmpty() -> {
                         Toast.makeText(context, "Fill in all required fields", Toast.LENGTH_SHORT).show()
                     }
                     else -> {
-                        val displayName = "$trimmedFirst $trimmedLast".trim()
+                        val displayName = if (trimmedLast.isEmpty()) {
+                            trimmedFirst
+                        } else {
+                            "$trimmedFirst $trimmedLast"
+                        }
                         viewModel.signUp(
                             email = trimmedEmail,
                             password = password,

@@ -15,7 +15,10 @@ import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.foundation.verticalScroll
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.filled.ArrowBack
+import androidx.compose.material.icons.filled.ContentCopy
 import androidx.compose.material3.*
+import android.content.ClipData
+import android.content.ClipboardManager
 import androidx.compose.material3.pulltorefresh.PullToRefreshBox
 import androidx.compose.runtime.*
 import androidx.compose.ui.Alignment
@@ -59,6 +62,7 @@ fun MatchDetailScreen(
     onNavigateBack: () -> Unit,
     onNavigateToWallet: () -> Unit,
     onNavigateToSlotSelection: (matchId: String, matchTitle: String) -> Unit = { _, _ -> },
+    focusRoomDetails: Boolean = false,
     viewModel: MatchDetailViewModel = hiltViewModel()
 ) {
     val context = LocalContext.current
@@ -88,6 +92,13 @@ fun MatchDetailScreen(
         if (joinNotifierVersion.value > 0) {
             viewModel.syncJoinedMatches()
             viewModel.fetchExtras(matchId)
+        }
+    }
+
+    LaunchedEffect(focusRoomDetails, matchId) {
+        if (focusRoomDetails) {
+            selectedTabIndex = 0
+            viewModel.refreshMatchDetail(matchId)
         }
     }
 
@@ -366,6 +377,7 @@ fun MatchDetailScreen(
 
 @Composable
 fun DescriptionTabContent(match: Match, isJoined: Boolean = false) {
+    val context = LocalContext.current
     Column(
         modifier = Modifier
             .fillMaxSize()
@@ -396,44 +408,18 @@ fun DescriptionTabContent(match: Match, isJoined: Boolean = false) {
                         letterSpacing = 1.sp
                     )
                     if (!match.room_code.isNullOrBlank()) {
-                        Row(
-                            modifier = Modifier.fillMaxWidth(),
-                            horizontalArrangement = Arrangement.SpaceBetween,
-                            verticalAlignment = Alignment.CenterVertically
-                        ) {
-                            Text(
-                                text = "Room ID",
-                                color = TextMuted,
-                                fontSize = 12.sp,
-                                fontWeight = FontWeight.SemiBold
-                            )
-                            Text(
-                                text = match.room_code,
-                                color = TextWhite,
-                                fontSize = 14.sp,
-                                fontWeight = FontWeight.Bold
-                            )
-                        }
+                        CopyableCredentialRow(
+                            label = "Room ID",
+                            value = match.room_code,
+                            context = context,
+                        )
                     }
                     if (!match.room_password.isNullOrBlank()) {
-                        Row(
-                            modifier = Modifier.fillMaxWidth(),
-                            horizontalArrangement = Arrangement.SpaceBetween,
-                            verticalAlignment = Alignment.CenterVertically
-                        ) {
-                            Text(
-                                text = "Password",
-                                color = TextMuted,
-                                fontSize = 12.sp,
-                                fontWeight = FontWeight.SemiBold
-                            )
-                            Text(
-                                text = match.room_password,
-                                color = TextWhite,
-                                fontSize = 14.sp,
-                                fontWeight = FontWeight.Bold
-                            )
-                        }
+                        CopyableCredentialRow(
+                            label = "Password",
+                            value = match.room_password,
+                            context = context,
+                        )
                     }
                 }
             }
@@ -1056,6 +1042,56 @@ fun JoinedMemberTabContent(
                     }
                 }
             }
+        }
+    }
+}
+
+@Composable
+private fun CopyableCredentialRow(
+    label: String,
+    value: String,
+    context: Context,
+) {
+    val clipboard = context.getSystemService(Context.CLIPBOARD_SERVICE) as ClipboardManager
+
+    fun copyValue() {
+        clipboard.setPrimaryClip(ClipData.newPlainText(label, value))
+        Toast.makeText(context, "$label copied", Toast.LENGTH_SHORT).show()
+    }
+
+    Row(
+        modifier = Modifier
+            .fillMaxWidth()
+            .clip(RoundedCornerShape(6.dp))
+            .clickable { copyValue() }
+            .padding(vertical = 6.dp, horizontal = 4.dp),
+        horizontalArrangement = Arrangement.SpaceBetween,
+        verticalAlignment = Alignment.CenterVertically,
+    ) {
+        Text(
+            text = label,
+            color = TextMuted,
+            fontSize = 12.sp,
+            fontWeight = FontWeight.SemiBold,
+        )
+        Row(
+            verticalAlignment = Alignment.CenterVertically,
+            horizontalArrangement = Arrangement.spacedBy(8.dp),
+        ) {
+            Text(
+                text = value,
+                color = TextWhite,
+                fontSize = 14.sp,
+                fontWeight = FontWeight.Bold,
+            )
+            Icon(
+                imageVector = Icons.Filled.ContentCopy,
+                contentDescription = "Copy $label",
+                tint = Color(0xFF38BDF8),
+                modifier = Modifier
+                    .size(18.dp)
+                    .clickable { copyValue() },
+            )
         }
     }
 }

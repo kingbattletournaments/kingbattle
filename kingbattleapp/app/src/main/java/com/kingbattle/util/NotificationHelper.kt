@@ -18,6 +18,7 @@ import com.kingbattle.R
 
 object NotificationHelper {
     const val CHANNEL_ID = "king_battle_alerts_v4"
+    const val ACTION_OPEN_MATCH = "com.kingbattle.OPEN_MATCH"
     private val LEGACY_CHANNEL_IDS = listOf(
         "king_battle_notifications",
         "king_battle_alerts_v2",
@@ -121,8 +122,10 @@ object NotificationHelper {
 
         val intent = Intent(context, MainActivity::class.java).apply {
             flags = Intent.FLAG_ACTIVITY_CLEAR_TOP or Intent.FLAG_ACTIVITY_SINGLE_TOP
-            action = Intent.ACTION_MAIN
-            addCategory(Intent.CATEGORY_LAUNCHER)
+            action = if (!resolvedMatchId.isNullOrBlank()) ACTION_OPEN_MATCH else Intent.ACTION_MAIN
+            if (action == Intent.ACTION_MAIN) {
+                addCategory(Intent.CATEGORY_LAUNCHER)
+            }
             if (!link.isNullOrBlank()) {
                 putExtra("notification_link", link)
                 putExtra("link", link)

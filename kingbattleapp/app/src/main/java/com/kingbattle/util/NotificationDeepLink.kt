@@ -16,15 +16,21 @@ object NotificationDeepLink {
     private val uuidRegex =
         Regex("^[0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0-9a-fA-F]{12}$")
 
+    private fun isValidMatchId(value: String): Boolean {
+        val trimmed = value.trim()
+        if (trimmed.isEmpty() || trimmed.length > 128) return false
+        return uuidRegex.matches(trimmed) || trimmed.matches(Regex("^[A-Za-z0-9._-]+$"))
+    }
+
     fun parseMatchIdFromLink(link: String?): String? {
         if (link.isNullOrBlank()) return null
         val trimmed = link.trim()
         when {
             trimmed.startsWith("match:", ignoreCase = true) ->
-                return trimmed.substringAfter(":").trim().takeIf { isUuid(it) }
+                return trimmed.substringAfter(":").trim().takeIf { isValidMatchId(it) }
             trimmed.startsWith("/match/", ignoreCase = true) ->
-                return trimmed.removePrefix("/match/").trim().takeIf { isUuid(it) }
-            isUuid(trimmed) -> return trimmed
+                return trimmed.removePrefix("/match/").trim().takeIf { isValidMatchId(it) }
+            isValidMatchId(trimmed) -> return trimmed
         }
         return null
     }
@@ -36,10 +42,10 @@ object NotificationDeepLink {
             parseMatchIdFromLink(intent.getStringExtra(key))?.let { return it }
         }
 
-        intent.getStringExtra("matchId")?.trim()?.takeIf { isUuid(it) }?.let { return it }
+        intent.getStringExtra("matchId")?.trim()?.takeIf { isValidMatchId(it) }?.let { return it }
 
         intent.extras?.let { bundle ->
-            bundle.getString("matchId")?.trim()?.takeIf { isUuid(it) }?.let { return it }
+            bundle.getString("matchId")?.trim()?.takeIf { isValidMatchId(it) }?.let { return it }
             parseMatchIdFromLink(bundle.getString("link"))?.let { return it }
         }
 
@@ -53,7 +59,7 @@ object NotificationDeepLink {
     }
 
     fun setPendingMatchId(matchId: String?) {
-        _pendingMatchId.value = matchId?.takeIf { isUuid(it) }
+        _pendingMatchId.value = matchId?.trim()?.takeIf { isValidMatchId(it) }
     }
 
     fun consumePendingMatchId(): String? {
@@ -67,6 +73,4 @@ object NotificationDeepLink {
         setPendingMatchId(matchId)
         return matchId
     }
-
-    private fun isUuid(value: String): Boolean = uuidRegex.matches(value)
 }

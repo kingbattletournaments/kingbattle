@@ -135,6 +135,32 @@ function adminUserToLocalUser(u: ReturnType<typeof normalizeAdminUser>): User {
   };
 }
 
+function resolveTransactionUser(
+  userId: string,
+  embeddedUser: unknown,
+  users: User[],
+): User | null {
+  if (embeddedUser) {
+    return adminUserToLocalUser(normalizeAdminUser(embeddedUser));
+  }
+  return users.find((u) => u.id === userId) ?? null;
+}
+
+function formatAdminUsername(username: string) {
+  const trimmed = username.trim();
+  if (!trimmed) return "@—";
+  return trimmed.startsWith("@") ? trimmed : `@${trimmed}`;
+}
+
+function AdminTransactionUserCell({ user, userId }: { user: User | null; userId: string }) {
+  return (
+    <>
+      <p className="font-semibold text-zinc-900">{user?.displayName || "Unknown"}</p>
+      <p className="mt-0.5 font-mono text-xs text-zinc-500">{formatAdminUsername(user?.username || userId)}</p>
+    </>
+  );
+}
+
 type AdminSession = {
   id: string;
   adminname: string;
@@ -4516,12 +4542,14 @@ function MoneyOrdersSection({
     // Only show successful deposits processed via ZapUPI payments gateway
     if (d.status !== "accepted") return false;
 
-    const user = users.find((u) => u.id === d.userId);
+    const user = resolveTransactionUser(d.userId, d.user, users);
     const name = user?.displayName?.toLowerCase() || "";
+    const username = user?.username?.toLowerCase() || d.userId?.toLowerCase() || "";
     const email = user?.email?.toLowerCase() || "";
     const utr = d.utr?.toLowerCase() || "";
     return (
       name.includes(searchQuery.toLowerCase()) ||
+      username.includes(searchQuery.toLowerCase()) ||
       email.includes(searchQuery.toLowerCase()) ||
       utr.includes(searchQuery.toLowerCase())
     );
@@ -4560,12 +4588,11 @@ function MoneyOrdersSection({
               </thead>
               <tbody>
                 {filtered.map((d) => {
-                  const user = users.find((u) => u.id === d.userId);
+                  const user = resolveTransactionUser(d.userId, d.user, users);
                   return (
                     <tr key={d.id}>
                       <td>
-                        <p className="font-semibold text-zinc-900">{user?.displayName || "Unknown"}</p>
-                        <p className="text-xs text-zinc-500 font-mono mt-0.5">{d.userId}</p>
+                        <AdminTransactionUserCell user={user} userId={d.userId} />
                       </td>
                       <td>
                         <p className="font-mono font-medium text-zinc-600">{d.utr}</p>
@@ -4681,10 +4708,14 @@ function WithdrawalsSection({
   };
 
   const filtered = withdrawals.filter((w) => {
-    const user = users.find((u) => u.id === w.userId);
+    const user = resolveTransactionUser(w.userId, w.user, users);
     const name = user?.displayName?.toLowerCase() || "";
+    const username = user?.username?.toLowerCase() || w.userId?.toLowerCase() || "";
     const upi = w.upiId?.toLowerCase() || "";
-    const matchesSearch = name.includes(searchQuery.toLowerCase()) || upi.includes(searchQuery.toLowerCase());
+    const matchesSearch =
+      name.includes(searchQuery.toLowerCase()) ||
+      username.includes(searchQuery.toLowerCase()) ||
+      upi.includes(searchQuery.toLowerCase());
 
     if (filterStatus === "all") return matchesSearch;
     return w.status === filterStatus && matchesSearch;
@@ -4769,13 +4800,12 @@ function WithdrawalsSection({
               </thead>
               <tbody>
                 {filtered.map((w) => {
-                  const user = users.find((u) => u.id === w.userId);
+                  const user = resolveTransactionUser(w.userId, w.user, users);
                   const netPayout = Math.round(w.amount * (1 - (w.chargePercent ?? 0) / 100));
                   return (
                     <tr key={w.id}>
                       <td>
-                        <p className="font-semibold text-zinc-900">{user?.displayName || "Unknown"}</p>
-                        <p className="text-xs text-zinc-500 font-mono mt-0.5">{w.userId}</p>
+                        <AdminTransactionUserCell user={user} userId={w.userId} />
                       </td>
                       <td>
                         <p className="font-medium text-zinc-600">{w.upiId}</p>

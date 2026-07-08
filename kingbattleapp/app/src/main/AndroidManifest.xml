@@ -62,6 +62,10 @@
                 <action android:name="OPEN_MAIN" />
                 <category android:name="android.intent.category.DEFAULT" />
             </intent-filter>
+            <intent-filter>
+                <action android:name="com.kingbattle.OPEN_MATCH" />
+                <category android:name="android.intent.category.DEFAULT" />
+            </intent-filter>
         </activity>
 
     </application>

@@ -46,16 +46,13 @@ fun RootNavigation() {
         NotificationDeepLink.consumePendingMatchId()
         tokenManager.saveJoinedMatch(matchId)
 
-        val detailRoute = Screen.MatchDetail.createRoute(matchId)
+        val detailRoute = Screen.MatchDetail.createRoute(matchId, focusRoom = true)
         val currentRoute = navController.currentBackStackEntry?.destination?.route
-        if (currentRoute == detailRoute) return@LaunchedEffect
+        if (currentRoute?.startsWith("match_detail/$matchId") == true) return@LaunchedEffect
 
-        navController.navigate(Screen.Home.route) {
-            popUpTo(Screen.Welcome.route) { inclusive = true }
-            launchSingleTop = true
-        }
         navController.navigate(detailRoute) {
             launchSingleTop = true
+            popUpTo(Screen.Home.route) { inclusive = false }
         }
     }
 
@@ -223,13 +220,19 @@ fun RootNavigation() {
         composable(
             route = Screen.MatchDetail.route,
             arguments = listOf(
-                navArgument("matchId") { type = NavType.StringType }
+                navArgument("matchId") { type = NavType.StringType },
+                navArgument("focusRoom") {
+                    type = NavType.BoolType
+                    defaultValue = false
+                },
             )
         ) { backStackEntry ->
             val matchId = backStackEntry.arguments?.getString("matchId") ?: ""
+            val focusRoom = backStackEntry.arguments?.getBoolean("focusRoom") ?: false
             HandleNavBack(navController)
             com.kingbattle.presentation.matches.MatchDetailScreen(
                 matchId = matchId,
+                focusRoomDetails = focusRoom,
                 onNavigateBack = {
                     navController.popBackStack()
                 },
@@ -329,8 +332,9 @@ sealed class Screen(val route: String) {
     object Matches : Screen("matches/{modeId}?initialTab={initialTab}") {
         fun createRoute(modeId: String, initialTab: Int = 1) = "matches/$modeId?initialTab=$initialTab"
     }
-    object MatchDetail : Screen("match_detail/{matchId}") {
-        fun createRoute(matchId: String) = "match_detail/$matchId"
+    object MatchDetail : Screen("match_detail/{matchId}?focusRoom={focusRoom}") {
+        fun createRoute(matchId: String, focusRoom: Boolean = false) =
+            "match_detail/$matchId?focusRoom=$focusRoom"
     }
     object MatchSlots : Screen("match_slots/{matchId}/{matchTitle}?modeId={modeId}&initialTab={initialTab}") {
         fun createRoute(matchId: String, matchTitle: String, modeId: String = "", initialTab: Int = 1) =
