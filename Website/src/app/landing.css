@@ -288,6 +288,7 @@
   background: #e5e7eb;
   box-shadow: 0 8px 24px rgba(0, 0, 0, 0.12);
   line-height: 0;
+  flex-shrink: 0;
 }
 
 .landing-screenshot img {
@@ -472,8 +473,29 @@
   }
 
   .landing-screenshots {
-    grid-template-columns: 1fr;
-    max-width: min(280px, 100%);
+    display: flex;
+    grid-template-columns: none;
+    gap: 0.85rem;
+    max-width: none;
+    width: calc(100% + 2.5rem);
+    margin-left: -1.25rem;
+    margin-right: -1.25rem;
+    padding: 0.25rem 1.25rem 0.85rem;
+    overflow-x: auto;
+    overflow-y: hidden;
+    scroll-snap-type: x mandatory;
+    -webkit-overflow-scrolling: touch;
+    overscroll-behavior-x: contain;
+    scrollbar-width: none;
+  }
+
+  .landing-screenshots::-webkit-scrollbar {
+    display: none;
+  }
+
+  .landing-screenshot {
+    width: min(220px, 62vw);
+    scroll-snap-align: start;
   }
 }
 

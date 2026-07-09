@@ -93,11 +93,12 @@ export default function LandingPage() {
           <p className="landing-section-subtitle">
             Check the screenshots below to get an idea of the app flow and features.
           </p>
-          <div className="landing-screenshots">
+          <div className="landing-screenshots" role="list">
             {screenshots.map((shot, idx) => (
               <div
                 key={shot.src}
                 className="landing-screenshot"
+                role="listitem"
                 style={{ aspectRatio: screenshotAspectRatio }}
               >
                 {/* eslint-disable-next-line @next/next/no-img-element */}
