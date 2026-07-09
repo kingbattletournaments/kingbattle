@@ -16,6 +16,12 @@ type TxRow = {
   userEmail?: string;
 };
 
+function formatUsername(username: string) {
+  const trimmed = username.trim();
+  if (!trimmed) return "@—";
+  return trimmed.startsWith("@") ? trimmed : `@${trimmed}`;
+}
+
 type PaginatedTx = {
   items: TxRow[];
   page: number;
@@ -124,8 +130,8 @@ export function TransactionsSection() {
                   <tr key={t.id}>
                     <td className="font-mono text-xs text-zinc-600">{t.id}</td>
                     <td>
-                      <div className="font-medium text-zinc-900">{t.userDisplayName ?? t.userId}</div>
-                      <div className="text-xs text-zinc-500 font-mono">{t.userId}</div>
+                      <div className="font-medium text-zinc-900">{t.userDisplayName ?? "Unknown"}</div>
+                      <div className="mt-0.5 font-mono text-xs text-zinc-500">{formatUsername(t.userId)}</div>
                     </td>
                     <td className="text-zinc-600 capitalize">{t.type.replace(/_/g, " ")}</td>
                     <td className="text-zinc-600 text-sm max-w-[240px]">{t.description ?? "—"}</td>

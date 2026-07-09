@@ -6229,8 +6229,14 @@ function ReferralsSection() {
               <tbody>
                 {referrals.map((r) => (
                   <tr key={r.id}>
-                    <td className="font-medium text-zinc-900">{r.referrerName}</td>
-                    <td>{r.referredName}</td>
+                    <td>
+                      <p className="font-semibold text-zinc-900">{r.referrerName || "Unknown"}</p>
+                      <p className="mt-0.5 font-mono text-xs text-zinc-500">{formatAdminUsername(r.referrerId || "")}</p>
+                    </td>
+                    <td>
+                      <p className="font-semibold text-zinc-900">{r.referredName || "Unknown"}</p>
+                      <p className="mt-0.5 font-mono text-xs text-zinc-500">{formatAdminUsername(r.referredId || "")}</p>
+                    </td>
                     <td className="text-right text-amber-300 font-bold"><CoinAmount amount={r.rewardCoins} suffix=" coins" size={14} className="justify-end" /></td>
                     <td className="text-center">
                       {r.rewardGranted ? (
