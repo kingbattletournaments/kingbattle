@@ -6144,17 +6144,31 @@ function ReferralsSection() {
         <h2 className="mb-2 text-base font-semibold text-zinc-900">Referral System Settings</h2>
         <p className="mb-6 text-sm text-zinc-500">Configure the behavior of your referral system.</p>
         <form onSubmit={handleSaveSettings} className="space-y-5">
-          <div className="flex items-center gap-2">
-            <input
-              type="checkbox"
-              id="referralEnabled"
-              checked={enabled}
-              onChange={(e) => setEnabled(e.target.checked)}
-              className="rounded border-zinc-200 bg-white text-green-500 focus:ring-green-500"
-            />
-            <label htmlFor="referralEnabled" className="text-sm font-medium text-zinc-600">
-              Enable Referral System
-            </label>
+          <div className="flex items-center justify-between gap-4 rounded-xl border border-zinc-200 bg-zinc-50/60 px-4 py-3.5">
+            <div className="min-w-0">
+              <p className="text-sm font-semibold text-zinc-900">Referral system</p>
+              <p className="mt-0.5 text-xs text-zinc-500">
+                {enabled
+                  ? "Enabled — refer & earn banner and rewards are active in the app"
+                  : "Disabled — refer & earn is hidden from the app"}
+              </p>
+            </div>
+            <button
+              type="button"
+              role="switch"
+              aria-checked={enabled}
+              aria-label="Enable referral system"
+              onClick={() => setEnabled((prev) => !prev)}
+              className={`relative h-7 w-12 shrink-0 rounded-full transition-colors duration-200 focus:outline-none focus-visible:ring-2 focus-visible:ring-zinc-400 focus-visible:ring-offset-2 ${
+                enabled ? "bg-emerald-500" : "bg-zinc-300"
+              }`}
+            >
+              <span
+                className={`absolute top-0.5 left-0.5 h-6 w-6 rounded-full bg-white shadow-sm transition-transform duration-200 ${
+                  enabled ? "translate-x-5" : "translate-x-0"
+                }`}
+              />
+            </button>
           </div>
           <div>
             <label className="mb-2 block text-sm font-medium text-zinc-600">Referral Reward Coins</label>

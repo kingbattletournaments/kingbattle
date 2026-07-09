@@ -349,7 +349,14 @@ fun HomeScreen(
         }
     }
 
-    if (showReferScreen) {
+    val isReferralEnabled = referralSettingsState.value?.enabled == true
+    LaunchedEffect(showReferScreen, isReferralEnabled) {
+        if (showReferScreen && !isReferralEnabled) {
+            showReferScreen = false
+        }
+    }
+
+    if (showReferScreen && isReferralEnabled) {
         ReferScreen(
             user = userState.value,
             referralSettings = referralSettingsState.value,
@@ -1045,7 +1052,12 @@ fun EarnTabContent(
         banners.filter { it.displayEarn }
     }
     val bannerDecodeSize = rememberBannerDecodeSize()
-    val referralBannerUrl = referralSettings?.bannerUrl?.trim().orEmpty()
+    val isReferralEnabled = referralSettings?.enabled == true
+    val referralBannerUrl = if (isReferralEnabled) {
+        referralSettings?.bannerUrl?.trim().orEmpty()
+    } else {
+        ""
+    }
 
     Column(
         modifier = Modifier
@@ -1060,7 +1072,11 @@ fun EarnTabContent(
             modifier = Modifier.padding(bottom = 4.dp)
         )
         Text(
-            text = "Complete offers and refer friends to earn coins",
+            text = if (isReferralEnabled) {
+                "Complete offers and refer friends to earn coins"
+            } else {
+                "Complete offers to earn coins"
+            },
             color = TextMuted,
             fontSize = 12.sp,
             modifier = Modifier.padding(bottom = 16.dp)
@@ -1076,16 +1092,18 @@ fun EarnTabContent(
                 verticalArrangement = Arrangement.spacedBy(16.dp),
                 contentPadding = PaddingValues(bottom = 24.dp)
             ) {
-                if (isLoading && !hasCachedContent && earnBanners.isEmpty() && referralBannerUrl.isBlank()) {
+                if (isLoading && !hasCachedContent && earnBanners.isEmpty() && !isReferralEnabled) {
                     item { BannerSkeleton() }
                     items(2) { BannerSkeleton() }
                 } else {
-                    item {
-                        ReferralBannerCard(
-                            bannerUrl = referralBannerUrl,
-                            onClick = onReferClick,
-                            cacheKey = bannerImageCacheKey("referral", referralBannerUrl, contentRefreshEpoch),
-                        )
+                    if (isReferralEnabled) {
+                        item {
+                            ReferralBannerCard(
+                                bannerUrl = referralBannerUrl,
+                                onClick = onReferClick,
+                                cacheKey = bannerImageCacheKey("referral", referralBannerUrl, contentRefreshEpoch),
+                            )
+                        }
                     }
 
                     itemsIndexed(earnBanners) { _, banner ->
