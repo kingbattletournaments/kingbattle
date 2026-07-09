@@ -473,6 +473,7 @@
   }
 
   .landing-screenshots {
+    --shot-w: min(220px, 62vw);
     display: flex;
     grid-template-columns: none;
     gap: 0.85rem;
@@ -480,10 +481,12 @@
     width: calc(100% + 2.5rem);
     margin-left: -1.25rem;
     margin-right: -1.25rem;
-    padding: 0.25rem 1.25rem 0.85rem;
+    /* Center the first (and each) screenshot in the viewport */
+    padding: 0.25rem max(1.25rem, calc((100% - var(--shot-w)) / 2)) 0.85rem;
     overflow-x: auto;
     overflow-y: hidden;
     scroll-snap-type: x mandatory;
+    scroll-padding-inline: max(1.25rem, calc((100% - var(--shot-w)) / 2));
     -webkit-overflow-scrolling: touch;
     overscroll-behavior-x: contain;
     scrollbar-width: none;
@@ -494,8 +497,8 @@
   }
 
   .landing-screenshot {
-    width: min(220px, 62vw);
-    scroll-snap-align: start;
+    width: var(--shot-w);
+    scroll-snap-align: center;
   }
 }
 
